@@ -1,61 +1,82 @@
-# NoSurprise — «Ипотека без сюрпризов»
+# ООО «Тмыв денег» — ипотека без сюрпризов
 
-Сервис честно показывает, сколько на самом деле стоит ипотека на 25 лет и что будет, если ставка вырастет.
+Сервис показывает честную цену ипотеки на 25 лет: ежемесячный платёж, реальную переплату, полный график
+и что будет при досрочных погашениях или росте ставки.
+
+Репозиторий: [Ratila1/mortgage-planner](https://github.com/Ratila1/mortgage-planner)
+
+## Возможности
+
+- **Калькулятор без логина:** аннуитетный и дифференцированный платёж, график, разовые и регулярные досрочные погашения (уменьшить срок / платёж).
+- **Аккаунты:** email + пароль с подтверждением почты, вход через Google/GitHub, JWT (access + refresh).
+- **Личный кабинет:** сохранение сценариев, сравнение 2–3 сценариев бок о бок.
+- **Админка:** CRUD банковских предложений; смена ставки запускает пересчёт сценариев и уведомление пользователей.
 
 ## Быстрый старт
 
+Нужны Docker и Docker Compose.
+
 ```bash
-cp .env.example .env      # опционально, есть дефолты
+cp .env.example .env
 docker compose up --build
-# публичная ссылка через Cloudflare quick tunnel:
-docker compose --profile tunnel up --build
 ```
 
-| Сервис            | URL                     |
-|-------------------|-------------------------|
-| Фронтенд + API    | http://localhost:8080 (nginx проксирует /api) |
-| RabbitMQ UI       | http://localhost:15672  |
-| Mailpit (письма)  | http://localhost:8025   |
+| Что | Адрес |
+|---|---|
+| Приложение (фронт + API) | http://localhost:8080 |
+| RabbitMQ UI | http://localhost:15672 (guest / guest) |
+| Письма (Mailpit) | http://localhost:8025 |
+
+Публичная ссылка через Cloudflare Tunnel:
+```bash
+docker compose --profile tunnel up --build
+docker compose logs cloudflared     # найди https://<...>.trycloudflare.com
+```
+Вход через Google/GitHub работает только на `localhost:8080` или на именованном туннеле: redirect URI нужно регистрировать заранее.
 
 ### Локальная разработка
 ```bash
 docker compose up -d postgres mongo redis rabbitmq mailpit
-cd backend && gradle bootRun          # или ./gradlew bootRun после `gradle wrapper`
-cd frontend && npm install && npm run dev
+cd backend  && gradle bootRun         # JDK 25
+cd frontend && npm install && npm run dev   # Node 22, http://localhost:5173
 ```
-Нужны: JDK 25, Node 22, Docker.
 
-## Структура
+### Тесты
+```bash
+cd backend  && gradle build           # юнит + Testcontainers (нужен Docker)
+cd frontend && npm test && npm run build
 ```
-backend/    Spring Boot 4 (Java 25, Gradle Groovy) — модульный монолит
-frontend/   React + Vite + TS (отдаётся через nginx, /api проксируется в backend)
-docs/       заметки и ADR
-.github/    CI, CODEOWNERS, шаблон PR
-```
+
+### OAuth (необязательно)
+Заполни в `.env` ключи `GOOGLE_*` / `GITHUB_*`, укажи `SPRING_PROFILES_ACTIVE=oauth` и `APP_BASE_URL`.
+Redirect URI: `{APP_BASE_URL}/login/oauth2/code/google` и `/github`.
 
 ## Архитектура
+
 ```mermaid
 flowchart LR
-  FE[Frontend] -->|REST/JWT| API[Spring Boot monolith]
-  API --> PG[(PostgreSQL<br/>users, offers, scenarios)]
-  API --> MG[(MongoDB<br/>schedules, history)]
-  API --> RD[(Redis<br/>cache, refresh tokens, rate limit)]
-  API -->|events| MQ{{RabbitMQ}}
-  MQ -->|consumers in same app| API
+  U[Браузер] -->|:8080| N[nginx + React]
+  N -->|/api /oauth2| API[Spring Boot монолит]
+  API --> PG[(PostgreSQL<br/>пользователи, предложения, сценарии)]
+  API --> MG[(MongoDB<br/>графики, история расчётов)]
+  API --> RD[(Redis<br/>кэш, refresh-токены, rate limit)]
+  API -->|события| MQ{{RabbitMQ}}
+  MQ -->|consumers| API
   API --> SMTP[SMTP / Mailpit]
 ```
 
-Пакеты backend (`dev.nosurprise.*`): `calculator`, `auth`, `user`, `offer`, `scenario`, `notification`, `common`, `config`.
-Зависимости только «вниз»: `calculator` — чистое ядро без Spring и БД.
+Подробно (модули, схемы данных, ключи Redis, топология RabbitMQ, API-контракт, roadmap): **[AGENTS.md](AGENTS.md)**.
 
-## Принятые решения
-- **Модульный монолит, а не микросервисы.** Один деплой, одна команда, транзакции без распределённой боли. Очередь используется для асинхронности, а не для разрезания сервиса. Границы модулей держим пакетами; при необходимости consumer-ы можно вынести в отдельный профиль/процесс.
-- **Java 25 + виртуальные потоки** (`spring.threads.virtual.enabled=true`): блокирующий код для JPA/Mongo/Redis без реактивщины.
-- **Деньги — только `BigDecimal`**, политика в `common/Money` (scale 2, HALF_UP; промежуточные расчёты в повышенной точности).
-- **Flyway** для PostgreSQL, схема валидируется (`ddl-auto: validate`).
-- **Testcontainers** для интеграционных тестов (auth-флоу, сценарий с очередью).
+## Стек
+Java 25 (виртуальные потоки), Spring Boot 4.0.9, Spring Security, PostgreSQL + Flyway, MongoDB, Redis, RabbitMQ,
+React + Vite + TypeScript, Docker Compose, GitHub Actions.
 
-## Git-процесс
-- `main` — стабильная, в неё только PR из `dev`.
-- `dev` — интеграционная ветка; личные ветки (`ratnikau/...`, `radkovski/...`) → PR в `dev`.
-- Прямой push в `main`/`dev` запрещён. Обязательные проверки: **Backend**, **Frontend**, **Docker build** (+ **Branch policy** для `main`), минимум 1 approve, squash merge.
+## Структура
+```
+backend/    Spring Boot, модульный монолит (calculator, auth, user, offer, scenario, notification)
+frontend/   React + Vite, отдаётся через nginx
+AGENTS.md   архитектура и правила для разработчиков и агентов
+.github/    CI, CODEOWNERS, шаблон PR
+```
+
+##
