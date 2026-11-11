@@ -54,6 +54,12 @@ public final class AuthFixture {
         return objectMapper.readTree(login.getBody()).get("accessToken").asString();
     }
 
+    /** Логин уже существующего (например, bootstrap-админа) без регистрации. */
+    public Account loginExisting(String email, String password) {
+        UUID id = userId(email);
+        return new Account(id, email, password, login(email, password));
+    }
+
     private UUID userId(String email) {
         String id = jdbc.queryForObject("select id::text from users where email = ?", String.class, email);
         assertThat(id).as("пользователь %s создан", email).isNotNull();

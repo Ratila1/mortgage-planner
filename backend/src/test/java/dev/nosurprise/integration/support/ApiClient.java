@@ -46,6 +46,10 @@ public class ApiClient {
         return send(HttpMethod.POST, path, json, bearer);
     }
 
+    public ResponseEntity<String> putJson(String path, String json, String bearer) {
+        return send(HttpMethod.PUT, path, json, bearer);
+    }
+
     public ResponseEntity<String> delete(String path, String bearer) {
         return send(HttpMethod.DELETE, path, null, bearer);
     }

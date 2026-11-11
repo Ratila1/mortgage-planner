@@ -19,6 +19,10 @@ public abstract class AbstractIntegrationTest {
 
     protected static final String JWT_SECRET = "integration-test-secret-at-least-32-characters-long";
 
+    /** Первый ADMIN создаётся FirstAdminBootstrap при старте контекста из этих property. */
+    public static final String ADMIN_EMAIL = "it-admin@nosurprise.test";
+    public static final String ADMIN_PASSWORD = "Admin-pass-123";
+
     @LocalServerPort
     protected int port;
 
@@ -54,9 +58,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.base-url", () -> "http://localhost:8080");
         registry.add("app.jwt.secret", () -> JWT_SECRET);
 
-        // APP_ADMIN_EMAIL/PASSWORD включаются на этапе RabbitMQ-теста (нужен admin).
-        // Сейчас не задаём: bootstrap admin'а падает на существующем баге UserService.save
-        // (новый entity с заранее заданным UUID → merge → StaleObjectStateException).
+        // Первый ADMIN (§6.1): нужен для PUT /api/admin/offers в RabbitMQ-сценарии.
+        registry.add("APP_ADMIN_EMAIL", () -> ADMIN_EMAIL);
+        registry.add("APP_ADMIN_PASSWORD", () -> ADMIN_PASSWORD);
 
         // Rate limit не должен мешать интеграционным сценариям.
         registry.add("app.ratelimit.calc.anonymous-per-minute", () -> 1000);
