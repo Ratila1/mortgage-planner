@@ -7,6 +7,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -91,6 +92,58 @@ public class NotificationService {
         } catch (RuntimeException ex) {
             return false;
         }
+    }
+
+    @Transactional
+    public Notification createScenarioRecalculated(UUID userId, UUID scenarioId, String calcId,
+                                                  BigDecimal oldRate, BigDecimal newRate,
+                                                  BigDecimal oldMonthlyPayment, BigDecimal newMonthlyPayment,
+                                                  BigDecimal oldOverpayment, BigDecimal newOverpayment) {
+        for (Notification existing : repository.findByUserIdAndType(userId, "SCENARIO_RECALCULATED")) {
+            if (isSameScenarioRecalc(existing, scenarioId, calcId)) {
+                return existing;
+            }
+        }
+        String payload = buildScenarioRecalculatedPayload(scenarioId, calcId, oldRate, newRate,
+                oldMonthlyPayment, newMonthlyPayment, oldOverpayment, newOverpayment);
+        return repository.save(new Notification(userId, "SCENARIO_RECALCULATED", payload));
+    }
+
+    @Transactional
+    public Notification createNotification(UUID userId, String type, Object payload) {
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (RuntimeException ex) {
+            json = String.valueOf(payload);
+        }
+        return repository.save(new Notification(userId, type, json));
+    }
+
+    private boolean isSameScenarioRecalc(Notification notification, UUID scenarioId, String calcId) {
+        try {
+            JsonNode node = objectMapper.readTree(notification.getPayload());
+            UUID existingScenario = node.has("scenarioId") ? UUID.fromString(node.get("scenarioId").asText()) : null;
+            String existingCalc = node.has("calcId") ? node.get("calcId").asText() : null;
+            return scenarioId.equals(existingScenario) && calcId.equals(existingCalc);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private String buildScenarioRecalculatedPayload(UUID scenarioId, String calcId, BigDecimal oldRate, BigDecimal newRate,
+                                                   BigDecimal oldMonthlyPayment, BigDecimal newMonthlyPayment,
+                                                   BigDecimal oldOverpayment, BigDecimal newOverpayment) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("scenarioId", scenarioId.toString());
+        node.put("calcId", calcId);
+        node.put("oldRate", oldRate.toPlainString());
+        node.put("newRate", newRate.toPlainString());
+        node.put("oldMonthlyPayment", oldMonthlyPayment.toPlainString());
+        node.put("newMonthlyPayment", newMonthlyPayment.toPlainString());
+        node.put("oldOverpayment", oldOverpayment.toPlainString());
+        node.put("newOverpayment", newOverpayment.toPlainString());
+        return node.toString();
     }
 
     private String buildPayload(UUID scenarioId, String calcId, String fileId, String fileName) {
