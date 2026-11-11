@@ -68,13 +68,14 @@ public class UserService {
             if (user.isEmailVerified() || providerEmailVerified) {
                 user.setEmailVerified(true);
             }
-            // Связываем провайдера только если он ещё не установлен
-            // или совпадает с текущим — не перезаписываем чужую привязку.
-            if (user.getProvider() == null || user.getProvider() == provider) {
+            // Связываем провайдера: разрешаем, если он не установлен, LOCAL (локальный аккаунт)
+            // или совпадает с текущим; уже привязанный к другому OAuth-провайдеру не перезаписываем.
+            boolean canLink = user.getProvider() == null
+                    || user.getProvider() == Provider.LOCAL
+                    || user.getProvider() == provider;
+            if (canLink) {
                 user.setProvider(provider);
-                if (user.getProviderId() == null || user.getProvider() == provider) {
-                    user.setProviderId(providerId);
-                }
+                user.setProviderId(providerId);
             }
             return repository.save(user);
         }
