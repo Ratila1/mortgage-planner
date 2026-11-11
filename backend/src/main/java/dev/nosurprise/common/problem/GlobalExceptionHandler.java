@@ -1,5 +1,8 @@
 package dev.nosurprise.common.problem;
 
+import dev.nosurprise.auth.service.EmailNotVerifiedException;
+import dev.nosurprise.auth.service.InvalidCredentialsException;
+import dev.nosurprise.auth.service.InvalidRefreshTokenException;
 import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.calculator.InvalidCalculationException;
 import dev.nosurprise.calc.service.CalcNotFoundException;
@@ -54,6 +57,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(VerifyTokenInvalidException.class)
     ProblemDetail onVerifyTokenInvalid(VerifyTokenInvalidException ex) {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.VERIFY_TOKEN_INVALID, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ProblemDetail onInvalidCredentials(InvalidCredentialsException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIALS, ex.getMessage());
+    }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    ProblemDetail onEmailNotVerified(EmailNotVerifiedException ex) {
+        return problem(HttpStatus.FORBIDDEN, ErrorCode.EMAIL_NOT_VERIFIED, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    ProblemDetail onInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_REFRESH_TOKEN, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
