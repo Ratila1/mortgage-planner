@@ -1,6 +1,7 @@
 package dev.nosurprise.config;
 
 import dev.nosurprise.auth.service.JwtProperties;
+import dev.nosurprise.auth.web.OAuth2AuthenticationSuccessHandler;
 import dev.nosurprise.common.problem.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -8,10 +9,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -53,7 +58,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, Environment env,
+                                    ObjectProvider<OAuth2AuthenticationSuccessHandler> successHandlerProvider) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -61,16 +67,38 @@ public class SecurityConfig {
                 .requestMatchers("/api/calc/**", "/api/offers", "/api/auth/**").permitAll()
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .anyRequest().authenticated())
+                .anyRequest().authenticated());
+
+        // OAuth2 login включается только профилем oauth (application-oauth.yml).
+        if (java.util.Arrays.asList(env.getActiveProfiles()).contains("oauth")) {
+            OAuth2AuthenticationSuccessHandler handler = successHandlerProvider.getIfAvailable();
+            if (handler != null) {
+                http.oauth2Login(oauth2 -> oauth2.successHandler(handler));
+            } else {
+                http.oauth2Login(Customizer.withDefaults());
+            }
+        }
+
+        http
             .oauth2ResourceServer(oauth2 -> oauth2
                 // невалидный JWT — не «отсутствие аутентификации», отдельный failure-handler ресурсного сервера
                 .authenticationEntryPoint(new ProblemEntryPoint())
                 .accessDeniedHandler(new ProblemAccessDeniedHandler())
-                .jwt(Customizer.withDefaults()))
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(new ProblemEntryPoint())
                 .accessDeniedHandler(new ProblemAccessDeniedHandler()));
         return http.build();
+    }
+
+    @Bean
+    JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter rolesConverter = new JwtGrantedAuthoritiesConverter();
+        rolesConverter.setAuthoritiesClaimName("roles");
+        rolesConverter.setAuthorityPrefix("ROLE_");
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(rolesConverter);
+        return converter;
     }
 
     /** 401: нет/невалидный JWT — ProblemDetail code=UNAUTHORIZED. */
