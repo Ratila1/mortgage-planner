@@ -76,12 +76,24 @@ public class Scenario {
         return params;
     }
 
+    public void setParams(String params) {
+        this.params = params;
+    }
+
     public String getSummary() {
         return summary;
     }
 
+    public void setSummary(String summary) {
+        this.summary = summary;
+    }
+
     public String getCalcId() {
         return calcId;
+    }
+
+    public void setCalcId(String calcId) {
+        this.calcId = calcId;
     }
 
     public UUID getOfferId() {

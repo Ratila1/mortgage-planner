@@ -5,6 +5,7 @@ import dev.nosurprise.calc.web.dto.CalcRequest;
 import dev.nosurprise.calc.web.dto.CalcResponse;
 import dev.nosurprise.offer.OfferService;
 import dev.nosurprise.pdf.event.ExportPdfRequested;
+import dev.nosurprise.scenario.ScenarioRecalculationResult;
 import dev.nosurprise.scenario.web.dto.CreateScenarioRequest;
 import dev.nosurprise.scenario.web.dto.ScenarioResponse;
 import org.springframework.context.ApplicationEventPublisher;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -134,6 +136,62 @@ public class ScenarioService {
             eventPublisher.publishEvent(new ExportPdfRequested(
                     UUID.randomUUID(), Instant.now(), scenario.getId(), scenario.getCalcId(), userId));
         }
+    }
+
+    @Transactional
+    public ScenarioRecalculationResult recalculate(UUID scenarioId, BigDecimal newRate) {
+        Scenario scenario = repository.findById(scenarioId)
+                .orElseThrow(() -> new ScenarioNotFoundException("scenario not found: " + scenarioId));
+
+        tools.jackson.databind.JsonNode oldParams;
+        tools.jackson.databind.JsonNode oldSummary;
+        try {
+            oldParams = objectMapper.readTree(scenario.getParams());
+            oldSummary = objectMapper.readTree(scenario.getSummary());
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to read scenario json", ex);
+        }
+
+        BigDecimal oldRate = new BigDecimal(oldParams.get("annualRate").asText());
+        BigDecimal oldMonthlyPayment = new BigDecimal(oldSummary.get("monthlyPayment").asText());
+        BigDecimal oldOverpayment = new BigDecimal(oldSummary.get("overpayment").asText());
+
+        CalcRequest oldRequest;
+        try {
+            oldRequest = objectMapper.treeToValue(oldParams, CalcRequest.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to parse scenario params", ex);
+        }
+        CalcRequest newRequest = new CalcRequest(
+                oldRequest.price(), oldRequest.downPayment(), oldRequest.termMonths(),
+                newRate, oldRequest.type(), oldRequest.earlyRepayments());
+
+        CalcResponse newResponse = calculatorService.calculate(newRequest);
+
+        String paramsJson;
+        String summaryJson;
+        try {
+            paramsJson = objectMapper.writeValueAsString(newRequest);
+            summaryJson = objectMapper.writeValueAsString(newResponse);
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to serialize recalculated scenario", ex);
+        }
+
+        scenario.setParams(paramsJson);
+        scenario.setSummary(summaryJson);
+        scenario.setCalcId(newResponse.calcId());
+        scenario.touch();
+        repository.save(scenario);
+
+        return new ScenarioRecalculationResult(
+                scenario.getId(), scenario.getUserId(), newResponse.calcId(),
+                oldRate, newRate, oldMonthlyPayment, new BigDecimal(newResponse.monthlyPayment()),
+                oldOverpayment, new BigDecimal(newResponse.overpayment()));
+    }
+
+    @Transactional
+    public void recalc(UUID scenarioId, BigDecimal newRate) {
+        recalculate(scenarioId, newRate);
     }
 
     private ScenarioResponse toResponse(Scenario scenario) {
