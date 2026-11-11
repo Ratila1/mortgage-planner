@@ -25,8 +25,10 @@ public class UserService {
 
     @Transactional
     public UserEntity createLocalUser(String email, String passwordHash) {
+        // id = null: UUID генерирует Hibernate при persist. Заранее заданный id заставил бы
+        // Spring Data вызвать merge() для несуществующей строки (StaleObjectStateException).
         UserEntity user = new UserEntity(
-                UUID.randomUUID(),
+                null,
                 email,
                 passwordHash,
                 false,
@@ -81,7 +83,7 @@ public class UserService {
             return repository.save(user);
         }
         UserEntity user = new UserEntity(
-                UUID.randomUUID(),
+                null,
                 normalized,
                 null,
                 providerEmailVerified,
@@ -96,7 +98,7 @@ public class UserService {
     @Transactional
     public UserEntity createAdminUser(String email, String passwordHash) {
         UserEntity user = new UserEntity(
-                UUID.randomUUID(),
+                null,
                 normalize(email),
                 passwordHash,
                 true,
