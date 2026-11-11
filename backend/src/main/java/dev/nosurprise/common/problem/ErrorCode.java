@@ -9,5 +9,6 @@ public enum ErrorCode {
     INVALID_CALC_PARAMS,
     CALC_NOT_FOUND,
     RATE_LIMITED,
+    VERIFY_TOKEN_INVALID,
     INTERNAL_ERROR
 }

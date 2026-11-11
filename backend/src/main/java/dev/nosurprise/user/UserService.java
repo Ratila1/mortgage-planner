@@ -39,4 +39,16 @@ public class UserService {
     public Optional<UserEntity> findByEmail(String email) {
         return repository.findByEmail(email);
     }
+
+    @Transactional(readOnly = true)
+    public Optional<UserEntity> findById(UUID id) {
+        return repository.findById(id);
+    }
+
+    /** Подтверждение почты идемпотентно: повторная установка email_verified безопасна. */
+    @Transactional
+    public void markEmailVerified(UserEntity user) {
+        user.setEmailVerified(true);
+        repository.save(user);
+    }
 }

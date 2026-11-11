@@ -1,11 +1,13 @@
 package dev.nosurprise.common.problem;
 
+import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.calculator.InvalidCalculationException;
 import dev.nosurprise.calc.service.CalcNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -33,6 +35,12 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REQUEST_BODY, "malformed request body");
     }
 
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    ProblemDetail onMissingParameter(MissingServletRequestParameterException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED,
+                ex.getParameterName() + ": parameter is required");
+    }
+
     @ExceptionHandler(InvalidCalculationException.class)
     ProblemDetail onInvalidCalculation(InvalidCalculationException ex) {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_CALC_PARAMS, ex.getMessage());
@@ -41,6 +49,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CalcNotFoundException.class)
     ProblemDetail onCalcNotFound(CalcNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.CALC_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(VerifyTokenInvalidException.class)
+    ProblemDetail onVerifyTokenInvalid(VerifyTokenInvalidException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VERIFY_TOKEN_INVALID, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

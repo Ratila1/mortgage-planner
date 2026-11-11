@@ -78,6 +78,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("VerifyTokenInvalidException → 400 VERIFY_TOKEN_INVALID")
+    void verifyTokenInvalid() throws Exception {
+        mockMvc.perform(get("/throw/verify-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VERIFY_TOKEN_INVALID"))
+                .andExpect(jsonPath("$.detail").value("verification token is invalid or expired"));
+    }
+
+    @Test
     @DisplayName("IllegalArgumentException и прочие непойманные → 500 INTERNAL_ERROR")
     void unexpectedBecomesInternalError() throws Exception {
         mockMvc.perform(get("/throw/illegal-argument"))
@@ -110,6 +119,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/throw/not-found")
         String notFound() {
             throw new CalcNotFoundException("calculation not found");
+        }
+
+        @GetMapping("/throw/verify-token")
+        String verifyToken() {
+            throw new dev.nosurprise.auth.service.VerifyTokenInvalidException();
         }
 
         @GetMapping("/throw/illegal-argument")
