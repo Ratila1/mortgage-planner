@@ -156,14 +156,14 @@ public class MortgageCalculator {
             if (er.type() == EarlyRepaymentType.ONE_TIME) {
                 int month = er.month();
                 if (month > termMonths) {
-                    throw new IllegalArgumentException(
+                    throw new InvalidCalculationException(
                             "earlyRepayment month " + month + " is beyond term " + termMonths);
                 }
                 byMonth.computeIfAbsent(month, m -> new ArrayList<>()).add(er);
             } else {
                 int start = er.startMonth();
                 if (start > termMonths) {
-                    throw new IllegalArgumentException(
+                    throw new InvalidCalculationException(
                             "earlyRepayment startMonth " + start + " is beyond term " + termMonths);
                 }
                 int limit = er.untilMonth() != null ? Math.min(er.untilMonth(), termMonths) : termMonths;

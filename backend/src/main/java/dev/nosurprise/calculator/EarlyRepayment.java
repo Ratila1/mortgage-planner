@@ -27,24 +27,24 @@ public record EarlyRepayment(
         Objects.requireNonNull(amount, "amount is required");
         Objects.requireNonNull(mode, "mode is required");
         if (amount.signum() <= 0) {
-            throw new IllegalArgumentException("earlyRepayment amount must be positive");
+            throw new InvalidCalculationException("earlyRepayment amount must be positive");
         }
         if (type == EarlyRepaymentType.ONE_TIME) {
             Objects.requireNonNull(month, "month is required for ONE_TIME");
             if (month < 1) {
-                throw new IllegalArgumentException("earlyRepayment month must be >= 1");
+                throw new InvalidCalculationException("earlyRepayment month must be >= 1");
             }
         } else {
             Objects.requireNonNull(startMonth, "startMonth is required for REGULAR");
             if (startMonth < 1) {
-                throw new IllegalArgumentException("earlyRepayment startMonth must be >= 1");
+                throw new InvalidCalculationException("earlyRepayment startMonth must be >= 1");
             }
             Objects.requireNonNull(everyMonths, "everyMonths is required for REGULAR");
             if (everyMonths < 1) {
-                throw new IllegalArgumentException("earlyRepayment everyMonths must be >= 1");
+                throw new InvalidCalculationException("earlyRepayment everyMonths must be >= 1");
             }
             if (untilMonth != null && untilMonth < startMonth) {
-                throw new IllegalArgumentException("earlyRepayment untilMonth must be >= startMonth");
+                throw new InvalidCalculationException("earlyRepayment untilMonth must be >= startMonth");
             }
         }
     }
