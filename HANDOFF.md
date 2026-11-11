@@ -4,7 +4,7 @@
 
 - Ветка: `backend_java25` (база — `dev`, коммит `eeaa5a3`).
 - Последние коммиты: `1bb570b` — расчётное ядро; `263802b` — Money.MC; `cb3bca2` — REST API + MongoDB; `a505420b` — Redis-кэш; `4a3b93b` — rate limit; `681f408` — user module + V2; `9b9a74f` — регистрация + verify-email; `fb4448c` — RabbitMQ mail pipeline; `4a41e5f` — TokenService (HS256 JWT); `4d20205` — RefreshTokenService (Redis); `1a6f46a` — login/refresh/logout; `f01caff` — SecurityConfig JWT resource server; `62311ca` — GET /api/me.
-- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн + **локальный логин, JWT, refresh, logout, GET /api/me и защита роутов** завершены. **Stress-расчёт, userId в расчётах и Notifications API** завершены.
+- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн + **локальный логин, JWT, refresh, logout, GET /api/me и защита роутов** завершены. **Stress-расчёт, userId в расчётах, Notifications API, OTP, пересчёт сценариев и уведомления о пересчёте** завершены.
 
 ## Выполненная работа
 
@@ -150,6 +150,13 @@
 - Индекс `(userId, createdAt desc)` для коллекции `calculations` уже создаётся в `CalculationIndexes`.
 - Notifications API: `GET /api/notifications` (только свои, `created_at desc`, максимум 100), `POST /api/notifications/{id}/read` (только владелец, идемпотентно, 204; чужой/несуществующий → 404 `NOTIFICATION_NOT_FOUND`).
 
+### OTP-вход, пересчёт сценариев и уведомления о пересчёте
+
+- OTP: `POST /api/auth/otp/request`, `POST /api/auth/otp/verify`; код хранится в Redis только как SHA-256-хэш (`otp:{email}`, TTL 10 мин); rate limit 3 запроса / 10 мин; при успехе выдаются access JWT + refresh cookie по схеме обычного логина.
+- Пересчёт: consumer `scenario.recalc.q` слушает `offer.rate.changed`, обновляет params/summary/calcId затронутых сценариев и публикует `scenario.recalculated` через `@TransactionalEventListener(AFTER_COMMIT)`; идемпотентность по `scenario:recalc:processed:{eventId}` (TTL 7 дней).
+- Уведомления: consumer `notification.q` слушает `scenario.recalculated`, создаёт notification типа `SCENARIO_RECALCULATED` и через after-commit публикует `mail.requested`; письмо содержит bankName, старую/новую ставку, старый/новый платёж и переплату. Идемпотентность по `notification:scenario-recalculated:processed:{eventId}` (TTL 7 дней).
+- Очереди и DLQ объявлены в `RabbitScenarioConfig`.
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
@@ -188,10 +195,8 @@
 
 ## Следующий этап
 
-Обязательные пункты INSTRUCTION.md, реализованные в рамках текущей задачи: stress-расчёт, userId в расчётах, Notifications API, модель/индексы истории. Оставшиеся пункты:
-- OTP login (`/api/auth/otp/request`, `/api/auth/otp/verify`) — пометка (★), не реализован.
-- Consumer `scenario.recalc.q` для `offer.rate.changed` и пересчёт затронутых сценариев — не реализован.
-- Consumer `notification.q` для `scenario.recalculated` — не реализован, так как пересчёт сценариев не реализован.
-- `logout-all` не входит в контракт §9, не добавляется.
+Обязательные пункты INSTRUCTION.md для бэкенда реализованы, включая OTP, stress-расчёт, userId в расчётах, Notifications API, пересчёт сценариев и уведомления о пересчёте. Оставшиеся сознательно не реализованные пункты:
+- `POST /api/auth/logout-all` — нет в контракте §9, не добавляется.
 - История расчётов как endpoint не описана в §9; реализованы только модель и индексы.
 - Testcontainers не используются по зафиксированному решению.
+- Frontend/proxy-изменения для новых путей, если потребуются, выполняются отдельно.
