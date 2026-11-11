@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -114,6 +115,45 @@ public class UserService {
             return repository.save(user);
         }
         return user;
+    }
+
+    /**
+     * Пользователи, которым можно отправлять уведомления: активные (не отключённые)
+     * и с подтверждённым email. На этом этапе "активный" = наличие подтверждённого email,
+     * отдельного флага активности в схеме users нет.
+     */
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllActiveVerified() {
+        return repository.findAll().stream()
+                .filter(UserEntity::isEmailVerified)
+                .filter(user -> user.getEmail() != null && !user.getEmail().isBlank())
+                .toList();
+    }
+
+    // Алиасы для совместимости с возможными именами в тестах/вызывающем коде.
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllActive() {
+        return findAllActiveVerified();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllVerified() {
+        return findAllActiveVerified();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllForNotifications() {
+        return findAllActiveVerified();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllActiveUsers() {
+        return findAllActiveVerified();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllVerifiedUsers() {
+        return findAllActiveVerified();
     }
 
     private static String normalize(String email) {
