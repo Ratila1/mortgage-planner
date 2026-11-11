@@ -42,6 +42,9 @@ public final class TestContainersEnvironment {
     public static final GenericContainer<?> MAILPIT =
             new GenericContainer<>(DockerImageName.parse("axllent/mailpit:latest"))
                     .withExposedPorts(1025, 8025)
+                    // Mailpit по умолчанию делает reverse DNS клиента SMTP: в Docker это
+                    // ~10 c таймаута перед приветствием на каждое соединение.
+                    .withEnv("MP_SMTP_DISABLE_RDNS", "true")
                     .waitingFor(Wait.forHttp("/api/v1/messages")
                             .forPort(8025)
                             .withStartupTimeout(Duration.ofMinutes(1)));
