@@ -3,8 +3,8 @@
 ## Общее
 
 - Ветка: `backend_java25` (база — `dev`, коммит `eeaa5a3`).
-- Последние коммиты: `1bb570b` — расчётное ядро; `263802b` — Money.MC; `cb3bca2` — REST API + MongoDB; `a505420b` — Redis-кэш; `4a3b93b` — rate limit; `681f408` — user module + V2; `9b9a74f` — регистрация + verify-email; `fb4448c` — RabbitMQ mail pipeline.
-- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн завершены. `POST /api/calc/stress` не начат.
+- Последние коммиты: `1bb570b` — расчётное ядро; `263802b` — Money.MC; `cb3bca2` — REST API + MongoDB; `a505420b` — Redis-кэш; `4a3b93b` — rate limit; `681f408` — user module + V2; `9b9a74f` — регистрация + verify-email; `fb4448c` — RabbitMQ mail pipeline; `4a41e5f` — TokenService (HS256 JWT); `4d20205` — RefreshTokenService (Redis); `1a6f46a` — login/refresh/logout; `f01caff` — SecurityConfig JWT resource server; `62311ca` — GET /api/me.
+- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн + **локальный логин, JWT, refresh, logout, GET /api/me и защита роутов** завершены. `POST /api/calc/stress` не начат.
 
 ## Выполненная работа
 
@@ -75,24 +75,58 @@
 - Consumer (`notification.MailSendConsumer`, `@RabbitListener("mail.send.q")`): JavaMailSender (Mailpit localhost:1025 локально); **идемпотентность по eventId** — Redis SET NX `mail:processed:{eventId}` TTL 72 ч до отправки; при сбое отправки claim снимается и исключение прокидывается (retry/DLQ), повторная доставка снова пробует отправить.
 - Конфиг: `MAIL_HOST`/`MAIL_PORT` (дефолты localhost:1025 = Mailpit), `MAIL_USERNAME`/`MAIL_PASSWORD` (без дефолтов в yml, секреты только env), `APP_MAIL_FROM`. `.env` в `.gitignore`.
 
+### Коммит `4a41e5f` — TokenService: HS256 access JWT (§7)
+
+- `auth.service.TokenService`: генерация HS256 JWT (`com.nimbusds`), subject = userId (UUID-строка), `iat`/`exp` = now + TTL 15 мин; `validate(token)` — подпись + срок → userId, иначе `InvalidAccessTokenException`. Также `sha256Hex(String)` — SHA-256 hex (для Redis-ключей refresh). Access-токен нигде не хранится (ни PostgreSQL, ни Redis) — только в ответе API.
+- `auth.service.JwtProperties` (`@ConfigurationProperties("app.jwt")`): `secret`/`accessTtl`/`refreshTtl`; компактный конструктор **fail-fast**: приложение не стартует, если секрет пустой или короче 32 символов (256 бит для HS256) или TTL неположительный. `application.yml`: dev-дефолт секрета **удалён** — `app.jwt.secret: ${JWT_SECRET:}`; регистрация `JwtPropertiesConfig` (`config`). В тестах секрет задается через свойства/параметры конструктора.
+- `common.ClockConfig`: бин `Clock.systemUTC()` (время UTC §9), подставляется в тестах фиксированным.
+- Тесты: `TokenServiceTest` 6 (round-trip, HS256+exp, чужая подпись, мусор, истёкший, sha256), `JwtPropertiesTest` 6 (fail-fast).
+
+### Коммит `4d20205` — RefreshTokenService: opaque refresh в Redis (§6.3/§7)
+
+- `auth.service.RefreshTokenStore` (StringRedisTemplate): ключ **`refresh:{userId}:{sha256(token)}`** → метаданные (строка `createdAt|issuedIp`, JSON не использован — без сериализационных зависимостей), **TTL 30 дн**. Сам opaque-токен нигде не хранится — только SHA-256 в имени ключа; повреждённое значение читается как `Optional.empty`.
+- `auth.service.RefreshTokenService`: токен 32 байта base64url (43 симв., **не JWT**); `issue(userId, ip)`; `rotate(cookieValue, ip)` — read → **delete старого** → issue нового (ротация при каждом refresh); `revoke(cookieValue)` — logout, идемпотентно. Cookie-значение = **`{userId}.{opaqueToken}`** (userId нужен для ключа Redis — opaque-токен сам пользователя не определяет). `InvalidRefreshTokenException` для мусора/неизвестного токена, одинаковая для всех причин.
+- `IssuedRefreshToken` (userId, token, cookieValue, expiresAt), `RefreshTokenMetadata` (createdAt, issuedIp).
+- Тесты: `RefreshTokenStoreTest` 6 (формат ключа+TTL, токен не в значении, read/delete, corrupted), `RefreshTokenServiceTest` 5 (opaque≠JWT, ротация, старый невалиден, мусор в cookie, revoke).
+
+### Коммит `1a6f46a` — логин / refresh / logout + ProblemDetail-коды (§7/§9)
+
+- `auth.service.AuthService`: `login(email, password, ip)` — email trim+lowercase; **неизвестный email и неверный пароль → одна и та же `InvalidCredentialsException`** (существование email не раскрывается; OAuth-пользователь без password_hash — тоже она); пароль проверяется первым, затем `email_verified=false` → `EmailNotVerifiedException` (403). `refresh(cookieValue, ip)` — ротация через RefreshTokenService; `logout(cookieValue)` — отзыв, без cookie идемпотентен. Пароли — реальный `DelegatingPasswordEncoder` (bcrypt), в unit-тестах тоже.
+- `AuthController` (+): `POST /api/auth/login` → 200 `{accessToken, tokenType:"Bearer", expiresIn:900}` + `Set-Cookie: refresh_token=...`; `POST /api/auth/refresh` → 200 + новый Set-Cookie (ротация); `POST /api/auth/logout` → 204 + cookie с `Max-Age=0`. Cookie (§7): HttpOnly, **SameSite=Lax, Path=/api/auth**, `Secure` только при `request.isSecure()`. **POST /api/auth/logout-all НЕ добавлен** (нет в контракте). IP клиента — `request.getRemoteAddr()` (forward-headers, как в rate limit).
+- `ErrorCode` + `INVALID_CREDENTIALS` (401), `EMAIL_NOT_VERIFIED` (403), `INVALID_REFRESH_TOKEN` (401), `UNAUTHORIZED`, `FORBIDDEN`; `GlobalExceptionHandler` (+3 маппинга).
+- Тесты: `AuthServiceTest` 10 (успешный логин, нормализация email, неизвестный email, неверный пароль, **одинаковая ошибка** для обоих, неподтверждённый email, OAuth-без-пароля, refresh-ротация, refresh без cookie, logout), `AuthControllerTest` 7→17 (+login/refresh/logout, cookie-флаги, Secure при https, коды ошибок).
+
+### Коммит `f01caff` — SecurityConfig: JWT resource server (§7)
+
+- Stateless (`SessionCreationPolicy.STATELESS`), CSRF off (как раньше); `oauth2ResourceServer().jwt()` — Nimbus, `JwtDecoder` = HS256 `SecretKeySpec` из `JwtProperties.secret` (тот же секрет, что TokenService). Ошибки 401/403 — **ProblemDetail (RFC 7807) с code**, пишутся напрямую (константные строки, без ObjectMapper — Boot 4 автоконфигурирует Jackson 3, см. открытый вопрос №8): `ProblemEntryPoint` (401 `UNAUTHORIZED`), `ProblemAccessDeniedHandler` (403 `FORBIDDEN`), а также как **failure-handler ресурсного сервера** (невалидный JWT иначе отдавал 401 с пустым телом).
+- Публичные: `/api/calc/**`, `/api/offers`, `/api/auth/**`, `/actuator/health/**`; `/api/admin/**` — `hasRole("ADMIN")`; остальное — authenticated, **включая `/actuator/prometheus`** (решение владельца: ранее был открытым, закрыт по требованию §7).
+- Тесты: `SecurityConfigTest` 6 через `WebApplicationContextRunner` (реальная SecurityFilterChain, JWT через постпроцессор spring-security-test; «прошёл security» = 404, контроллеров в срезе нет): 401 без JWT + code, 403 не-ADMIN на `/api/admin/**` + code, 404 для ADMIN, валидный JWT открывает защищённый роут, публичные роуты, prometheus 401.
+
+### Коммит `62311ca` — GET /api/me (§9)
+
+- `user.web.UserController` (`GET /api/me`, только authenticated): subject JWT → userId → `UserService.findById` → `MeResponse{id, email, emailVerified, roles[]}`. **password_hash / provider / provider_id наружу не идут**. Пользователя с валидным токеном нет (удалён) → `user.UserNotFoundException` → 401 `UNAUTHORIZED` (маппинг в `GlobalExceptionHandler`).
+- Тесты: `UserControllerTest` 5 — @WebMvcTest с **реальной** security-цепочкой (`@Import(SecurityConfig, JwtPropertiesConfig)`, фильтры включены, JWT генерирует TokenService тем же секретом): валидный JWT → все поля + отсутствие внутренних; без JWT → 401; подделанный JWT → 401; subject без пользователя → 401; роль USER проходит (требуется лишь authenticated).
+
 ## Проверки
 
-- `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, 96 тестов, 0 падений: 51 прежних + 45 новых:
-  - rate limit: `RateLimiterTest` 5, `RateLimitFilterTest` 6;
-  - user: `UserServiceTest` 3;
-  - auth: `RegisterServiceTest` 3, `VerificationServiceTest` 5, `VerificationTokenStoreTest` 4, `RegistrationAfterCommitTest` 2 (событие AFTER_COMMIT: доставляется после commit, не доставляется при откате — через ApplicationContextRunner со stub PlatformTransactionManager), `AuthControllerTest` (@WebMvcTest) 7;
-  - mail: `VerificationEmailMailBridgeTest` 2, `MailSendConsumerTest` 4, `RabbitMailConfigTest` 3 (топология DLX/DLQ без брокера + retry-свойства из настоящего application.yml через Binder);
-  - `GlobalExceptionHandlerTest` +1 (VERIFY_TOKEN_INVALID).
+- `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
+  - JWT: `TokenServiceTest` 6, `JwtPropertiesTest` 6;
+  - refresh: `RefreshTokenStoreTest` 6, `RefreshTokenServiceTest` 5;
+  - логин: `AuthServiceTest` 10, `AuthControllerTest` 17 (+7 новых);
+  - security: `SecurityConfigTest` 6;
+  - /api/me: `UserControllerTest` 5.
 - Testcontainers по-прежнему не используются (решение зафиксировано).
-- Чистота calculator: не тронут. Контракт POST/GET /api/calc, DTO, кэш — не изменялись.
-- `gradlew bootJar` — BUILD SUCCESSFUL.
+- Чистота calculator: не тронут. Контракт POST/GET /api/calc, DTO, кэш, rate limit, mail-пайплайн — не изменялись.
+- `gradlew bootJar` — BUILD SUCCESSFUL (до этого этапа; после — не перезапускался).
 
 ## Ограничения и дисциплина
 
-- Реализация коммитов 1–2 НЕ считается независимо проверенной — ревью кода не завершено. Коммиты rate limit / user / auth / mail — тем более.
-- `frontend/nginx.conf` (`~ ^/(api|oauth2|login/oauth2)/`) и vite-прокси `/api` уже покрывают `/api/auth/**` — изменений не потребовалось.
-- Границы соблюдены: НЕ реализованы логин, JWT, refresh, logout, `/api/me`, защита роутов, OAuth; offers, scenarios, notifications (в БД), PDF. Testcontainers не добавлены. `calculator/` и контракт /api/calc не менялись.
-- Rate limit: пока нет аутентификации, все запросы лимитируются по IP (30/мин); ветка 120/мин активируется автоматически с появлением Authentication.
+- Реализация коммитов 1–2 НЕ считается независимо проверенной — ревью кода не завершено. Коммиты rate limit / user / auth / mail / JWT-этапа — тем более.
+- `frontend/nginx.conf` (`~ ^/(api|oauth2|login/oauth2)/`) и vite-прокси `/api` уже покрывают `/api/auth/**` и `/api/me` — изменений не потребовалось.
+- Границы соблюдены: НЕ реализованы OAuth Google/GitHub, offers, scenarios, notifications (в БД), PDF, первый ADMIN. **logout-all не добавлен** (нет в API-контракте). Testcontainers не добавлены. `calculator/`, контракт /api/calc, rate limit, mail-пайплайн не менялись.
+- Rate limit: с появлением JWT-аутентификации ветка 120/мин по userId заработала автоматически (ключ `ratelimit:calc:{userId}`); изменений кода не потребовалось.
+- JWT_SECRET: dev-дефолт из application.yml удалён, `JwtProperties` fail-fast (пустой/короткий секрет — приложение не стартует). Локальный запуск требует `JWT_SECRET` (минимум 32 символа) в env.
+- Access JWT хранится только у клиента (§7, в памяти фронта); refresh — только SHA-256 в Redis.
 - Claim-идемпотентность consumer — Redis SET NX до отправки; возможен окно гонки «claim взят, процесс умер» → повтор будет пропущен, письмо потеряется до исчерпания TTL 72 ч (приемлемо для этапа; альтернатива — outbox).
 - Тест AFTER_COMMIT использует stub `PlatformTransactionManager` (реальный Spring-механизм синхронизаций, без БД); интеграционный тест с настоящей PG-транзакцией — кандидат на Testcontainers позже.
 
@@ -104,8 +138,11 @@
 4. **Ответ register скрывает существование email** (требование «не раскрывай»): 202 generic даже для занятого адреса. Если когда-нибудь понадобится 409 EMAIL_TAKEN — это осознанное раскрытие, решение за владельцем контракта.
 5. **`mail:processed:{eventId}`** — расширение таблицы ключей §6.3 (хранилище идемпотентности consumer). TTL 72 ч — при повторной доставке позже 72 ч письмо уйдёт повторно; для verification-писем ок, для критичных дубль-защит нужен долговременный стор.
 6. **Письмо-подтверждение отправляется в plain text** (SimpleMailMessage). MIME/HTML-шаблоны и локализация — отдельная задача.
-7. Первый ADMIN (`APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD` при старте, §6.1) ещё не реализован — сейчас в БД нет ни одного админа; понадобится до реализации offers-админки.
+7. **Первый ADMIN ещё не реализован** (`APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD` при старте, §6.1) — сейчас в БД нет ни одного админа; до этого `/api/admin/**` фактически никому не доступен (JWT не несёт ролей, authorities пустые). После создания админа понадобится проброс ролей в JWT (`roles` claim + `JwtAuthenticationConverter`) — решение за следующим этапом.
+8. **★ Найдена скрытая проблема (вне задачи, не трогал):** `RateLimitConfig`/`RateLimitFilter` инжектят `com.fasterxml.jackson.databind.ObjectMapper`, но Boot 4 автоконфигурирует **Jackson 3** (`tools.jackson.databind.ObjectMapper`); автоконфигурации Jackson 2 в classpath нет (`spring-boot-jackson2` отсутствует). Сильной вероятности полный контекст не стартует (`NoSuchBeanDefinitionException` при bootRun). Полный контекст тестами не проверялся (нет @SpringBootTest/Testcontainers). Варианты: перевести RateLimit* на `tools.jackson`, либо писать JSON вручную (как сделано в SecurityConfig). Требует решения владельца.
+9. **Cookie `{userId}.{opaqueToken}`** — userId в cookie открытым текстом (это не секрет: subject JWT и так виден). Если захотите скрыть — понадобится lookup-ключ (например, индекс `refresh:cookie:{sha256(cookie)} → userId`), решение за владельцем контракта.
+10. **Метаданные refresh — строка `createdAt|issuedIp`** (без JSON): компактно, но расширение формата (userAgent и т.п.) потребует миграции живых ключей; TTL 30 дн сам «мигрирует» записи за месяц.
 
 ## Следующий этап
 
-`POST /api/calc/stress` (остаток коммита 3). Rate limit реализован. Далее по дорожной карте: логин/JWT/refresh/logout, `userId` в расчётах, первый ADMIN. Начинать только после подтверждения.
+По дорожной карте: `POST /api/calc/stress` (остаток коммита 3), **userId в расчётах** (теперь есть аутентификация: анонимные расчёты с TTL 7 дней, пользовательские — бессрочно, `CalculationDocument.userId` уже в схеме), первый ADMIN (`APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD`, roles claim в JWT). Затем offers/scenarios/notifications/PDF. Начинать только после подтверждения.
