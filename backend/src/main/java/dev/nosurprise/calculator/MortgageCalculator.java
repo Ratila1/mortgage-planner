@@ -3,7 +3,6 @@ package dev.nosurprise.calculator;
 import dev.nosurprise.common.Money;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +13,7 @@ import java.util.TreeMap;
  * <p>
  * Правила:
  * <ul>
- *   <li>деньги только BigDecimal; каждое деление — с явными scale и RoundingMode.HALF_UP;</li>
+ *   <li>деньги только BigDecimal; промежуточные деления — в Money.MC (20 цифр, HALF_EVEN);</li>
  *   <li>проценты месяца округляются до копеек (HALF_UP) и уже округлённые входят в остаток;</li>
  *   <li>последняя строка графика гасит остаток полностью — remaining становится ровно 0.00;</li>
  *   <li>досрочные погашения применяются после планового платежа того же месяца и ограничены остатком;</li>
@@ -23,8 +22,6 @@ import java.util.TreeMap;
  */
 public class MortgageCalculator {
 
-    /** scale промежуточных делений (месячная ставка, платёж и основной долг до округления в копейки). */
-    private static final int DIVISION_SCALE = 12;
     /** годовая ставка % → месячная доля: annualRate / 100 / 12 = annualRate / 1200. */
     private static final BigDecimal RATE_DIVISOR = new BigDecimal("1200");
     private static final BigDecimal ZERO_MONEY = new BigDecimal("0.00");
@@ -49,7 +46,7 @@ public class MortgageCalculator {
     }
 
     private CalculationResult compute(BigDecimal loanAmount, LoanParams params) {
-        BigDecimal monthlyRate = params.annualRate().divide(RATE_DIVISOR, DIVISION_SCALE, RoundingMode.HALF_UP);
+        BigDecimal monthlyRate = params.annualRate().divide(RATE_DIVISOR, Money.MC);
         int termMonths = params.termMonths();
         boolean annuity = params.type() == PaymentType.ANNUITY;
         Map<Integer, List<EarlyRepayment>> earlyByMonth = expandEarlyRepayments(params.earlyRepayments(), termMonths);
@@ -58,7 +55,7 @@ public class MortgageCalculator {
         BigDecimal plannedPayment = annuity ? annuityPayment(balance, monthlyRate, termMonths) : null;
         BigDecimal fixedPrincipal = annuity
                 ? null
-                : Money.round(balance.divide(BigDecimal.valueOf(termMonths), DIVISION_SCALE, RoundingMode.HALF_UP));
+                : Money.round(balance.divide(BigDecimal.valueOf(termMonths), Money.MC));
 
         List<ScheduleRow> schedule = new ArrayList<>();
         BigDecimal totalPaid = BigDecimal.ZERO;
@@ -106,7 +103,7 @@ public class MortgageCalculator {
                             } else {
                                 // Основной долг: остаток / оставшиеся месяцы.
                                 fixedPrincipal = Money.round(
-                                        balance.divide(BigDecimal.valueOf(remainingMonths), DIVISION_SCALE, RoundingMode.HALF_UP));
+                                        balance.divide(BigDecimal.valueOf(remainingMonths), Money.MC));
                             }
                         }
                     }
@@ -144,12 +141,12 @@ public class MortgageCalculator {
     /** Аннуитетный платёж: S·r / (1 − (1+r)^(−n)) ≡ S·r·(1+r)^n / ((1+r)^n − 1); при r = 0 → S / n. */
     private BigDecimal annuityPayment(BigDecimal balance, BigDecimal monthlyRate, int months) {
         if (monthlyRate.signum() == 0) {
-            return Money.round(balance.divide(BigDecimal.valueOf(months), DIVISION_SCALE, RoundingMode.HALF_UP));
+            return Money.round(balance.divide(BigDecimal.valueOf(months), Money.MC));
         }
         BigDecimal growth = BigDecimal.ONE.add(monthlyRate).pow(months);
         BigDecimal numerator = balance.multiply(monthlyRate).multiply(growth);
         BigDecimal denominator = growth.subtract(BigDecimal.ONE);
-        return Money.round(numerator.divide(denominator, DIVISION_SCALE, RoundingMode.HALF_UP));
+        return Money.round(numerator.divide(denominator, Money.MC));
     }
 
     /** Раскидывает погашения по месяцам: REGULAR разворачивается в startMonth, startMonth+everyMonths, ... */
