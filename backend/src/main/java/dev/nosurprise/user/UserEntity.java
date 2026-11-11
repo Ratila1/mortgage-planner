@@ -6,6 +6,7 @@ import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -47,7 +48,9 @@ public class UserEntity {
 
     private Instant createdAt;
 
-    @ElementCollection
+    // EAGER: роли нужны вне транзакции (login/refresh/OTP/OAuth, GET /api/me, MeResponse).
+    // При LAZY коллекция после закрытия сессии даёт LazyInitializationException → 500.
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
