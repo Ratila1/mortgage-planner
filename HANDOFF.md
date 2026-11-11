@@ -4,7 +4,7 @@
 
 - Ветка: `backend_java25` (база — `dev`, коммит `eeaa5a3`).
 - Последние коммиты: `1bb570b` — расчётное ядро; `263802b` — Money.MC; `cb3bca2` — REST API + MongoDB; `a505420b` — Redis-кэш; `4a3b93b` — rate limit; `681f408` — user module + V2; `9b9a74f` — регистрация + verify-email; `fb4448c` — RabbitMQ mail pipeline; `4a41e5f` — TokenService (HS256 JWT); `4d20205` — RefreshTokenService (Redis); `1a6f46a` — login/refresh/logout; `f01caff` — SecurityConfig JWT resource server; `62311ca` — GET /api/me.
-- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн + **локальный логин, JWT, refresh, logout, GET /api/me и защита роутов** завершены. `POST /api/calc/stress` не начат.
+- Статус: коммиты 1–3 (расчётное ядро, REST API, Redis-кэш) + rate limit + users + регистрация/подтверждение email + mail-пайплайн + **локальный логин, JWT, refresh, logout, GET /api/me и защита роутов** завершены. **Stress-расчёт, userId в расчётах и Notifications API** завершены.
 
 ## Выполненная работа
 
@@ -143,6 +143,13 @@
 - Доступ только владельцу сценария; чужой/несуществующий → 404 `SCENARIO_NOT_FOUND`; PDF не готов → 404 `PDF_NOT_READY`; метаданные есть, файла нет → 404 `PDF_NOT_FOUND`.
 - PDF содержит заголовок, дату, параметры, результаты, график и данные сценария/offer; деньги в читаемом формате.
 
+### Stress, userId в расчётах и Notifications API
+
+- `POST /api/calc/stress`: публичный, rate limit применяется, использует `MortgageCalculator`, не сохраняет расчёт в Mongo и не участвует в `paramsHash`-кэше. Вход: базовые параметры + `delta` или `deltas`; ответ `[{delta, monthlyPayment, overpayment}]`.
+- `POST /api/calc`: userId определяется из JWT subject; анонимный расчёт сохраняется с `userId=null`, `expireAt=now+7d`; авторизованный — с `userId`, `expireAt=null`. `paramsHash` и Redis-ключ `calc:{paramsHash}` не меняются.
+- Индекс `(userId, createdAt desc)` для коллекции `calculations` уже создаётся в `CalculationIndexes`.
+- Notifications API: `GET /api/notifications` (только свои, `created_at desc`, максимум 100), `POST /api/notifications/{id}/read` (только владелец, идемпотентно, 204; чужой/несуществующий → 404 `NOTIFICATION_NOT_FOUND`).
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
@@ -181,4 +188,10 @@
 
 ## Следующий этап
 
-По дорожной карте: `POST /api/calc/stress` (остаток коммита 3), **userId в расчётах** (теперь есть аутентификация: анонимные расчёты с TTL 7 дней, пользовательские — бессрочно, `CalculationDocument.userId` уже в схеме), первый ADMIN (`APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD`, roles claim в JWT). Затем offers/scenarios/notifications/PDF. Начинать только после подтверждения.
+Обязательные пункты INSTRUCTION.md, реализованные в рамках текущей задачи: stress-расчёт, userId в расчётах, Notifications API, модель/индексы истории. Оставшиеся пункты:
+- OTP login (`/api/auth/otp/request`, `/api/auth/otp/verify`) — пометка (★), не реализован.
+- Consumer `scenario.recalc.q` для `offer.rate.changed` и пересчёт затронутых сценариев — не реализован.
+- Consumer `notification.q` для `scenario.recalculated` — не реализован, так как пересчёт сценариев не реализован.
+- `logout-all` не входит в контракт §9, не добавляется.
+- История расчётов как endpoint не описана в §9; реализованы только модель и индексы.
+- Testcontainers не используются по зафиксированному решению.
