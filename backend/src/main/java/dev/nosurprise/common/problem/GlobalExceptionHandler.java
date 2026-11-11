@@ -11,6 +11,7 @@ import dev.nosurprise.scenario.InvalidOfferException;
 import dev.nosurprise.scenario.InvalidRequestException;
 import dev.nosurprise.pdf.PdfNotFoundException;
 import dev.nosurprise.pdf.PdfNotReadyException;
+import dev.nosurprise.notification.NotificationNotFoundException;
 import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -69,6 +70,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ScenarioNotFoundException.class)
     ProblemDetail onScenarioNotFound(ScenarioNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.SCENARIO_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    ProblemDetail onNotificationNotFound(NotificationNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.NOTIFICATION_NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(PdfNotReadyException.class)

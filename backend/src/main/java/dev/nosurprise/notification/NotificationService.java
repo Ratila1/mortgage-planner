@@ -1,11 +1,13 @@
 package dev.nosurprise.notification;
 
+import dev.nosurprise.notification.web.dto.NotificationResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +22,36 @@ public class NotificationService {
     public NotificationService(NotificationRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+    }
+
+    @Transactional(readOnly = true)
+    public List<NotificationResponse> list(UUID userId) {
+        // Alias-free public method; keep name stable for controllers/tests.
+        return repository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+                .limit(100)
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional
+    public void markRead(UUID userId, UUID notificationId) {
+        Notification notification = repository.findByIdAndUserId(notificationId, userId)
+                .orElseThrow(() -> new NotificationNotFoundException("notification not found: " + notificationId));
+        if (!notification.isRead()) {
+            notification.setRead(true);
+            repository.save(notification);
+        }
+    }
+
+    private NotificationResponse toResponse(Notification notification) {
+        tools.jackson.databind.JsonNode payload;
+        try {
+            payload = objectMapper.readTree(notification.getPayload());
+        } catch (RuntimeException ex) {
+            payload = null;
+        }
+        return new NotificationResponse(notification.getId(), notification.getType(), payload,
+                notification.isRead(), notification.getCreatedAt());
     }
 
     @Transactional
