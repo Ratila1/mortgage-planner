@@ -1,92 +1,129 @@
-name: nosurprise
+version: '3.8'
 
 services:
   postgres:
     image: postgres:17-alpine
+    container_name: mortgage-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-nosurprise}
-      POSTGRES_USER: ${POSTGRES_USER:-nosurprise}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
-    ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+      POSTGRES_DB: mortgage
+      POSTGRES_USER: mortgage
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mortgage}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  mongo:
-    image: mongo:8
-    ports: ["27017:27017"]
-    volumes: [mongodata:/data/db]
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U mortgage -d mortgage"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
+
+  mongodb:
+    image: mongo:7-jammy
+    container_name: mortgage-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: mortgage
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    container_name: mortgage-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
+    container_name: mortgage-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
-    ports: ["5672:5672", "15672:15672"]
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
       interval: 10s
-      timeout: 5s
-      retries: 10
+      timeout: 10s
+      retries: 5
 
-  mailpit:   # локальный SMTP + веб-интерфейс для писем подтверждения
-    image: axllent/mailpit:latest
-    ports: ["1025:1025", "8025:8025"]
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mortgage-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    # SMTP on 1025, Web UI on 8025
 
-  backend:
-    build: ./backend
-    depends_on:
-      postgres: { condition: service_healthy }
-      mongo: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      rabbitmq: { condition: service_healthy }
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mortgage-app
     environment:
-      POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-nosurprise}
-      POSTGRES_USER: ${POSTGRES_USER:-nosurprise}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
-      MONGODB_URI: mongodb://mongo:27017/nosurprise
-      REDIS_HOST: redis
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      MAIL_HOST: mailpit
-      JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-    expose: ["8080"]   # наружу бэк не торчит, вход только через frontend (nginx)
-
-  frontend:
-    build: ./frontend
-    depends_on: [backend]
-    ports: ["8080:80"]   # единая точка входа: фронт + /api + /oauth2
-
-  cloudflared:   # docker compose --profile tunnel up
-    image: cloudflare/cloudflared:latest
-    profiles: ["tunnel"]
-    command: tunnel --no-autoupdate --url http://frontend:80
-    depends_on: [frontend]
+      - DB_URL=r2dbc:postgresql://postgres:5432/mortgage
+      - DB_URL_JDBC=jdbc:postgresql://postgres:5432/mortgage
+      - DB_USER=mortgage
+      - DB_PASSWORD=${DB_PASSWORD:-mortgage}
+      - MONGO_URL=mongodb://mongodb:27017/mortgage
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+      - SMTP_USER=
+      - SMTP_PASSWORD=
+      - JWT_SECRET=${JWT_SECRET}
+      - OAUTH2_GOOGLE_CLIENT_ID=${OAUTH2_GOOGLE_CLIENT_ID:-}
+      - OAUTH2_GOOGLE_CLIENT_SECRET=${OAUTH2_GOOGLE_CLIENT_SECRET:-}
+      - OAUTH2_GITHUB_CLIENT_ID=${OAUTH2_GITHUB_CLIENT_ID:-}
+      - OAUTH2_GITHUB_CLIENT_SECRET=${OAUTH2_GITHUB_CLIENT_SECRET:-}
+      - APP_BASE_URL=http://localhost:8080
+      - SPRING_PROFILES_ACTIVE=docker
+      - PDF_STORAGE_PATH=/app/pdf-exports
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    volumes:
+      - pdf_exports:/app/pdf-exports
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  pgdata:
-  mongodata:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+  pdf_exports:

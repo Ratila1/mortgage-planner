@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: mortgage-service-test
+
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/mortgage_test
+    username: mortgage
+    password: mortgage
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/mortgage_test
+    redis:
+      url: redis://localhost:6379
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+  mail:
+    host: localhost
+    port: 1025
+
+jwt:
+  secret: test-secret-key-for-testing-purposes-only-must-be-32-chars-minimum
+  access-token-ttl-minutes: 15
+  refresh-token-ttl-days: 30
+
+app:
+  base-url: http://localhost:8080
+
+ratelimit:
+  calculator:
+    requests-per-minute: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
