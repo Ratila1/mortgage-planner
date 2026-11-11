@@ -9,4 +9,6 @@ public interface ScenarioRepository extends JpaRepository<Scenario, UUID> {
     List<Scenario> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
 
     List<Scenario> findAllByIdInAndUserId(List<UUID> ids, UUID userId);
+
+    java.util.Optional<Scenario> findByIdAndUserId(UUID id, UUID userId);
 }

@@ -9,6 +9,8 @@ import dev.nosurprise.calc.service.CalcNotFoundException;
 import dev.nosurprise.offer.OfferNotFoundException;
 import dev.nosurprise.scenario.InvalidOfferException;
 import dev.nosurprise.scenario.InvalidRequestException;
+import dev.nosurprise.pdf.PdfNotFoundException;
+import dev.nosurprise.pdf.PdfNotReadyException;
 import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -67,6 +69,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ScenarioNotFoundException.class)
     ProblemDetail onScenarioNotFound(ScenarioNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.SCENARIO_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(PdfNotReadyException.class)
+    ProblemDetail onPdfNotReady(PdfNotReadyException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.PDF_NOT_READY, ex.getMessage());
+    }
+
+    @ExceptionHandler(PdfNotFoundException.class)
+    ProblemDetail onPdfNotFound(PdfNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.PDF_NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(InvalidOfferException.class)

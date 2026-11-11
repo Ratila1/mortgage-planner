@@ -4,14 +4,18 @@ import dev.nosurprise.calc.service.CalculatorService;
 import dev.nosurprise.calc.web.dto.CalcRequest;
 import dev.nosurprise.calc.web.dto.CalcResponse;
 import dev.nosurprise.offer.OfferService;
+import dev.nosurprise.pdf.event.ExportPdfRequested;
 import dev.nosurprise.scenario.web.dto.CreateScenarioRequest;
 import dev.nosurprise.scenario.web.dto.ScenarioResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -21,13 +25,21 @@ public class ScenarioService {
     private final CalculatorService calculatorService;
     private final OfferService offerService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ScenarioService(ScenarioRepository repository, CalculatorService calculatorService,
                            OfferService offerService, ObjectMapper objectMapper) {
+        this(repository, calculatorService, offerService, objectMapper, null);
+    }
+
+    public ScenarioService(ScenarioRepository repository, CalculatorService calculatorService,
+                           OfferService offerService, ObjectMapper objectMapper,
+                           ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.calculatorService = calculatorService;
         this.offerService = offerService;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -94,6 +106,34 @@ public class ScenarioService {
             throw new ScenarioNotFoundException("scenario not found");
         }
         return scenarios.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Scenario findOwnedScenario(UUID userId, UUID scenarioId) {
+        Scenario scenario = repository.findById(scenarioId)
+                .orElseThrow(() -> new ScenarioNotFoundException("scenario not found: " + scenarioId));
+        if (!scenario.getUserId().equals(userId)) {
+            throw new ScenarioNotFoundException("scenario not found: " + scenarioId);
+        }
+        return scenario;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Scenario> findByIdAndUserId(UUID scenarioId, UUID userId) {
+        try {
+            return Optional.of(findOwnedScenario(userId, scenarioId));
+        } catch (ScenarioNotFoundException ex) {
+            return Optional.empty();
+        }
+    }
+
+    @Transactional
+    public void requestExport(UUID userId, UUID scenarioId) {
+        Scenario scenario = findOwnedScenario(userId, scenarioId);
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new ExportPdfRequested(
+                    UUID.randomUUID(), Instant.now(), scenario.getId(), scenario.getCalcId(), userId));
+        }
     }
 
     private ScenarioResponse toResponse(Scenario scenario) {
