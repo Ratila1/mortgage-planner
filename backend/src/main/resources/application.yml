@@ -53,7 +53,7 @@ app:
       authenticated-per-minute: 120 # пользователь: 120 запросов/мин (§6.3)
       window: 60s
   jwt:
-    secret: ${JWT_SECRET:change-me-change-me-change-me-change-me}
+    secret: ${JWT_SECRET:}   # секрет только из env, без dev-дефолта (§7); fail-fast в JwtProperties
     access-ttl: 15m
     refresh-ttl: 30d
 
