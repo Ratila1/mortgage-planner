@@ -25,15 +25,28 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        default-requeue-rejected: false   # исчерпание retry → reject → DLX → DLQ (§8)
+        retry:
+          enabled: true
+          max-attempts: 3                  # 3 попытки
+          initial-interval: 1s             # паузы 1с, 2с, 4с (§8)
+          multiplier: 2
+          max-interval: 4s
   mail:
-    host: ${MAIL_HOST:localhost}
+    host: ${MAIL_HOST:localhost}           # локально Mailpit :1025
     port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}            # секреты только через env, в репозиторий не коммитить
+    password: ${MAIL_PASSWORD:}
 
 server:
   forward-headers-strategy: framework   # https-ссылки за nginx/Cloudflare
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  mail:
+    from: ${APP_MAIL_FROM:noreply@nosurprise.dev}
   ratelimit:
     calc:
       anonymous-per-minute: 30      # аноним: 30 запросов/мин на IP (§6.3)
