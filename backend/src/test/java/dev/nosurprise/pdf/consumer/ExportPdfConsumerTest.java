@@ -59,7 +59,7 @@ class ExportPdfConsumerTest {
         when(ops.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
 
         ScenarioExportData data = exportData();
-        when(scenarioService.getScenarioExportData(scenarioId, userId)).thenReturn(data);
+        when(scenarioService.getScenarioExportData(userId, scenarioId)).thenReturn(data);
         when(pdfService.generatePdf(data)).thenReturn(new byte[]{1, 2, 3});
         ObjectId fileId = new ObjectId();
         when(gridFsTemplate.store(any(), anyString(), anyString(), any())).thenReturn(fileId);
@@ -119,7 +119,7 @@ class ExportPdfConsumerTest {
         when(redis.opsForValue()).thenReturn(ops);
         when(ops.get("pdf:export:processed:" + eventId)).thenReturn(null);
         when(ops.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(scenarioService.getScenarioExportData(scenarioId, userId))
+        when(scenarioService.getScenarioExportData(userId, scenarioId))
                 .thenThrow(new dev.nosurprise.scenario.ScenarioNotFoundException("not found"));
 
         ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
@@ -144,7 +144,7 @@ class ExportPdfConsumerTest {
         when(ops.get("pdf:export:processed:" + eventId)).thenReturn(null);
 
         ScenarioExportData data = exportData();
-        when(scenarioService.getScenarioExportData(scenarioId, userId)).thenReturn(data);
+        when(scenarioService.getScenarioExportData(userId, scenarioId)).thenReturn(data);
         when(pdfService.generatePdf(data)).thenReturn(new byte[]{1, 2, 3});
         when(gridFsTemplate.store(any(), anyString(), anyString(), any())).thenThrow(new RuntimeException("gridfs down"));
 

@@ -49,8 +49,8 @@ public class ScenarioPdfController {
         Scenario scenario = scenarioService.findOwnedScenario(userId, id);
 
         com.mongodb.client.gridfs.model.GridFSFile file = gridFsTemplate.findOne(
-                Query.query(Criteria.where("metadata.scenarioId").is(scenario.getId())
-                        .and("metadata.userId").is(userId)));
+                Query.query(Criteria.where("metadata.scenarioId").is(scenario.getId().toString())
+                        .and("metadata.userId").is(userId.toString())));
 
         if (file == null) {
             throw new PdfNotReadyException("pdf not ready for scenario: " + id);
