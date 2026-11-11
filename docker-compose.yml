@@ -73,7 +73,7 @@ services:
 
   app:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: mortgage-app
     environment:

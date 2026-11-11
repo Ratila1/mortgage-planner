@@ -46,7 +46,7 @@
 ### Запуск через Docker Compose
 
 ```bash
-cd radkovich/radkovich-task-99
+cd backend
 docker compose up -d
 ```
 
@@ -85,7 +85,7 @@ APP_BASE_URL=http://localhost:8080
 
 ```bash
 # Из корня репозитория
-./gradlew :radkovich:radkovich-task-99:bootRun
+./gradlew bootRun
 ```
 
 ## API Endpoints
@@ -183,10 +183,10 @@ APP_BASE_URL=http://localhost:8080
 
 ```bash
 # Unit тесты
-./gradlew :radkovich:radkovich-task-99:test
+./gradlew test
 
 # Интеграционные тесты (требуют запущенного Docker)
-./gradlew :radkovich:radkovich-task-99:integrationTest
+./gradlew integrationTest
 ```
 
 ## Демонстрация работоспособности

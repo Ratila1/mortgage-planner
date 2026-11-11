@@ -162,7 +162,7 @@ management:
 
 logging:
   level:
-    com.bank.mortgage: DEBUG
+    dev.nosurprise: DEBUG
     org.springframework.security: DEBUG
     org.springframework.web.reactive: DEBUG
     reactor.netty: INFO
