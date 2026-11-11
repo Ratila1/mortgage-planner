@@ -68,7 +68,7 @@ public class PdfService {
 
     public void writePdf(CalculationDocument calculation, Scenario scenario, BankOffer offer, OutputStream out) {
         try {
-            BaseFont baseFont = BaseFont.createFont("/fonts/DejaVuSans.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
+            BaseFont baseFont = BaseFont.createFont("/fonts/Arial.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
             Font titleFont = new Font(baseFont, 16, Font.BOLD);
             Font normalFont = new Font(baseFont, 11);
             Font smallFont = new Font(baseFont, 9);
