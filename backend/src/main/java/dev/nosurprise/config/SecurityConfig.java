@@ -62,7 +62,11 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+            .oauth2ResourceServer(oauth2 -> oauth2
+                // невалидный JWT — не «отсутствие аутентификации», отдельный failure-handler ресурсного сервера
+                .authenticationEntryPoint(new ProblemEntryPoint())
+                .accessDeniedHandler(new ProblemAccessDeniedHandler())
+                .jwt(Customizer.withDefaults()))
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(new ProblemEntryPoint())
                 .accessDeniedHandler(new ProblemAccessDeniedHandler()));

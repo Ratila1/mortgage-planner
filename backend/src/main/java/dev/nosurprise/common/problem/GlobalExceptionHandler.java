@@ -6,6 +6,7 @@ import dev.nosurprise.auth.service.InvalidRefreshTokenException;
 import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.calculator.InvalidCalculationException;
 import dev.nosurprise.calc.service.CalcNotFoundException;
+import dev.nosurprise.user.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -72,6 +73,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidRefreshTokenException.class)
     ProblemDetail onInvalidRefreshToken(InvalidRefreshTokenException ex) {
         return problem(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_REFRESH_TOKEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    ProblemDetail onUserNotFound(UserNotFoundException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
