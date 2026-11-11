@@ -1,11 +1,12 @@
 package dev.nosurprise.pdf.consumer;
 
-import dev.nosurprise.calc.repository.CalculationDocument;
-import dev.nosurprise.calc.repository.CalculationRepository;
+import dev.nosurprise.calc.service.CalculationReadModel;
+import dev.nosurprise.calculator.LoanParams;
+import dev.nosurprise.calculator.LoanSummary;
 import dev.nosurprise.notification.NotificationService;
 import dev.nosurprise.pdf.PdfService;
 import dev.nosurprise.pdf.event.ExportPdfRequested;
-import dev.nosurprise.scenario.Scenario;
+import dev.nosurprise.scenario.ScenarioExportData;
 import dev.nosurprise.scenario.ScenarioService;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +16,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,11 +34,19 @@ class ExportPdfConsumerTest {
     private final UUID userId = UUID.randomUUID();
     private final String calcId = "calc-1";
 
+    private ScenarioExportData exportData() {
+        return new ScenarioExportData(scenarioId, userId, "Scenario",
+                new LoanParams(new java.math.BigDecimal("1000000"), new java.math.BigDecimal("100000"),
+                        12, new java.math.BigDecimal("12"), dev.nosurprise.calculator.PaymentType.ANNUITY, List.of()),
+                new LoanSummary(new java.math.BigDecimal("80000.00"), new java.math.BigDecimal("10000.00"),
+                        new java.math.BigDecimal("960000.00"), 12),
+                List.of(), calcId, Instant.now(), null);
+    }
+
     @Test
     @DisplayName("валидное событие генерирует PDF, сохраняет в GridFS и создаёт notification")
     void success() {
         ScenarioService scenarioService = mock(ScenarioService.class);
-        CalculationRepository calculationRepository = mock(CalculationRepository.class);
         PdfService pdfService = mock(PdfService.class);
         GridFsTemplate gridFsTemplate = mock(GridFsTemplate.class);
         NotificationService notificationService = mock(NotificationService.class);
@@ -49,20 +58,13 @@ class ExportPdfConsumerTest {
         when(ops.get("pdf:export:processed:" + eventId)).thenReturn(null);
         when(ops.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
 
-        Scenario scenario = mock(Scenario.class);
-        when(scenario.getId()).thenReturn(scenarioId);
-        when(scenarioService.findByIdAndUserId(scenarioId, userId)).thenReturn(Optional.of(scenario));
-
-        CalculationDocument calc = mock(CalculationDocument.class);
-        when(calc.id()).thenReturn(calcId);
-        when(calculationRepository.findById(calcId)).thenReturn(Optional.of(calc));
-
-        when(pdfService.generatePdf(calc, scenario)).thenReturn(new byte[]{1, 2, 3});
+        ScenarioExportData data = exportData();
+        when(scenarioService.getScenarioExportData(scenarioId, userId)).thenReturn(data);
+        when(pdfService.generatePdf(data)).thenReturn(new byte[]{1, 2, 3});
         ObjectId fileId = new ObjectId();
         when(gridFsTemplate.store(any(), anyString(), anyString(), any())).thenReturn(fileId);
 
-        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, calculationRepository, pdfService,
-                gridFsTemplate, notificationService, redis);
+        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
         consumer.on(new ExportPdfRequested(eventId, Instant.now(), scenarioId, calcId, userId));
 
         verify(gridFsTemplate).store(any(), anyString(), anyString(), any());
@@ -74,7 +76,6 @@ class ExportPdfConsumerTest {
     @DisplayName("повторный eventId полностью пропускается")
     void duplicateSkipped() {
         ScenarioService scenarioService = mock(ScenarioService.class);
-        CalculationRepository calculationRepository = mock(CalculationRepository.class);
         PdfService pdfService = mock(PdfService.class);
         GridFsTemplate gridFsTemplate = mock(GridFsTemplate.class);
         NotificationService notificationService = mock(NotificationService.class);
@@ -82,8 +83,7 @@ class ExportPdfConsumerTest {
 
         when(redis.hasKey("pdf:export:processed:" + eventId)).thenReturn(true);
 
-        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, calculationRepository, pdfService,
-                gridFsTemplate, notificationService, redis);
+        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
         consumer.on(new ExportPdfRequested(eventId, Instant.now(), scenarioId, calcId, userId));
 
         verify(gridFsTemplate, never()).store(any(), anyString(), anyString(), any());
@@ -94,14 +94,12 @@ class ExportPdfConsumerTest {
     @DisplayName("невалидное событие выбрасывает исключение")
     void invalidEventThrows() {
         ScenarioService scenarioService = mock(ScenarioService.class);
-        CalculationRepository calculationRepository = mock(CalculationRepository.class);
         PdfService pdfService = mock(PdfService.class);
         GridFsTemplate gridFsTemplate = mock(GridFsTemplate.class);
         NotificationService notificationService = mock(NotificationService.class);
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
 
-        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, calculationRepository, pdfService,
-                gridFsTemplate, notificationService, redis);
+        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
 
         assertThatThrownBy(() -> consumer.on(new ExportPdfRequested(null, Instant.now(), scenarioId, calcId, userId)))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -111,7 +109,6 @@ class ExportPdfConsumerTest {
     @DisplayName("отсутствующий сценарий отмечается обработанным")
     void missingScenarioMarked() {
         ScenarioService scenarioService = mock(ScenarioService.class);
-        CalculationRepository calculationRepository = mock(CalculationRepository.class);
         PdfService pdfService = mock(PdfService.class);
         GridFsTemplate gridFsTemplate = mock(GridFsTemplate.class);
         NotificationService notificationService = mock(NotificationService.class);
@@ -122,10 +119,10 @@ class ExportPdfConsumerTest {
         when(redis.opsForValue()).thenReturn(ops);
         when(ops.get("pdf:export:processed:" + eventId)).thenReturn(null);
         when(ops.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(scenarioService.findByIdAndUserId(scenarioId, userId)).thenReturn(Optional.empty());
+        when(scenarioService.getScenarioExportData(scenarioId, userId))
+                .thenThrow(new dev.nosurprise.scenario.ScenarioNotFoundException("not found"));
 
-        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, calculationRepository, pdfService,
-                gridFsTemplate, notificationService, redis);
+        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
         consumer.on(new ExportPdfRequested(eventId, Instant.now(), scenarioId, calcId, userId));
 
         verify(ops).setIfAbsent("pdf:export:processed:" + eventId, "1", java.time.Duration.ofDays(7));
@@ -136,7 +133,6 @@ class ExportPdfConsumerTest {
     @DisplayName("сбой сохранения не отмечает событие обработанным")
     void storageFailureDoesNotMark() {
         ScenarioService scenarioService = mock(ScenarioService.class);
-        CalculationRepository calculationRepository = mock(CalculationRepository.class);
         PdfService pdfService = mock(PdfService.class);
         GridFsTemplate gridFsTemplate = mock(GridFsTemplate.class);
         NotificationService notificationService = mock(NotificationService.class);
@@ -147,19 +143,12 @@ class ExportPdfConsumerTest {
         when(redis.opsForValue()).thenReturn(ops);
         when(ops.get("pdf:export:processed:" + eventId)).thenReturn(null);
 
-        Scenario scenario = mock(Scenario.class);
-        when(scenario.getId()).thenReturn(scenarioId);
-        when(scenarioService.findByIdAndUserId(scenarioId, userId)).thenReturn(Optional.of(scenario));
-
-        CalculationDocument calc = mock(CalculationDocument.class);
-        when(calc.id()).thenReturn(calcId);
-        when(calculationRepository.findById(calcId)).thenReturn(Optional.of(calc));
-
-        when(pdfService.generatePdf(calc, scenario)).thenReturn(new byte[]{1, 2, 3});
+        ScenarioExportData data = exportData();
+        when(scenarioService.getScenarioExportData(scenarioId, userId)).thenReturn(data);
+        when(pdfService.generatePdf(data)).thenReturn(new byte[]{1, 2, 3});
         when(gridFsTemplate.store(any(), anyString(), anyString(), any())).thenThrow(new RuntimeException("gridfs down"));
 
-        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, calculationRepository, pdfService,
-                gridFsTemplate, notificationService, redis);
+        ExportPdfConsumer consumer = new ExportPdfConsumer(scenarioService, pdfService, gridFsTemplate, notificationService, redis);
 
         assertThatThrownBy(() -> consumer.on(new ExportPdfRequested(eventId, Instant.now(), scenarioId, calcId, userId)))
                 .isInstanceOf(RuntimeException.class);
