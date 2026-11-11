@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.ColumnTransformer;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -24,7 +25,9 @@ public class Notification {
     @Column(nullable = false)
     private String type;
 
+    // jsonb: Hibernate биндит String как varchar, PostgreSQL не приводит varchar к jsonb неявно.
     @Column(nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "cast(? as jsonb)")
     private String payload;
 
     @Column(name = "read", nullable = false)
