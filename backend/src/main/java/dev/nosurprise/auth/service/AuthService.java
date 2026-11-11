@@ -1,5 +1,6 @@
 package dev.nosurprise.auth.service;
 
+import dev.nosurprise.user.Role;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,8 +56,11 @@ public class AuthService {
             throw new InvalidRefreshTokenException();
         }
         IssuedRefreshToken rotated = refreshTokenService.rotate(refreshCookieValue, issuedIp);
+        java.util.Set<Role> roles = userService.findById(rotated.userId())
+                .map(dev.nosurprise.user.UserEntity::getRoles)
+                .orElse(java.util.Set.of());
         return new LoginResult(
-                tokenService.generate(rotated.userId()),
+                tokenService.generate(rotated.userId(), roles),
                 jwtProperties.accessTtl().toSeconds(),
                 rotated.cookieValue());
     }
@@ -71,7 +75,7 @@ public class AuthService {
     private LoginResult issueTokens(UserEntity user, String issuedIp) {
         IssuedRefreshToken refresh = refreshTokenService.issue(user.getId(), issuedIp);
         return new LoginResult(
-                tokenService.generate(user.getId()),
+                tokenService.generate(user.getId(), user.getRoles()),
                 jwtProperties.accessTtl().toSeconds(),
                 refresh.cookieValue());
     }

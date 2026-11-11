@@ -18,8 +18,10 @@ import java.text.ParseException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -43,12 +45,22 @@ public class TokenService {
 
     /** Подписанный HS256 access-токен, subject = userId, exp = now + accessTtl. */
     public String generate(UUID userId) {
+        return generate(userId, (Collection<?>) null);
+    }
+
+    /** Access-токен с claim roles (имена Role без префикса ROLE_). */
+    public String generate(UUID userId, Collection<?> roles) {
         Instant now = clock.instant();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        List<String> roleNames = (roles == null) ? List.of() :
+                roles.stream().map(String::valueOf).toList();
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .subject(userId.toString())
                 .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plus(accessTtl)))
-                .build();
+                .expirationTime(Date.from(now.plus(accessTtl)));
+        if (!roleNames.isEmpty()) {
+            builder.claim("roles", roleNames);
+        }
+        JWTClaimsSet claims = builder.build();
         SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
         try {
             jwt.sign(new MACSigner(key));
@@ -56,6 +68,11 @@ public class TokenService {
             throw new IllegalStateException("JWT signing failed", ex);
         }
         return jwt.serialize();
+    }
+
+    /** Удобный вариант: роли строками. */
+    public String generate(UUID userId, String... roles) {
+        return generate(userId, roles == null ? (Collection<?>) null : List.of(roles));
     }
 
     /** Проверяет подпись и срок; возвращает userId из subject. Иначе — InvalidAccessTokenException. */
