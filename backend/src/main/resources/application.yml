@@ -12,9 +12,10 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
       representation:
         big-decimal: decimal128   # деньги в Mongo — Decimal128, не строка (§6.2)
     redis:

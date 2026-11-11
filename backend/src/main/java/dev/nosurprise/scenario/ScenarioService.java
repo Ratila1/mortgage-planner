@@ -11,6 +11,7 @@ import dev.nosurprise.pdf.event.ExportPdfRequested;
 import dev.nosurprise.scenario.ScenarioRecalculationResult;
 import dev.nosurprise.scenario.web.dto.CreateScenarioRequest;
 import dev.nosurprise.scenario.web.dto.ScenarioResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class ScenarioService {
         this(repository, calculatorService, offerService, objectMapper, null);
     }
 
+    @Autowired
     public ScenarioService(ScenarioRepository repository, CalculatorService calculatorService,
                            OfferService offerService, ObjectMapper objectMapper,
                            ApplicationEventPublisher eventPublisher) {
