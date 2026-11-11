@@ -10,11 +10,9 @@ import com.lowagie.text.pdf.BaseFont;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
-import dev.nosurprise.calc.repository.CalculationDocument;
 import dev.nosurprise.calculator.ScheduleRow;
-import dev.nosurprise.offer.BankOffer;
-import dev.nosurprise.offer.OfferService;
-import dev.nosurprise.scenario.Scenario;
+import dev.nosurprise.offer.web.dto.OfferResponse;
+import dev.nosurprise.scenario.ScenarioExportData;
 
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
@@ -29,31 +27,12 @@ public class PdfService {
     private static final DateTimeFormatter DATE_FORMATTER =
             DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss 'UTC'");
 
-    private final OfferService offerService;
-
     public PdfService() {
-        this(null);
     }
 
-    public PdfService(OfferService offerService) {
-        this.offerService = offerService;
-    }
-
-    public byte[] generatePdf(CalculationDocument calculation, Scenario scenario) {
-        BankOffer offer = null;
-        if (offerService != null && scenario != null && scenario.getOfferId() != null) {
-            try {
-                offer = offerService.findEntity(scenario.getOfferId());
-            } catch (RuntimeException ex) {
-                offer = null;
-            }
-        }
-        return generatePdf(calculation, scenario, offer);
-    }
-
-    public byte[] generatePdf(CalculationDocument calculation, Scenario scenario, BankOffer offer) {
+    public byte[] generatePdf(ScenarioExportData exportData) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            writePdf(calculation, scenario, offer, out);
+            writePdf(exportData, out);
             return out.toByteArray();
         } catch (RuntimeException ex) {
             throw ex;
@@ -62,13 +41,9 @@ public class PdfService {
         }
     }
 
-    public void writePdf(CalculationDocument calculation, Scenario scenario, OutputStream out) {
-        writePdf(calculation, scenario, null, out);
-    }
-
-    public void writePdf(CalculationDocument calculation, Scenario scenario, BankOffer offer, OutputStream out) {
+    public void writePdf(ScenarioExportData exportData, OutputStream out) {
         try {
-            BaseFont baseFont = BaseFont.createFont("/fonts/Arial.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
+            BaseFont baseFont = BaseFont.createFont("/fonts/DejaVuSans.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
             Font titleFont = new Font(baseFont, 16, Font.BOLD);
             Font normalFont = new Font(baseFont, 11);
             Font smallFont = new Font(baseFont, 9);
@@ -83,36 +58,35 @@ public class PdfService {
             document.add(new Paragraph(" "));
 
             document.add(new Paragraph("Дата создания расчёта: " +
-                    calculation.createdAt().atZone(ZoneOffset.UTC).format(DATE_FORMATTER), normalFont));
+                    exportData.createdAt().atZone(ZoneOffset.UTC).format(DATE_FORMATTER), normalFont));
             document.add(new Paragraph(" "));
 
             document.add(new Paragraph("Входные параметры", normalFont));
-            document.add(new Paragraph("Цена: " + money(calculation.params().price()), normalFont));
-            document.add(new Paragraph("Первоначальный взнос: " + money(calculation.params().downPayment()), normalFont));
-            document.add(new Paragraph("Сумма кредита: " + money(calculation.params().loanAmount()), normalFont));
-            document.add(new Paragraph("Срок: " + calculation.params().termMonths() + " мес.", normalFont));
-            document.add(new Paragraph("Ставка: " + calculation.params().annualRate().toPlainString() + "%", normalFont));
-            document.add(new Paragraph("Тип платежа: " + calculation.params().type(), normalFont));
-            document.add(new Paragraph("Досрочные погашения: " + earlyRepaymentsText(calculation.params().earlyRepayments()), normalFont));
+            document.add(new Paragraph("Цена: " + money(exportData.params().price()), normalFont));
+            document.add(new Paragraph("Первоначальный взнос: " + money(exportData.params().downPayment()), normalFont));
+            document.add(new Paragraph("Сумма кредита: " + money(exportData.params().loanAmount()), normalFont));
+            document.add(new Paragraph("Срок: " + exportData.params().termMonths() + " мес.", normalFont));
+            document.add(new Paragraph("Ставка: " + exportData.params().annualRate().toPlainString() + "%", normalFont));
+            document.add(new Paragraph("Тип платежа: " + exportData.params().type(), normalFont));
+            document.add(new Paragraph("Досрочные погашения: " + earlyRepaymentsText(exportData.params().earlyRepayments()), normalFont));
             document.add(new Paragraph(" "));
 
             document.add(new Paragraph("Результаты", normalFont));
-            document.add(new Paragraph("Ежемесячный платёж: " + money(calculation.summary().monthlyPayment()), normalFont));
-            document.add(new Paragraph("Общая сумма выплат: " + money(calculation.summary().totalPaid()), normalFont));
-            document.add(new Paragraph("Переплата: " + money(calculation.summary().overpayment()), normalFont));
-            if (calculation.savings() != null) {
-                document.add(new Paragraph("Экономия от досрочных: " + money(calculation.savings().overpaymentSaved()), normalFont));
-            }
+            document.add(new Paragraph("Ежемесячный платёж: " + money(exportData.summary().monthlyPayment()), normalFont));
+            document.add(new Paragraph("Общая сумма выплат: " + money(exportData.summary().totalPaid()), normalFont));
+            document.add(new Paragraph("Переплата: " + money(exportData.summary().overpayment()), normalFont));
+            // Savings не входит в read model; при необходимости добавляется отдельно.
             document.add(new Paragraph(" "));
 
-            if (scenario != null) {
-                document.add(new Paragraph("Сценарий: " + scenario.getName(), normalFont));
+            if (exportData.name() != null) {
+                document.add(new Paragraph("Сценарий: " + exportData.name(), normalFont));
             }
+            OfferResponse offer = exportData.offer();
             if (offer != null) {
-                document.add(new Paragraph("Предложение банка: " + offer.getBankName() +
-                        " (ставка " + offer.getRate().toPlainString() + "%)", normalFont));
+                document.add(new Paragraph("Предложение банка: " + offer.bankName() +
+                        " (ставка " + offer.rate() + "%)", normalFont));
             }
-            if (scenario != null || offer != null) {
+            if (exportData.name() != null || offer != null) {
                 document.add(new Paragraph(" "));
             }
 
@@ -126,7 +100,7 @@ public class PdfService {
             addHeaderCell(table, "Досрочно", smallFont);
             addHeaderCell(table, "Остаток", smallFont);
 
-            for (ScheduleRow row : safeSchedule(calculation)) {
+            for (ScheduleRow row : safeSchedule(exportData)) {
                 table.addCell(new Phrase(String.valueOf(row.month()), smallFont));
                 table.addCell(new Phrase(money(row.payment()), smallFont));
                 table.addCell(new Phrase(money(row.principal()), smallFont));
@@ -165,7 +139,7 @@ public class PdfService {
         return earlyRepayments.size() + " шт.";
     }
 
-    private static List<ScheduleRow> safeSchedule(CalculationDocument calculation) {
-        return Objects.requireNonNullElse(calculation.schedule(), List.of());
+    private static List<ScheduleRow> safeSchedule(ScenarioExportData exportData) {
+        return Objects.requireNonNullElse(exportData.schedule(), List.of());
     }
 }
