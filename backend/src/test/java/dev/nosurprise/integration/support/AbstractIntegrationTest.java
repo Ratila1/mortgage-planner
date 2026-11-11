@@ -6,7 +6,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.web.client.RestClient;
 
 /**
  * База integration-тестов: полный Spring Boot context на реальной инфраструктуре
@@ -62,10 +61,5 @@ public abstract class AbstractIntegrationTest {
         // Rate limit не должен мешать интеграционным сценариям.
         registry.add("app.ratelimit.calc.anonymous-per-minute", () -> 1000);
         registry.add("app.ratelimit.calc.authenticated-per-minute", () -> 1000);
-    }
-
-    /** HTTP-клиент к backend, создаётся один раз на тестовый экземпляр. */
-    protected RestClient http() {
-        return api.client();
     }
 }

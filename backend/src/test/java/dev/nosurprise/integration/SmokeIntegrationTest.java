@@ -141,13 +141,11 @@ class SmokeIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("/actuator/health = UP и GET /api/offers = 200 с seed-данными")
     void httpEndpointsRespond() {
-        ResponseEntity<String> health = http().get().uri("/actuator/health")
-                .retrieve().toEntity(String.class);
+        ResponseEntity<String> health = api.get("/actuator/health");
         assertThat(health.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(health.getBody()).contains("\"status\":\"UP\"");
 
-        ResponseEntity<String> offers = http().get().uri("/api/offers")
-                .retrieve().toEntity(String.class);
+        ResponseEntity<String> offers = api.get("/api/offers");
         assertThat(offers.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode body = objectMapper.readTree(offers.getBody());
         assertThat(body.size()).isEqualTo(4);
