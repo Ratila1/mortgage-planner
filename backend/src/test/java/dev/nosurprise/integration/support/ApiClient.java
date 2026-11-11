@@ -38,6 +38,32 @@ public class ApiClient {
         return send(HttpMethod.POST, path, null, null);
     }
 
+    /** POST без тела, но с bearer-токеном (например, запуск экспорта PDF). */
+    public ResponseEntity<String> postEmpty(String path, String bearer) {
+        return send(HttpMethod.POST, path, null, bearer);
+    }
+
+    /** GET бинарного ответа (PDF): тело не декодируется в UTF-8. */
+    public ResponseEntity<byte[]> getBytes(String path, String bearer) {
+        ResponseEntity<byte[]> response = client.method(HttpMethod.GET)
+                .uri(path)
+                .headers(headers -> {
+                    if (!cookies.isEmpty()) {
+                        headers.set(HttpHeaders.COOKIE, cookieHeader());
+                    }
+                    headers.setBearerAuth(bearer);
+                })
+                .exchange((req, res) -> {
+                    var stream = res.getBody();
+                    byte[] body = stream == null ? new byte[0] : stream.readAllBytes();
+                    return ResponseEntity.status(res.getStatusCode())
+                            .headers(res.getHeaders())
+                            .body(body);
+                });
+        storeCookies(response.getHeaders());
+        return response;
+    }
+
     public ResponseEntity<String> postJson(String path, String json) {
         return send(HttpMethod.POST, path, json, null);
     }
