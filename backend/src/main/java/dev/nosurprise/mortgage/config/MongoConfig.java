@@ -11,7 +11,10 @@ import org.springframework.data.mongodb.core.index.IndexDirection;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 
 @Configuration
-@EnableReactiveMongoRepositories(basePackages = "dev.nosurprise.user")
+@EnableReactiveMongoRepositories(basePackages = {
+        "dev.nosurprise.mortgage.user",
+        "dev.nosurprise.mortgage.pdf"
+})
 public class MongoConfig {
 
     @Bean

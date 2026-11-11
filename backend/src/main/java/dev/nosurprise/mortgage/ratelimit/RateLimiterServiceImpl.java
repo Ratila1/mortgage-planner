@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.ReactiveZSetOperations;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -15,7 +16,10 @@ public class RateLimiterServiceImpl implements RateLimiterService {
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
-    public RateLimiterServiceImpl(ReactiveRedisTemplate<String, String> redisTemplate) {
+    public RateLimiterServiceImpl(
+            @Qualifier("reactiveRedisTemplate")
+            ReactiveRedisTemplate<String, String> redisTemplate
+    ) {
         this.redisTemplate = redisTemplate;
     }
 

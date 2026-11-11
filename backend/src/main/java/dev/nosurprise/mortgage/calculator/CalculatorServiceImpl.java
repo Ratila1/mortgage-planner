@@ -7,18 +7,22 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
 public class CalculatorServiceImpl implements CalculatorService {
 
-    private static final MathContext MATH_CONTEXT = new MathContext(28, RoundingMode.HALF_UP);
+    private static final MathContext MATH_CONTEXT =
+            new MathContext(28, RoundingMode.HALF_UP);
+
     private static final int SCALE = 2;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
-    private static final long CACHE_TTL_SECONDS = 300; // 5 minutes
+    private static final long CACHE_TTL_SECONDS = 300;
 
     private final CacheService cacheService;
 
@@ -28,11 +32,11 @@ public class CalculatorServiceImpl implements CalculatorService {
 
     @Override
     public Mono<CalculationResponse> calculate(CalculationRequest request) {
-        // Validate early to fail fast before cache lookup
         request.validate();
+
         if (request.earlyRepayments() != null) {
-            for (EarlyRepayment er : request.earlyRepayments()) {
-                er.validate();
+            for (EarlyRepayment earlyRepayment : request.earlyRepayments()) {
+                earlyRepayment.validate();
             }
         }
 
@@ -41,21 +45,35 @@ public class CalculatorServiceImpl implements CalculatorService {
         return cacheService.get(cacheKey)
                 .switchIfEmpty(
                         Mono.fromCallable(() -> doCalculate(request))
-                                .flatMap(response -> cacheService.put(cacheKey, response, CACHE_TTL_SECONDS)
-                                        .thenReturn(response))
+                                .flatMap(response ->
+                                        cacheService.put(
+                                                        cacheKey,
+                                                        response,
+                                                        CACHE_TTL_SECONDS
+                                                )
+                                                .thenReturn(response)
+                                )
                 );
     }
 
     private String computeCacheKey(CalculationRequest request) {
         try {
-            String data = request.propertyPrice() + "|" +
+            // Version prefix prevents reuse of results from the old algorithm.
+            String data = "v2|" +
+                    request.propertyPrice() + "|" +
                     request.downPayment() + "|" +
                     request.termMonths() + "|" +
                     request.rate() + "|" +
                     request.type().name() + "|" +
-                    (request.earlyRepayments() != null ? request.earlyRepayments().toString() : "");
+                    (request.earlyRepayments() != null
+                            ? request.earlyRepayments().toString()
+                            : "");
+
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(data.getBytes());
+            byte[] hash = digest.digest(
+                    data.getBytes(StandardCharsets.UTF_8)
+            );
+
             return bytesToHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
@@ -63,67 +81,105 @@ public class CalculatorServiceImpl implements CalculatorService {
     }
 
     private String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
+        StringBuilder result = new StringBuilder();
+
+        for (byte value : bytes) {
+            result.append(String.format("%02x", value));
         }
-        return sb.toString();
+
+        return result.toString();
     }
 
     private CalculationResponse doCalculate(CalculationRequest request) {
         BigDecimal loanAmount = request.loanAmount();
-        BigDecimal monthlyRate = request.rate().divide(BigDecimal.valueOf(12), MATH_CONTEXT);
+
+        BigDecimal monthlyRate = request.rate()
+                .divide(BigDecimal.valueOf(12), MATH_CONTEXT);
+
         int termMonths = request.termMonths();
 
-        List<EarlyRepayment> earlyRepayments = request.earlyRepayments() != null
-                ? new ArrayList<>(request.earlyRepayments())
-                : new ArrayList<>();
+        List<EarlyRepayment> earlyRepayments =
+                request.earlyRepayments() != null
+                        ? new ArrayList<>(request.earlyRepayments())
+                        : new ArrayList<>();
 
-        earlyRepayments.sort((a, b) -> Integer.compare(a.month(), b.month()));
+        earlyRepayments.sort(
+                Comparator.comparingInt(EarlyRepayment::month)
+        );
 
         if (request.type() == PaymentType.DIFFERENTIAL) {
-            return calculateDifferential(loanAmount, monthlyRate, termMonths, earlyRepayments);
+            return calculateDifferential(
+                    loanAmount,
+                    monthlyRate,
+                    termMonths,
+                    earlyRepayments
+            );
         }
 
-        BigDecimal monthlyPayment = calculateMonthlyPayment(loanAmount, monthlyRate, termMonths, request.type());
-        return calculateAnnuity(loanAmount, monthlyRate, termMonths, monthlyPayment, earlyRepayments);
+        BigDecimal monthlyPayment = calculateMonthlyPayment(
+                loanAmount,
+                monthlyRate,
+                termMonths,
+                PaymentType.ANNUITY
+        );
+
+        return calculateAnnuity(
+                loanAmount,
+                monthlyRate,
+                termMonths,
+                monthlyPayment,
+                earlyRepayments
+        );
     }
 
-    private CalculationResponse calculateAnnuity(BigDecimal loanAmount,
-                                                   BigDecimal monthlyRate,
-                                                   int termMonths,
-                                                   BigDecimal monthlyPayment,
-                                                   List<EarlyRepayment> earlyRepayments) {
+    private CalculationResponse calculateAnnuity(
+            BigDecimal loanAmount,
+            BigDecimal monthlyRate,
+            int termMonths,
+            BigDecimal monthlyPayment,
+            List<EarlyRepayment> earlyRepayments
+    ) {
         List<ScheduleEntry> schedule = new ArrayList<>();
+
         BigDecimal remaining = loanAmount;
-        int earlyRepaymentIndex = 0;
         BigDecimal totalPrincipal = BigDecimal.ZERO;
         BigDecimal totalInterest = BigDecimal.ZERO;
 
+        int earlyRepaymentIndex = 0;
+
         for (int month = 1; month <= termMonths; month++) {
-            // Apply early repayments at the START of the month (before regular payment)
+            // Early repayments are applied before the regular monthly payment.
             while (earlyRepaymentIndex < earlyRepayments.size()
                     && earlyRepayments.get(earlyRepaymentIndex).month() == month) {
-                EarlyRepayment er = earlyRepayments.get(earlyRepaymentIndex);
-                if (er.amount().compareTo(remaining) > 0) {
+
+                EarlyRepayment earlyRepayment =
+                        earlyRepayments.get(earlyRepaymentIndex);
+
+                if (earlyRepayment.amount().compareTo(remaining) > 0) {
                     throw new IllegalArgumentException(
-                            "Early repayment amount exceeds remaining balance at month " + month);
+                            "Early repayment amount exceeds remaining balance at month "
+                                    + month
+                    );
                 }
 
-                if (er.mode() == EarlyRepaymentMode.REDUCE_TERM) {
-                    remaining = remaining.subtract(er.amount()).setScale(SCALE, ROUNDING);
-                    totalPrincipal = totalPrincipal.add(er.amount());
-                } else { // REDUCE_PAYMENT
-                    remaining = remaining.subtract(er.amount()).setScale(SCALE, ROUNDING);
+                remaining = remaining.subtract(earlyRepayment.amount())
+                        .setScale(SCALE, ROUNDING);
+
+                totalPrincipal = totalPrincipal.add(
+                        earlyRepayment.amount()
+                );
+
+                if (earlyRepayment.mode() == EarlyRepaymentMode.REDUCE_PAYMENT
+                        && remaining.compareTo(BigDecimal.ZERO) > 0) {
+
                     int remainingMonths = termMonths - month + 1;
-                    if (remainingMonths > 0 && remaining.compareTo(BigDecimal.ZERO) > 0) {
-                        monthlyPayment = calculateMonthlyPayment(remaining, monthlyRate, remainingMonths, PaymentType.ANNUITY);
-                    }
-                    totalPrincipal = totalPrincipal.add(er.amount());
-                }
 
-                if (remaining.compareTo(BigDecimal.ZERO) < 0) {
-                    remaining = BigDecimal.ZERO;
+                    monthlyPayment = calculateMonthlyPayment(
+                            remaining,
+                            monthlyRate,
+                            remainingMonths,
+                            PaymentType.ANNUITY
+                    );
                 }
 
                 earlyRepaymentIndex++;
@@ -133,73 +189,49 @@ public class CalculatorServiceImpl implements CalculatorService {
                 break;
             }
 
-            BigDecimal interestPayment = remaining.multiply(monthlyRate).setScale(SCALE, ROUNDING);
-            BigDecimal principalPayment = monthlyPayment.subtract(interestPayment);
+            BigDecimal interestPayment = remaining.multiply(monthlyRate)
+                    .setScale(SCALE, ROUNDING);
 
-            // Adjust last payment to ensure remaining reaches exactly zero
-            boolean isLastMonth = (month == termMonths) || (earlyRepaymentIndex >= earlyRepayments.size() && month == termMonths);
-            if (principalPayment.compareTo(remaining) >= 0 || remaining.subtract(principalPayment).abs().compareTo(new BigDecimal("0.01")) < 0) {
+            BigDecimal principalPayment = monthlyPayment
+                    .subtract(interestPayment)
+                    .setScale(SCALE, ROUNDING);
+
+            BigDecimal actualPayment = monthlyPayment;
+
+            // Close the debt at maturity or when a regular payment covers it.
+            if (month == termMonths
+                    || principalPayment.compareTo(remaining) >= 0) {
+
                 principalPayment = remaining.setScale(SCALE, ROUNDING);
-                interestPayment = monthlyPayment.subtract(principalPayment);
-                // If this is the last payment, adjust monthly payment to match
-                if (principalPayment.compareTo(remaining) >= 0) {
-                    monthlyPayment = principalPayment.add(interestPayment).setScale(SCALE, ROUNDING);
-                }
+
+                actualPayment = principalPayment.add(interestPayment)
+                        .setScale(SCALE, ROUNDING);
             }
 
-            remaining = remaining.subtract(principalPayment).setScale(SCALE, ROUNDING);
-            if (remaining.compareTo(BigDecimal.ZERO) < 0) {
-                remaining = BigDecimal.ZERO;
-            }
+            remaining = remaining.subtract(principalPayment)
+                    .setScale(SCALE, ROUNDING);
 
             totalPrincipal = totalPrincipal.add(principalPayment);
             totalInterest = totalInterest.add(interestPayment);
 
             schedule.add(new ScheduleEntry(
                     month,
-                    monthlyPayment.setScale(SCALE, ROUNDING),
-                    principalPayment.setScale(SCALE, ROUNDING),
-                    interestPayment.setScale(SCALE, ROUNDING),
-                    remaining.setScale(SCALE, ROUNDING)
+                    actualPayment.setScale(SCALE, ROUNDING),
+                    principalPayment,
+                    interestPayment,
+                    remaining
             ));
 
-            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+            if (remaining.compareTo(BigDecimal.ZERO) == 0) {
                 break;
             }
         }
 
-        // Ensure last remaining is exactly zero by adjusting last entry if needed
-        if (!schedule.isEmpty()) {
-            ScheduleEntry last = schedule.get(schedule.size() - 1);
-            if (last.remaining().compareTo(BigDecimal.ZERO) != 0 && last.remaining().abs().compareTo(new BigDecimal("1.00")) < 0) {
-                // Adjust last entry to have zero remaining
-                ScheduleEntry adjusted = new ScheduleEntry(
-                        last.month(),
-                        last.payment(),
-                        last.principal(),
-                        last.interest(),
-                        BigDecimal.ZERO
-                );
-                schedule.set(schedule.size() - 1, adjusted);
-            }
-        }
-
         BigDecimal overpayment = totalInterest.setScale(SCALE, ROUNDING);
-        BigDecimal totalPayment = totalPrincipal.add(totalInterest).setScale(SCALE, ROUNDING);
 
-        if (!schedule.isEmpty()) {
-            ScheduleEntry last = schedule.get(schedule.size() - 1);
-            if (last.remaining().compareTo(BigDecimal.ZERO) == 0) {
-                BigDecimal sumPrincipal = schedule.stream()
-                        .map(ScheduleEntry::principal)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                BigDecimal sumInterest = schedule.stream()
-                        .map(ScheduleEntry::interest)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                overpayment = sumInterest.setScale(SCALE, ROUNDING);
-                totalPayment = sumPrincipal.add(sumInterest).setScale(SCALE, ROUNDING);
-            }
-        }
+        // Includes both regular principal payments and early repayments.
+        BigDecimal totalPayment = totalPrincipal.add(totalInterest)
+                .setScale(SCALE, ROUNDING);
 
         return new CalculationResponse(
                 monthlyPayment.setScale(SCALE, ROUNDING),
@@ -209,42 +241,59 @@ public class CalculatorServiceImpl implements CalculatorService {
         );
     }
 
-    private CalculationResponse calculateDifferential(BigDecimal loanAmount,
-                                                        BigDecimal monthlyRate,
-                                                        int termMonths,
-                                                        List<EarlyRepayment> earlyRepayments) {
+    private CalculationResponse calculateDifferential(
+            BigDecimal loanAmount,
+            BigDecimal monthlyRate,
+            int termMonths,
+            List<EarlyRepayment> earlyRepayments
+    ) {
         List<ScheduleEntry> schedule = new ArrayList<>();
+
         BigDecimal remaining = loanAmount;
-        BigDecimal fixedPrincipal = loanAmount.divide(BigDecimal.valueOf(termMonths), SCALE, ROUNDING);
-        int earlyRepaymentIndex = 0;
+
+        BigDecimal fixedPrincipal = loanAmount.divide(
+                BigDecimal.valueOf(termMonths),
+                SCALE,
+                ROUNDING
+        );
+
         BigDecimal totalPrincipal = BigDecimal.ZERO;
         BigDecimal totalInterest = BigDecimal.ZERO;
 
+        int earlyRepaymentIndex = 0;
+
         for (int month = 1; month <= termMonths; month++) {
-            // Apply early repayments at the START of the month
+            // Early repayments are applied before the regular monthly payment.
             while (earlyRepaymentIndex < earlyRepayments.size()
                     && earlyRepayments.get(earlyRepaymentIndex).month() == month) {
-                EarlyRepayment er = earlyRepayments.get(earlyRepaymentIndex);
-                if (er.amount().compareTo(remaining) > 0) {
+
+                EarlyRepayment earlyRepayment =
+                        earlyRepayments.get(earlyRepaymentIndex);
+
+                if (earlyRepayment.amount().compareTo(remaining) > 0) {
                     throw new IllegalArgumentException(
-                            "Early repayment amount exceeds remaining balance at month " + month);
+                            "Early repayment amount exceeds remaining balance at month "
+                                    + month
+                    );
                 }
 
-                remaining = remaining.subtract(er.amount()).setScale(SCALE, ROUNDING);
+                remaining = remaining.subtract(earlyRepayment.amount())
+                        .setScale(SCALE, ROUNDING);
 
-                if (er.mode() == EarlyRepaymentMode.REDUCE_PAYMENT) {
-                    // REDUCE_PAYMENT: recalculate fixed principal for remaining months of original term
+                totalPrincipal = totalPrincipal.add(
+                        earlyRepayment.amount()
+                );
+
+                if (earlyRepayment.mode() == EarlyRepaymentMode.REDUCE_PAYMENT
+                        && remaining.compareTo(BigDecimal.ZERO) > 0) {
+
                     int remainingMonths = termMonths - month + 1;
-                    if (remainingMonths > 0 && remaining.compareTo(BigDecimal.ZERO) > 0) {
-                        fixedPrincipal = remaining.divide(BigDecimal.valueOf(remainingMonths), SCALE, ROUNDING);
-                    }
-                }
-                // REDUCE_TERM: keep fixedPrincipal unchanged, term will naturally reduce
 
-                totalPrincipal = totalPrincipal.add(er.amount());
-
-                if (remaining.compareTo(BigDecimal.ZERO) < 0) {
-                    remaining = BigDecimal.ZERO;
+                    fixedPrincipal = remaining.divide(
+                            BigDecimal.valueOf(remainingMonths),
+                            SCALE,
+                            ROUNDING
+                    );
                 }
 
                 earlyRepaymentIndex++;
@@ -254,39 +303,47 @@ public class CalculatorServiceImpl implements CalculatorService {
                 break;
             }
 
-            BigDecimal interestPayment = remaining.multiply(monthlyRate).setScale(SCALE, ROUNDING);
+            BigDecimal interestPayment = remaining.multiply(monthlyRate)
+                    .setScale(SCALE, ROUNDING);
+
             BigDecimal principalPayment = fixedPrincipal;
 
-            if (month == termMonths || principalPayment.compareTo(remaining) >= 0) {
+            if (month == termMonths
+                    || principalPayment.compareTo(remaining) >= 0) {
+
                 principalPayment = remaining.setScale(SCALE, ROUNDING);
             }
 
-            BigDecimal monthlyPayment = principalPayment.add(interestPayment).setScale(SCALE, ROUNDING);
-            remaining = remaining.subtract(principalPayment).setScale(SCALE, ROUNDING);
-            if (remaining.compareTo(BigDecimal.ZERO) < 0) {
-                remaining = BigDecimal.ZERO;
-            }
+            BigDecimal actualPayment = principalPayment.add(interestPayment)
+                    .setScale(SCALE, ROUNDING);
+
+            remaining = remaining.subtract(principalPayment)
+                    .setScale(SCALE, ROUNDING);
 
             totalPrincipal = totalPrincipal.add(principalPayment);
             totalInterest = totalInterest.add(interestPayment);
 
             schedule.add(new ScheduleEntry(
                     month,
-                    monthlyPayment,
+                    actualPayment,
                     principalPayment.setScale(SCALE, ROUNDING),
                     interestPayment,
                     remaining
             ));
 
-            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+            if (remaining.compareTo(BigDecimal.ZERO) == 0) {
                 break;
             }
         }
 
         BigDecimal overpayment = totalInterest.setScale(SCALE, ROUNDING);
-        BigDecimal totalPayment = totalPrincipal.add(totalInterest).setScale(SCALE, ROUNDING);
 
-        BigDecimal firstPayment = schedule.isEmpty() ? BigDecimal.ZERO : schedule.get(0).payment();
+        BigDecimal totalPayment = totalPrincipal.add(totalInterest)
+                .setScale(SCALE, ROUNDING);
+
+        BigDecimal firstPayment = schedule.isEmpty()
+                ? BigDecimal.ZERO.setScale(SCALE, ROUNDING)
+                : schedule.get(0).payment();
 
         return new CalculationResponse(
                 firstPayment,
@@ -296,23 +353,45 @@ public class CalculatorServiceImpl implements CalculatorService {
         );
     }
 
-    private BigDecimal calculateMonthlyPayment(BigDecimal loanAmount, BigDecimal monthlyRate, int termMonths, PaymentType type) {
+    private BigDecimal calculateMonthlyPayment(
+            BigDecimal loanAmount,
+            BigDecimal monthlyRate,
+            int termMonths,
+            PaymentType type
+    ) {
         if (type == PaymentType.DIFFERENTIAL) {
-            BigDecimal fixedPrincipal = loanAmount.divide(BigDecimal.valueOf(termMonths), SCALE, ROUNDING);
-            BigDecimal firstInterest = loanAmount.multiply(monthlyRate).setScale(SCALE, ROUNDING);
-            return fixedPrincipal.add(firstInterest).setScale(SCALE, ROUNDING);
+            BigDecimal fixedPrincipal = loanAmount.divide(
+                    BigDecimal.valueOf(termMonths),
+                    SCALE,
+                    ROUNDING
+            );
+
+            BigDecimal firstInterest = loanAmount.multiply(monthlyRate)
+                    .setScale(SCALE, ROUNDING);
+
+            return fixedPrincipal.add(firstInterest)
+                    .setScale(SCALE, ROUNDING);
         }
 
         if (monthlyRate.compareTo(BigDecimal.ZERO) == 0) {
-            return loanAmount.divide(BigDecimal.valueOf(termMonths), SCALE, ROUNDING);
+            return loanAmount.divide(
+                    BigDecimal.valueOf(termMonths),
+                    SCALE,
+                    ROUNDING
+            );
         }
 
-        // Use higher precision for power calculation to avoid rounding errors for long terms
-        MathContext highPrecision = new MathContext(50, RoundingMode.HALF_UP);
-        BigDecimal onePlusR = BigDecimal.ONE.add(monthlyRate);
-        BigDecimal pow = onePlusR.pow(termMonths, highPrecision);
-        BigDecimal numerator = loanAmount.multiply(monthlyRate).multiply(pow);
-        BigDecimal denominator = pow.subtract(BigDecimal.ONE);
+        MathContext highPrecision =
+                new MathContext(50, RoundingMode.HALF_UP);
+
+        BigDecimal onePlusRate = BigDecimal.ONE.add(monthlyRate);
+        BigDecimal power = onePlusRate.pow(termMonths, highPrecision);
+
+        BigDecimal numerator = loanAmount.multiply(monthlyRate)
+                .multiply(power);
+
+        BigDecimal denominator = power.subtract(BigDecimal.ONE);
+
         return numerator.divide(denominator, SCALE, ROUNDING);
     }
 }

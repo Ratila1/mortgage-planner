@@ -44,7 +44,8 @@ class OfferServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(transactionalOperator.transactional(any(Mono.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(transactionalOperator.transactional(any(Mono.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         offerService = new OfferServiceImpl(
                 offerRepository,
@@ -276,13 +277,15 @@ class OfferServiceTest {
             OfferRequest request = new OfferRequest("Сбербанк", new BigDecimal("0.095"), new BigDecimal("20"), 360); // rate unchanged, only minDownPayment changed
             when(offerRepository.findById(1L)).thenReturn(Mono.just(existing));
             when(offerRepository.save(any(Offer.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-            doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(RateChangedEvent.class));
+            lenient().doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(RateChangedEvent.class));
 
             // when
             Mono<Offer> result = offerService.updateOffer(1L, request);
 
             // then
-            StepVerifier.create(result).verifyComplete();
+            StepVerifier.create(result)
+                    .expectNextCount(1)
+                    .verifyComplete();
 
             // Verify event was NOT published
             verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(RateChangedEvent.class));
@@ -309,7 +312,9 @@ class OfferServiceTest {
             Mono<Offer> result = offerService.updateOffer(1L, request);
 
             // then
-            StepVerifier.create(result).verifyComplete();
+            StepVerifier.create(result)
+                    .expectNextCount(1)
+                    .verifyComplete();
             verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), routingKeyCaptor.capture(), eventCaptor.capture());
             assertThat(eventCaptor.getValue()).isInstanceOf(RateChangedEvent.class);
         }

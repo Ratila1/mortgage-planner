@@ -54,20 +54,22 @@ class CalculatorServiceTest {
             StepVerifier.create(result)
                     .assertNext(response -> {
                         // Monthly payment: loan=8M, rate=10%/12, term=240
-                        // PMT = 8000000 * (0.10/12) * (1+0.10/12)^240 / ((1+0.10/12)^240 - 1) = 77201.73
                         assertThat(response.monthlyPayment()).isEqualByComparingTo("77201.73");
+
                         // Overpayment = totalPayment - loanAmount
-                        assertThat(response.overpayment()).isEqualByComparingTo("10528415.20");
-                        // Total payment = monthlyPayment * 240 (approximately)
-                        assertThat(response.totalPayment()).isEqualByComparingTo("18528415.20");
+                        assertThat(response.overpayment()).isEqualByComparingTo("10528416.36");
+                        assertThat(response.totalPayment()).isEqualByComparingTo("18528416.36");
+
                         assertThat(response.schedule()).hasSize(240);
+
                         // First payment breakdown
                         ScheduleEntry first = response.schedule().get(0);
                         assertThat(first.month()).isEqualTo(1);
                         assertThat(first.payment()).isEqualByComparingTo("77201.73");
-                        assertThat(first.principal()).isEqualByComparingTo("10535.07"); // first principal
-                        assertThat(first.interest()).isEqualByComparingTo("66666.66"); // first interest
-                        assertThat(first.remaining()).isEqualByComparingTo("7989464.93");
+                        assertThat(first.principal()).isEqualByComparingTo("10535.06");
+                        assertThat(first.interest()).isEqualByComparingTo("66666.67");
+                        assertThat(first.remaining()).isEqualByComparingTo("7989464.94");
+
                         // Last payment should bring remaining to 0
                         ScheduleEntry last = response.schedule().get(response.schedule().size() - 1);
                         assertThat(last.remaining()).isEqualByComparingTo("0.00");
@@ -97,8 +99,8 @@ class CalculatorServiceTest {
                         // Monthly payment: loan=1M, rate=12%/12=1%, term=12
                         // PMT = 1000000 * 0.01 * 1.01^12 / (1.01^12 - 1) = 88848.79
                         assertThat(response.monthlyPayment()).isEqualByComparingTo("88848.79");
-                        assertThat(response.overpayment()).isEqualByComparingTo("66185.48");
-                        assertThat(response.totalPayment()).isEqualByComparingTo("1066185.48");
+                        assertThat(response.overpayment()).isEqualByComparingTo("66185.45");
+                        assertThat(response.totalPayment()).isEqualByComparingTo("1066185.45");
                         assertThat(response.schedule()).hasSize(12);
                         ScheduleEntry last = response.schedule().get(11);
                         assertThat(last.remaining()).isEqualByComparingTo("0.00");

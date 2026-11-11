@@ -28,6 +28,14 @@ spring:
     host: localhost
     port: 1025
 
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: test-google-client-id
+            client-secret: test-google-client-secret
+
 jwt:
   secret: test-secret-key-for-testing-purposes-only-must-be-32-chars-minimum
   access-token-ttl-minutes: 15

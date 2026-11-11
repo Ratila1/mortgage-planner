@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.time.Duration;
 
@@ -15,7 +16,11 @@ public class CacheServiceImpl implements CacheService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
 
-    public CacheServiceImpl(ReactiveRedisTemplate<String, String> redisTemplate, ObjectMapper objectMapper) {
+    public CacheServiceImpl(
+            @Qualifier("reactiveRedisTemplate")
+            ReactiveRedisTemplate<String, String> redisTemplate,
+            ObjectMapper objectMapper
+    ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
     }

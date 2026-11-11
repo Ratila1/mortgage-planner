@@ -29,6 +29,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 @Service
 public class PdfExportServiceImpl implements PdfExportService {
 
@@ -42,13 +45,16 @@ public class PdfExportServiceImpl implements PdfExportService {
     private final String routingKey;
     private final Path storagePath;
 
-    public PdfExportServiceImpl(PdfExportTaskRepository taskRepository,
-                                ScenarioRepository scenarioRepository,
-                                ScheduleRepository scheduleRepository,
-                                RabbitTemplate rabbitTemplate,
-                                @Value("${rabbitmq.exchange.pdf-export}") String exchange,
-                                @Value("${rabbitmq.routing-key.pdf-export}") String routingKey,
-                                @Value("${pdf.storage.path:/app/pdf-exports}") String storagePath) {
+    @Autowired
+    public PdfExportServiceImpl(
+            PdfExportTaskRepository taskRepository,
+            ScenarioRepository scenarioRepository,
+            ScheduleRepository scheduleRepository,
+            RabbitTemplate rabbitTemplate,
+            @Value("${rabbitmq.exchange.pdf-export}") String exchange,
+            @Value("${rabbitmq.routing-key.pdf-export}") String routingKey,
+            @Value("${pdf.storage.path:/app/pdf-exports}") String storagePath
+    ) {
         this.taskRepository = taskRepository;
         this.scenarioRepository = scenarioRepository;
         this.scheduleRepository = scheduleRepository;

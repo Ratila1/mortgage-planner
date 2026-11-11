@@ -49,7 +49,8 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(transactionalOperator.transactional(any(Mono.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(transactionalOperator.transactional(any(Mono.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         authService = new AuthServiceImpl(
                 userRepository,
@@ -452,6 +453,7 @@ class AuthServiceTest {
                     Instant.now(), Instant.now(), Set.of(Role.USER)
             );
             when(userRepository.findByOAuth2ProviderAndProviderId("google", "google-123")).thenReturn(Mono.just(existing));
+            when(userRepository.findByEmail("test@gmail.com")).thenReturn(Mono.empty());
             when(userRepository.save(any(User.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
             when(jwtUtil.generateAccessToken(any(User.class))).thenReturn("access-token");
             when(jwtUtil.generateRefreshToken(any(User.class))).thenReturn("refresh-token");
