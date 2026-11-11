@@ -117,6 +117,14 @@
 - `TokenService.generate(...)` поддерживает roles; `AuthService` передаёт роли при login/refresh.
 - `/api/me` по-прежнему возвращает `id, email, emailVerified, roles` без префикса `ROLE_`.
 
+### Банковские предложения и сохранённые сценарии
+
+- Миграции `V3__bank_offers.sql`, `V4__saved_scenarios.sql`, `V5__seed_offers.sql`; `V1`/`V2` не изменены.
+- `offer`: `BankOffer`, `BankOfferRepository`, `OfferService`, `OfferCache` (`offers:all`, TTL 5 мин, отказоустойчивый Redis), контроллеры `/api/offers` и `/api/admin/offers`, DTO с деньгами-строками.
+- `PUT /api/admin/offers/{id}` при фактическом изменении ставки публикует `OfferRateChanged` через `@TransactionalEventListener(AFTER_COMMIT)` → routing key `offer.rate.changed`.
+- `scenario`: `Scenario`, `ScenarioRepository`, `ScenarioService`, контроллер `/api/scenarios` и `/api/scenarios/compare?ids=...` (2–3 id), DTO; создание сценария выполняет расчёт через `CalculatorService`, сохраняет расчёт в Mongo и ссылается на `calcId`; проверка активного `offerId`.
+- Права: сценарии только владельца; чужой сценарий → 404; compare с 1/4 id → 400 `INVALID_REQUEST`; неактивный/несуществующий offer → 400 `INVALID_OFFER`.
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
