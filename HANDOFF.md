@@ -107,6 +107,16 @@
 - `user.web.UserController` (`GET /api/me`, только authenticated): subject JWT → userId → `UserService.findById` → `MeResponse{id, email, emailVerified, roles[]}`. **password_hash / provider / provider_id наружу не идут**. Пользователя с валидным токеном нет (удалён) → `user.UserNotFoundException` → 401 `UNAUTHORIZED` (маппинг в `GlobalExceptionHandler`).
 - Тесты: `UserControllerTest` 5 — @WebMvcTest с **реальной** security-цепочкой (`@Import(SecurityConfig, JwtPropertiesConfig)`, фильтры включены, JWT генерирует TokenService тем же секретом): валидный JWT → все поля + отсутствие внутренних; без JWT → 401; подделанный JWT → 401; subject без пользователя → 401; роль USER проходит (требуется лишь authenticated).
 
+### OAuth Google/GitHub + первый ADMIN + roles claim в JWT
+
+- Профиль `oauth`: `application-oauth.yml` использует env `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`; без них контекст не стартует.
+- `UserService.provisionOAuthUser`: поиск по email, создание/связывание; `password_hash` не перезаписывается; provider не перезаписывается, если уже привязан к другому OAuth-провайдеру; `email_verified` устанавливается при подтверждении провайдером или если уже verified.
+- `FirstAdminBootstrap` (`ApplicationRunner`): создаёт ADMIN из `APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD`; при существующем пользователе добавляет роль ADMIN без перезаписи пароля/provider/ролей; пустые env — безопасный пропуск.
+- `OAuth2AuthenticationSuccessHandler`: provisioning, выдача access JWT с claim `roles`, refresh token в Redis (`refresh:{userId}:{sha256(token)}`, TTL 30 дн), cookie `refresh_token` (HttpOnly, SameSite=Lax, Path=/api/auth, Secure при HTTPS).
+- `SecurityConfig`: `oauth2Login` только в профиле `oauth`; `JwtAuthenticationConverter` маппит claim `roles` → `ROLE_*`; `/api/admin/**` требует `ROLE_ADMIN`.
+- `TokenService.generate(...)` поддерживает roles; `AuthService` передаёт роли при login/refresh.
+- `/api/me` по-прежнему возвращает `id, email, emailVerified, roles` без префикса `ROLE_`.
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
@@ -138,7 +148,7 @@
 4. **Ответ register скрывает существование email** (требование «не раскрывай»): 202 generic даже для занятого адреса. Если когда-нибудь понадобится 409 EMAIL_TAKEN — это осознанное раскрытие, решение за владельцем контракта.
 5. **`mail:processed:{eventId}`** — расширение таблицы ключей §6.3 (хранилище идемпотентности consumer). TTL 72 ч — при повторной доставке позже 72 ч письмо уйдёт повторно; для verification-писем ок, для критичных дубль-защит нужен долговременный стор.
 6. **Письмо-подтверждение отправляется в plain text** (SimpleMailMessage). MIME/HTML-шаблоны и локализация — отдельная задача.
-7. **Первый ADMIN ещё не реализован** (`APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD` при старте, §6.1) — сейчас в БД нет ни одного админа; до этого `/api/admin/**` фактически никому не доступен (JWT не несёт ролей, authorities пустые). После создания админа понадобится проброс ролей в JWT (`roles` claim + `JwtAuthenticationConverter`) — решение за следующим этапом.
+7. **Закрыто (коммиты OAuth/admin):** первый ADMIN создаётся при старте из `APP_ADMIN_EMAIL`/`APP_ADMIN_PASSWORD` (`FirstAdminBootstrap`), роли проброшены в JWT через claim `roles` + `JwtAuthenticationConverter`; `/api/admin/**` доступен ADMIN и запрещён USER.
 8. **Закрыто (коммит `fix(ratelimit)`):** скрытая проблема с Jackson в `RateLimitConfig`/`RateLimitFilter` устранена — зависимость от `com.fasterxml.jackson.databind.ObjectMapper` убрана, JSON 429-ответа собирается вручную (как в `SecurityConfig`), добавлен тест минимального Spring-контекста `RateLimitConfigContextTest`. Контекст стартует без Jackson-2 ObjectMapper-бина.
 9. **Cookie `{userId}.{opaqueToken}`** — userId в cookie открытым текстом (это не секрет: subject JWT и так виден). Если захотите скрыть — понадобится lookup-ключ (например, индекс `refresh:cookie:{sha256(cookie)} → userId`), решение за владельцем контракта.
 10. **Метаданные refresh — строка `createdAt|issuedIp`** (без JSON): компактно, но расширение формата (userAgent и т.п.) потребует миграции живых ключей; TTL 30 дн сам «мигрирует» записи за месяц.
