@@ -46,6 +46,14 @@ public class ApiClient {
         return send(HttpMethod.POST, path, json, bearer);
     }
 
+    public ResponseEntity<String> delete(String path, String bearer) {
+        return send(HttpMethod.DELETE, path, null, bearer);
+    }
+
+    public ResponseEntity<String> delete(String path) {
+        return send(HttpMethod.DELETE, path, null, null);
+    }
+
     public String cookie(String name) {
         return cookies.get(name);
     }
@@ -73,10 +81,17 @@ public class ApiClient {
             request.contentType(MediaType.APPLICATION_JSON).body(json);
         }
 
-        ResponseEntity<String> response = request.exchange((req, res) -> ResponseEntity
-                .status(res.getStatusCode())
-                .headers(res.getHeaders())
-                .body(new String(res.getBody().readAllBytes(), StandardCharsets.UTF_8)));
+        ResponseEntity<String> response = request.exchange((req, res) -> {
+            String body = "";
+            var stream = res.getBody();
+            if (stream != null) {
+                byte[] bytes = stream.readAllBytes();
+                body = new String(bytes, StandardCharsets.UTF_8);
+            }
+            return ResponseEntity.status(res.getStatusCode())
+                    .headers(res.getHeaders())
+                    .body(body);
+        });
 
         storeCookies(response.getHeaders());
         return response;
