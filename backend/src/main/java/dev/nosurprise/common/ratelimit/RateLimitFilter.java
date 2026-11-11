@@ -30,6 +30,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(RateLimitFilter.class);
 
     static final String LIMIT_PATH = "/api/calc";
+    static final java.util.Set<String> LIMIT_PATHS = java.util.Set.of("/api/calc", "/api/calc/stress");
     static final String PROBLEM_TYPE = "about:blank";
 
     private final RateLimiter limiter;
@@ -52,7 +53,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !HttpMethod.POST.matches(request.getMethod())
-                || !LIMIT_PATH.equals(request.getRequestURI());
+                || !LIMIT_PATHS.contains(request.getRequestURI());
     }
 
     @Override
