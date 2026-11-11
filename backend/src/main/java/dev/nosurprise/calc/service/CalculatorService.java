@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Слой service: валидация-преобразование → paramsHash → Redis-кэш → Mongo → расчёт ядром
@@ -45,14 +46,33 @@ public class CalculatorService {
     }
 
     public CalcResponse calculate(CalcRequest request) {
+        return calculate(request, null);
+    }
+
+    public CalcResponse calculate(CalcRequest request, UUID userId) {
         LoanParams params = CalcRequestMapper.toParams(request);
         String paramsHash = ParamsHasher.hash(params);
-        CalcResponse cached = fromCache(paramsHash);
+        CalcResponse cached = fromCache(paramsHash, userId);
         if (cached != null) {
             return cached;
         }
         CalculationDocument existing = repository.findByParamsHash(paramsHash).orElse(null);
         if (existing != null) {
+            if (userId != null && existing.userId() == null) {
+                CalculationDocument updated = new CalculationDocument(
+                        existing.id(),
+                        existing.paramsHash(),
+                        userId == null ? null : userId.toString(),
+                        existing.params(),
+                        existing.summary(),
+                        existing.savings(),
+                        existing.schedule(),
+                        existing.createdAt(),
+                        null);
+                repository.save(updated);
+                warmCache(paramsHash, updated.id());
+                return toResponse(updated);
+            }
             warmCache(paramsHash, existing.id());
             return toResponse(existing);
         }
@@ -61,13 +81,13 @@ public class CalculatorService {
         CalculationDocument document = new CalculationDocument(
                 null,
                 paramsHash,
-                null, // userId появится с аутентификацией; все расчёты пока анонимные
+                userId == null ? null : userId.toString(),
                 params,
                 result.summary(),
                 result.savings(),
                 result.schedule(),
                 now,
-                now.plus(ANONYMOUS_TTL));
+                userId == null ? now.plus(ANONYMOUS_TTL) : null);
         CalculationDocument saved = repository.save(document);
         warmCache(paramsHash, saved.id());
         return toResponse(saved);
@@ -83,7 +103,7 @@ public class CalculatorService {
     }
 
     /** Redis → документ по calcId. null — нет в кэше или запись устарела (документ удалён). */
-    private CalcResponse fromCache(String paramsHash) {
+    private CalcResponse fromCache(String paramsHash, UUID userId) {
         String calcId;
         try {
             calcId = cache.findCalcId(paramsHash).orElse(null);
@@ -96,6 +116,20 @@ public class CalculatorService {
         }
         CalculationDocument document = repository.findById(calcId).orElse(null);
         if (document != null) {
+            if (userId != null && document.userId() == null) {
+                CalculationDocument updated = new CalculationDocument(
+                        document.id(),
+                        document.paramsHash(),
+                        userId == null ? null : userId.toString(),
+                        document.params(),
+                        document.summary(),
+                        document.savings(),
+                        document.schedule(),
+                        document.createdAt(),
+                        null);
+                repository.save(updated);
+                return toResponse(updated);
+            }
             return toResponse(document);
         }
         // Redis опережает Mongo: запись устарела — удаляем и считаем как cache miss.

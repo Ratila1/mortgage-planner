@@ -58,7 +58,7 @@ class CalculatorControllerTest {
     @Test
     @DisplayName("POST /api/calc: 200, calcId и деньги строками")
     void postCalcReturnsStringifiedMoney() throws Exception {
-        when(service.calculate(any())).thenReturn(response("665f0f0f1e1e1e1e1e1e1e1e"));
+        when(service.calculate(any(), any())).thenReturn(response("665f0f0f1e1e1e1e1e1e1e1e"));
 
         mockMvc.perform(post("/api/calc").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isOk())
@@ -112,7 +112,7 @@ class CalculatorControllerTest {
     @Test
     @DisplayName("POST /api/calc: нарушение правил расчёта → 400 INVALID_CALC_PARAMS")
     void postInvalidCalcParams() throws Exception {
-        when(service.calculate(any())).thenThrow(new InvalidCalculationException("price must be positive"));
+        when(service.calculate(any(), any())).thenThrow(new InvalidCalculationException("price must be positive"));
 
         mockMvc.perform(post("/api/calc").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isBadRequest())
