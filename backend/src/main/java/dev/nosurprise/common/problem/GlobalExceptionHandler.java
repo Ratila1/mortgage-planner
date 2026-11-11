@@ -6,6 +6,10 @@ import dev.nosurprise.auth.service.InvalidRefreshTokenException;
 import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.calculator.InvalidCalculationException;
 import dev.nosurprise.calc.service.CalcNotFoundException;
+import dev.nosurprise.offer.OfferNotFoundException;
+import dev.nosurprise.scenario.InvalidOfferException;
+import dev.nosurprise.scenario.InvalidRequestException;
+import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -53,6 +57,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CalcNotFoundException.class)
     ProblemDetail onCalcNotFound(CalcNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.CALC_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(OfferNotFoundException.class)
+    ProblemDetail onOfferNotFound(OfferNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.OFFER_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(ScenarioNotFoundException.class)
+    ProblemDetail onScenarioNotFound(ScenarioNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.SCENARIO_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidOfferException.class)
+    ProblemDetail onInvalidOffer(InvalidOfferException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_OFFER, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    ProblemDetail onInvalidRequest(InvalidRequestException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(VerifyTokenInvalidException.class)
