@@ -34,6 +34,11 @@ server:
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  ratelimit:
+    calc:
+      anonymous-per-minute: 30      # аноним: 30 запросов/мин на IP (§6.3)
+      authenticated-per-minute: 120 # пользователь: 120 запросов/мин (§6.3)
+      window: 60s
   jwt:
     secret: ${JWT_SECRET:change-me-change-me-change-me-change-me}
     access-ttl: 15m

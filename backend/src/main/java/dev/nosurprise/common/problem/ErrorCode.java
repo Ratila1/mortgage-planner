@@ -8,5 +8,6 @@ public enum ErrorCode {
     INVALID_REQUEST_BODY,
     INVALID_CALC_PARAMS,
     CALC_NOT_FOUND,
+    RATE_LIMITED,
     INTERNAL_ERROR
 }
