@@ -1,9 +1,12 @@
 package dev.nosurprise.scenario;
 
 import dev.nosurprise.calc.service.CalculatorService;
+import dev.nosurprise.calc.service.CalculationReadModel;
 import dev.nosurprise.calc.web.dto.CalcRequest;
 import dev.nosurprise.calc.web.dto.CalcResponse;
 import dev.nosurprise.offer.OfferService;
+import dev.nosurprise.offer.web.dto.OfferResponse;
+import dev.nosurprise.scenario.ScenarioExportData;
 import dev.nosurprise.pdf.event.ExportPdfRequested;
 import dev.nosurprise.scenario.ScenarioRecalculationResult;
 import dev.nosurprise.scenario.web.dto.CreateScenarioRequest;
@@ -192,6 +195,37 @@ public class ScenarioService {
     @Transactional
     public void recalc(UUID scenarioId, BigDecimal newRate) {
         recalculate(scenarioId, newRate);
+    }
+
+    @Transactional(readOnly = true)
+    public ScenarioExportData getScenarioExportData(UUID userId, UUID scenarioId) {
+        return findScenarioExportData(userId, scenarioId);
+    }
+
+    @Transactional(readOnly = true)
+    public ScenarioExportData findScenarioExportData(UUID userId, UUID scenarioId) {
+        Scenario scenario = findOwnedScenario(userId, scenarioId);
+        CalculationReadModel calculation = calculatorService.getCalculation(scenario.getCalcId());
+
+        OfferResponse offer = null;
+        if (scenario.getOfferId() != null) {
+            try {
+                offer = OfferResponse.from(offerService.findEntity(scenario.getOfferId()));
+            } catch (RuntimeException ex) {
+                offer = null;
+            }
+        }
+
+        return new ScenarioExportData(
+                scenario.getId(),
+                scenario.getUserId(),
+                scenario.getName(),
+                calculation.params(),
+                calculation.summary(),
+                calculation.schedule(),
+                calculation.calcId(),
+                calculation.createdAt(),
+                offer);
     }
 
     private ScenarioResponse toResponse(Scenario scenario) {

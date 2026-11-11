@@ -1,26 +1,21 @@
 package dev.nosurprise.pdf.consumer;
 
-import dev.nosurprise.calc.repository.CalculationDocument;
-import dev.nosurprise.calc.repository.CalculationRepository;
 import dev.nosurprise.notification.NotificationService;
 import dev.nosurprise.pdf.PdfService;
 import dev.nosurprise.pdf.event.ExportPdfRequested;
-import dev.nosurprise.scenario.Scenario;
+import dev.nosurprise.scenario.ScenarioExportData;
 import dev.nosurprise.scenario.ScenarioService;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
-import java.util.Optional;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -33,17 +28,15 @@ public class ExportPdfConsumer {
     static final Duration PROCESSED_TTL = Duration.ofDays(7);
 
     private final ScenarioService scenarioService;
-    private final CalculationRepository calculationRepository;
     private final PdfService pdfService;
     private final GridFsTemplate gridFsTemplate;
     private final NotificationService notificationService;
     private final StringRedisTemplate redis;
 
-    public ExportPdfConsumer(ScenarioService scenarioService, CalculationRepository calculationRepository,
-                             PdfService pdfService, GridFsTemplate gridFsTemplate,
-                             NotificationService notificationService, StringRedisTemplate redis) {
+    public ExportPdfConsumer(ScenarioService scenarioService, PdfService pdfService,
+                             GridFsTemplate gridFsTemplate, NotificationService notificationService,
+                             StringRedisTemplate redis) {
         this.scenarioService = scenarioService;
-        this.calculationRepository = calculationRepository;
         this.pdfService = pdfService;
         this.gridFsTemplate = gridFsTemplate;
         this.notificationService = notificationService;
@@ -60,35 +53,29 @@ public class ExportPdfConsumer {
             return;
         }
 
-        var scenarioOpt = scenarioService.findByIdAndUserId(event.scenarioId(), event.userId());
-        if (scenarioOpt.isEmpty()) {
+        dev.nosurprise.scenario.ScenarioExportData exportData;
+        try {
+            exportData = scenarioService.getScenarioExportData(event.scenarioId(), event.userId());
+        } catch (dev.nosurprise.scenario.ScenarioNotFoundException ex) {
             log.warn("scenario {} not found for pdf export event {}, skipping", event.scenarioId(), event.eventId());
             markProcessed(key);
             return;
         }
-        Scenario scenario = scenarioOpt.get();
 
-        CalculationDocument calculation = calculationRepository.findById(event.calcId()).orElse(null);
-        if (calculation == null) {
-            log.warn("calculation {} not found for pdf export event {}, skipping", event.calcId(), event.eventId());
-            markProcessed(key);
-            return;
-        }
-
-        byte[] pdf = pdfService.generatePdf(calculation, scenario);
-        String fileName = "scenario-" + scenario.getId() + ".pdf";
+        byte[] pdf = pdfService.generatePdf(exportData);
+        String fileName = "scenario-" + exportData.scenarioId() + ".pdf";
 
         Document metadata = new Document();
-        metadata.put("scenarioId", scenario.getId());
-        metadata.put("userId", event.userId());
-        metadata.put("calcId", calculation.id());
+        metadata.put("scenarioId", exportData.scenarioId());
+        metadata.put("userId", exportData.userId());
+        metadata.put("calcId", exportData.calcId());
         metadata.put("fileName", fileName);
         metadata.put("contentType", "application/pdf");
-        metadata.put("createdAt", Instant.now());
+        metadata.put("createdAt", exportData.createdAt());
 
         ObjectId fileId = gridFsTemplate.store(new ByteArrayInputStream(pdf), fileName, "application/pdf", metadata);
 
-        notificationService.createPdfReady(event.userId(), scenario.getId(), calculation.id(),
+        notificationService.createPdfReady(exportData.userId(), exportData.scenarioId(), exportData.calcId(),
                 fileId.toHexString(), fileName);
 
         markProcessed(key);
@@ -102,8 +89,7 @@ public class ExportPdfConsumer {
     }
 
     private boolean isProcessed(String key) {
-        return Boolean.TRUE.equals(redis.hasKey(key))
-                || redis.opsForValue().get(key) != null;
+        return Boolean.TRUE.equals(redis.hasKey(key)) || redis.opsForValue().get(key) != null;
     }
 
     private void markProcessed(String key) {

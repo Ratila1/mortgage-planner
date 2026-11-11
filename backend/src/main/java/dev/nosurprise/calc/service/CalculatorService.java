@@ -102,6 +102,20 @@ public class CalculatorService {
         return toResponse(document);
     }
 
+    public CalculationReadModel getCalculation(String calcId) {
+        return findCalculation(calcId);
+    }
+
+    public CalculationReadModel findCalculation(String calcId) {
+        if (calcId == null || !ObjectId.isValid(calcId)) {
+            throw new CalcNotFoundException("calculation not found: " + calcId);
+        }
+        CalculationDocument document = repository.findById(calcId)
+                .orElseThrow(() -> new CalcNotFoundException("calculation not found: " + calcId));
+        return new CalculationReadModel(document.id(), document.params(), document.summary(),
+                document.schedule(), document.createdAt(), document.userId());
+    }
+
     /** Redis → документ по calcId. null — нет в кэше или запись устарела (документ удалён). */
     private CalcResponse fromCache(String paramsHash, UUID userId) {
         String calcId;
