@@ -1,5 +1,6 @@
 package dev.nosurprise.calc.service;
 
+import dev.nosurprise.calc.cache.CalcCache;
 import dev.nosurprise.calc.repository.CalculationDocument;
 import dev.nosurprise.calc.repository.CalculationRepository;
 import dev.nosurprise.calc.web.CalcRequestMapper;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,19 +32,31 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Слой service с моком репозитория: идемпотентность по paramsHash, сохранение,
- * TTL анонимного расчёта, 404 для неизвестного calcId, проброс InvalidCalculationException.
+ * Слой service с моками репозитория и кэша: идемпотентность по paramsHash, Redis-кэш
+ * (§6.3): hit по calcId без пересчёта, прогрев при Mongo hit, запись после сохранения,
+ * отказоустойчивость кэша, TTL анонимного расчёта, 404 для неизвестного calcId,
+ * проброс InvalidCalculationException.
  */
 @ExtendWith(MockitoExtension.class)
 class CalculatorServiceTest {
 
+    private static final String SAVED_CALC_ID = "665f0f0f1e1e1e1e1e1e1e1e";
+    private static final String EXISTING_CALC_ID = "aaaabbbbccccddddeeeeffff";
+
     @Mock
     CalculationRepository repository;
+
+    @Mock
+    CalcCache cache;
 
     @InjectMocks
     CalculatorService service;
@@ -51,6 +65,10 @@ class CalculatorServiceTest {
         return new CalcRequest(
                 new BigDecimal("1000000"), new BigDecimal("0"), 12,
                 new BigDecimal("12"), PaymentType.ANNUITY, List.of());
+    }
+
+    private String requestHash() {
+        return ParamsHasher.hash(CalcRequestMapper.toParams(request()));
     }
 
     private CalculationDocument document(String id) {
@@ -67,13 +85,13 @@ class CalculatorServiceTest {
         when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> {
             CalculationDocument doc = invocation.getArgument(0);
-            return new CalculationDocument("665f0f0f1e1e1e1e1e1e1e1e", doc.paramsHash(), doc.userId(),
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
                     doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
         });
 
         CalcResponse response = service.calculate(request());
 
-        assertThat(response.calcId()).isEqualTo("665f0f0f1e1e1e1e1e1e1e1e");
+        assertThat(response.calcId()).isEqualTo(SAVED_CALC_ID);
         assertThat(response.monthlyPayment()).isEqualTo("88848.79");
         assertThat(response.loanAmount()).isEqualTo("1000000.00");
         assertThat(response.savings()).isNull();
@@ -91,25 +109,131 @@ class CalculatorServiceTest {
     @Test
     @DisplayName("повторный расчёт с тем же paramsHash возвращает существующий calcId без сохранения")
     void repeatedParamsReuseExistingDocument() {
-        CalculationDocument existing = document("aaaabbbbccccddddeeeeffff");
+        CalculationDocument existing = document(EXISTING_CALC_ID);
         when(repository.findByParamsHash(any())).thenReturn(Optional.of(existing));
 
         CalcResponse response = service.calculate(request());
 
-        assertThat(response.calcId()).isEqualTo("aaaabbbbccccddddeeeeffff");
+        assertThat(response.calcId()).isEqualTo(EXISTING_CALC_ID);
         assertThat(response.monthlyPayment()).isEqualTo("88848.79");
         verify(repository, never()).save(any());
     }
 
     @Test
+    @DisplayName("redis hit + документ по calcId найден → существующий calcId без пересчёта")
+    void redisHitReturnsExistingCalcId() {
+        CalculationDocument existing = document(EXISTING_CALC_ID);
+        when(cache.findCalcId(requestHash())).thenReturn(Optional.of(EXISTING_CALC_ID));
+        when(repository.findById(EXISTING_CALC_ID)).thenReturn(Optional.of(existing));
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(EXISTING_CALC_ID);
+        assertThat(response.monthlyPayment()).isEqualTo("88848.79");
+        verify(repository, never()).findByParamsHash(any());
+        verify(repository, never()).save(any());
+        verify(cache, never()).save(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("redis hit, но документа по calcId нет → evict устаревшей записи, пересчёт, сохранение, запись в кэш")
+    void staleRedisEntryEvictedAndRecalculated() {
+        when(cache.findCalcId(requestHash())).thenReturn(Optional.of("111122223333444455556666"));
+        when(repository.findById("111122223333444455556666")).thenReturn(Optional.empty());
+        when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> {
+            CalculationDocument doc = invocation.getArgument(0);
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
+                    doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
+        });
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(SAVED_CALC_ID);
+        InOrder inOrder = inOrder(repository, cache);
+        inOrder.verify(cache).evict(requestHash());
+        inOrder.verify(repository).save(any());
+        inOrder.verify(cache).save(eq(requestHash()), eq(SAVED_CALC_ID));
+    }
+
+    @Test
+    @DisplayName("redis miss + mongo miss → расчёт, сохранение, запись calcId в кэш после сохранения")
+    void cacheMissComputesSavesAndCaches() {
+        when(cache.findCalcId(any())).thenReturn(Optional.empty());
+        when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> {
+            CalculationDocument doc = invocation.getArgument(0);
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
+                    doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
+        });
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(SAVED_CALC_ID);
+        InOrder inOrder = inOrder(repository, cache);
+        inOrder.verify(repository).save(any());
+        inOrder.verify(cache).save(requestHash(), SAVED_CALC_ID);
+    }
+
+    @Test
+    @DisplayName("redis miss + mongo hit → существующий расчёт без пересчёта, кэш прогрет")
+    void mongoHitWarmsRedisCache() {
+        when(cache.findCalcId(any())).thenReturn(Optional.empty());
+        CalculationDocument existing = document(EXISTING_CALC_ID);
+        when(repository.findByParamsHash(requestHash())).thenReturn(Optional.of(existing));
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(EXISTING_CALC_ID);
+        assertThat(response.monthlyPayment()).isEqualTo("88848.79");
+        verify(repository, never()).save(any());
+        verify(cache).save(requestHash(), EXISTING_CALC_ID);
+    }
+
+    @Test
+    @DisplayName("сбой Redis при поиске не ломает расчёт — идёт обычный поток")
+    void redisFailureDoesNotBreakCalculation() {
+        when(cache.findCalcId(any())).thenThrow(new IllegalStateException("redis down"));
+        when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> {
+            CalculationDocument doc = invocation.getArgument(0);
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
+                    doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
+        });
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(SAVED_CALC_ID);
+        assertThat(response.monthlyPayment()).isEqualTo("88848.79");
+    }
+
+    @Test
+    @DisplayName("сбой Redis при записи после успешного сохранения не ломает ответ")
+    void cacheSaveFailureDoesNotBreakCalculation() {
+        when(cache.findCalcId(any())).thenReturn(Optional.empty());
+        when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> {
+            CalculationDocument doc = invocation.getArgument(0);
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
+                    doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
+        });
+        doThrow(new IllegalStateException("redis down")).when(cache).save(anyString(), anyString());
+
+        CalcResponse response = service.calculate(request());
+
+        assertThat(response.calcId()).isEqualTo(SAVED_CALC_ID);
+        assertThat(response.monthlyPayment()).isEqualTo("88848.79");
+    }
+
+    @Test
     @DisplayName("get по существующему calcId возвращает сохранённый расчёт")
     void getReturnsSavedCalculation() {
-        CalculationDocument existing = document("aaaabbbbccccddddeeeeffff");
-        when(repository.findById("aaaabbbbccccddddeeeeffff")).thenReturn(Optional.of(existing));
+        CalculationDocument existing = document(EXISTING_CALC_ID);
+        when(repository.findById(EXISTING_CALC_ID)).thenReturn(Optional.of(existing));
 
-        CalcResponse response = service.get("aaaabbbbccccddddeeeeffff");
+        CalcResponse response = service.get(EXISTING_CALC_ID);
 
-        assertThat(response.calcId()).isEqualTo("aaaabbbbccccddddeeeeffff");
+        assertThat(response.calcId()).isEqualTo(EXISTING_CALC_ID);
         assertThat(response.monthlyPayment()).isEqualTo("88848.79");
     }
 
@@ -141,7 +265,7 @@ class CalculatorServiceTest {
         when(repository.findByParamsHash(any())).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> {
             CalculationDocument doc = invocation.getArgument(0);
-            return new CalculationDocument("665f0f0f1e1e1e1e1e1e1e1e", doc.paramsHash(), doc.userId(),
+            return new CalculationDocument(SAVED_CALC_ID, doc.paramsHash(), doc.userId(),
                     doc.params(), doc.summary(), doc.savings(), doc.schedule(), doc.createdAt(), doc.expireAt());
         });
 
