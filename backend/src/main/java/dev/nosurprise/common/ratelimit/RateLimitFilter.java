@@ -1,6 +1,5 @@
 package dev.nosurprise.common.ratelimit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nosurprise.common.problem.ErrorCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -16,8 +15,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * Rate limit POST /api/calc (§6.3, §7): аноним — по IP, пользователь — по userId.
@@ -37,12 +34,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final RateLimiter limiter;
     private final RateLimitProperties properties;
-    private final ObjectMapper objectMapper;
 
-    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties, ObjectMapper objectMapper) {
+    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties) {
         this.limiter = limiter;
         this.properties = properties;
-        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Совместимость с прежним API (Jackson 2/3 ObjectMapper передавался снаружи).
+     * JSON 429-ответа собирается вручную, сериализатор не используется — параметр игнорируется.
+     * Конструктор оставлен, чтобы не ломать вызовы/тесты, ожидающие ObjectMapper-аргумент.
+     */
+    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties, Object objectMapper) {
+        this(limiter, properties);
     }
 
     @Override
@@ -82,12 +86,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setHeader("Retry-After", String.valueOf(decision.retryAfterSeconds()));
         response.setContentType("application/problem+json");
-        Map<String, Object> problem = new LinkedHashMap<>();
-        problem.put("type", PROBLEM_TYPE);
-        problem.put("title", HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase());
-        problem.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
-        problem.put("detail", "rate limit exceeded: too many calculation requests, try again later");
-        problem.put("code", ErrorCode.RATE_LIMITED.name());
-        objectMapper.writeValue(response.getWriter(), problem);
+        response.getWriter().write("{\"type\":\"" + PROBLEM_TYPE
+                + "\",\"title\":\"" + HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase()
+                + "\",\"status\":" + HttpStatus.TOO_MANY_REQUESTS.value()
+                + ",\"detail\":\"rate limit exceeded: too many calculation requests, try again later\""
+                + ",\"code\":\"" + ErrorCode.RATE_LIMITED.name() + "\"}");
     }
 }

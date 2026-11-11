@@ -1,6 +1,6 @@
 package dev.nosurprise.common.ratelimit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,7 +56,7 @@ class RateLimitFilterTest {
     void setUp() {
         limiter = mock(RateLimiter.class);
         RateLimitProperties properties = new RateLimitProperties();
-        filter = new RateLimitFilter(limiter, properties, new ObjectMapper());
+        filter = new RateLimitFilter(limiter, properties);
         mockMvc = MockMvcBuilders.standaloneSetup(new StubController())
                 .addFilters(filter)
                 .build();

@@ -1,6 +1,5 @@
 package dev.nosurprise.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nosurprise.common.ratelimit.RateLimitFilter;
 import dev.nosurprise.common.ratelimit.RateLimitProperties;
 import dev.nosurprise.common.ratelimit.RateLimiter;
@@ -22,9 +21,9 @@ public class RateLimitConfig {
 
     @Bean
     FilterRegistrationBean<RateLimitFilter> rateLimitFilter(
-            RateLimiter limiter, RateLimitProperties properties, ObjectMapper objectMapper) {
+            RateLimiter limiter, RateLimitProperties properties) {
         FilterRegistrationBean<RateLimitFilter> registration =
-                new FilterRegistrationBean<>(new RateLimitFilter(limiter, properties, objectMapper));
+                new FilterRegistrationBean<>(new RateLimitFilter(limiter, properties));
         registration.setOrder(ORDER_AFTER_SECURITY);
         return registration;
     }
