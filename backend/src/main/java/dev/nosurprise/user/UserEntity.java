@@ -93,8 +93,21 @@ public class UserEntity {
         return provider;
     }
 
+    public void setProvider(Provider provider) {
+        this.provider = provider;
+    }
+
     public String getProviderId() {
         return providerId;
+    }
+
+    public void setProviderId(String providerId) {
+        this.providerId = providerId;
+    }
+
+    /** Добавление роли (идемпотентно). */
+    public void addRole(Role role) {
+        this.roles.add(role);
     }
 
     public Instant getCreatedAt() {
