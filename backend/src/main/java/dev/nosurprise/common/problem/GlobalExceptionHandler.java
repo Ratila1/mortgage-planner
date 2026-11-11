@@ -2,6 +2,8 @@ package dev.nosurprise.common.problem;
 
 import dev.nosurprise.auth.service.EmailNotVerifiedException;
 import dev.nosurprise.auth.service.InvalidCredentialsException;
+import dev.nosurprise.auth.service.OtpInvalidException;
+import dev.nosurprise.auth.service.OtpRateLimitExceededException;
 import dev.nosurprise.auth.service.InvalidRefreshTokenException;
 import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.calculator.InvalidCalculationException;
@@ -105,6 +107,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     ProblemDetail onInvalidCredentials(InvalidCredentialsException ex) {
         return problem(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIALS, ex.getMessage());
+    }
+
+    @ExceptionHandler(OtpInvalidException.class)
+    ProblemDetail onOtpInvalid(OtpInvalidException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.OTP_INVALID, ex.getMessage());
+    }
+
+    @ExceptionHandler(OtpRateLimitExceededException.class)
+    ProblemDetail onOtpRateLimit(OtpRateLimitExceededException ex) {
+        return problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED, ex.getMessage());
     }
 
     @ExceptionHandler(EmailNotVerifiedException.class)

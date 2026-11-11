@@ -53,6 +53,9 @@ class AuthControllerTest {
     @MockitoBean
     AuthService authService;
 
+    @MockitoBean
+    dev.nosurprise.auth.service.OtpService otpService;
+
     @Test
     @DisplayName("POST /api/auth/register: 202 c generic-сообщением, существование email не раскрывается")
     void registerAccepted() throws Exception {
