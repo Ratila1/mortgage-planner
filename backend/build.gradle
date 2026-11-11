@@ -38,6 +38,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+    // pdf
+    implementation 'com.github.librepdf:openpdf:1.3.39'
+
     // metrics (stretch goal)
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
