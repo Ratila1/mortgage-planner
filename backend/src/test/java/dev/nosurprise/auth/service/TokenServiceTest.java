@@ -8,9 +8,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -75,6 +77,16 @@ class TokenServiceTest {
         String token = tokenService.generate(UUID.randomUUID());
 
         assertThrows(InvalidAccessTokenException.class, () -> validatorAtLaterTime.validate(token));
+    }
+
+    @Test
+    @DisplayName("roles claim сохраняется в JWT")
+    void rolesClaimStored() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = tokenService.generate(userId, "USER", "ADMIN");
+
+        SignedJWT jwt = SignedJWT.parse(token);
+        assertThat(jwt.getJWTClaimsSet().getClaim("roles")).isEqualTo(List.of("USER", "ADMIN"));
     }
 
     @Test
