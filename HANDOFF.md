@@ -125,6 +125,15 @@
 - `scenario`: `Scenario`, `ScenarioRepository`, `ScenarioService`, контроллер `/api/scenarios` и `/api/scenarios/compare?ids=...` (2–3 id), DTO; создание сценария выполняет расчёт через `CalculatorService`, сохраняет расчёт в Mongo и ссылается на `calcId`; проверка активного `offerId`.
 - Права: сценарии только владельца; чужой сценарий → 404; compare с 1/4 id → 400 `INVALID_REQUEST`; неактивный/несуществующий offer → 400 `INVALID_OFFER`.
 
+### Уведомления об изменении ставки банковского предложения
+
+- Модуль `notification`: consumer `OfferRateChangedConsumer` слушает `notification.offer-rate-changed.q` (exchange `domain.events`, routing key `offer.rate.changed`).
+- Очередь и DLQ объявлены в `RabbitNotificationConfig`; retry/DLQ используются из существующей конфигурации RabbitMQ.
+- Идемпотентность по `eventId` в Redis: ключ `notification:offer-rate-changed:processed:{eventId}`, TTL 7 дней; ключ ставится только после успешной публикации всех `mail.requested`.
+- Письма отправляются через существующий mail pipeline всем активным пользователям с подтверждённым email и непустым email.
+- Текст письма содержит bankName, oldRate и newRate в читаемом виде; внутренние ID не включаются.
+- Если offer не найден, событие логируется и отмечается обработанным; невалидное событие выбрасывает исключение для retry/DLQ.
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
