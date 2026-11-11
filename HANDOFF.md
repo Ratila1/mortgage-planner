@@ -134,6 +134,15 @@
 - Текст письма содержит bankName, oldRate и newRate в читаемом виде; внутренние ID не включаются.
 - Если offer не найден, событие логируется и отмечается обработанным; невалидное событие выбрасывает исключение для retry/DLQ.
 
+### Асинхронный PDF-экспорт сценария
+
+- Миграция `V6__notifications.sql` создаёт таблицу `notifications`.
+- `notification`: `Notification`, `NotificationRepository`, `NotificationService` с идемпотентным созданием `PDF_READY`.
+- `pdf`: `PdfService` (OpenPDF, встроенный шрифт Arial.ttf), `ExportPdfRequested`, publisher `AFTER_COMMIT`, очередь `export.pdf.q` + DLQ, consumer с GridFS и Redis-идемпотентностью `pdf:export:processed:{eventId}` (TTL 7 дней).
+- Endpoints: `POST /api/scenarios/{id}/export/pdf` → 202; `GET /api/scenarios/{id}/pdf` → PDF с корректными заголовками.
+- Доступ только владельцу сценария; чужой/несуществующий → 404 `SCENARIO_NOT_FOUND`; PDF не готов → 404 `PDF_NOT_READY`; метаданные есть, файла нет → 404 `PDF_NOT_FOUND`.
+- PDF содержит заголовок, дату, параметры, результаты, график и данные сценария/offer; деньги в читаемом формате.
+
 ## Проверки
 
 - `gradlew test --rerun-tasks` — BUILD SUCCESSFUL, **150 тестов, 0 падений** (96 прежних + 54 новых):
