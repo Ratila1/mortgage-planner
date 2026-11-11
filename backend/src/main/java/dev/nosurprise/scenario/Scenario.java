@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.ColumnTransformer;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -24,10 +25,14 @@ public class Scenario {
     @Column(nullable = false)
     private String name;
 
+    // jsonb: Hibernate биндит String как varchar, а PostgreSQL не приводит varchar к jsonb
+    // неявно, поэтому на запись нужен явный cast (иначе DataIntegrityViolationException → 500).
     @Column(nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "cast(? as jsonb)")
     private String params;
 
     @Column(nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "cast(? as jsonb)")
     private String summary;
 
     @Column(name = "calc_id", nullable = false, length = 24)
