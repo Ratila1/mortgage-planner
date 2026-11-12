@@ -22,6 +22,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 
+import org.springframework.stereotype.Service;
+
+@Service
 public class PdfService {
 
     private static final DateTimeFormatter DATE_FORMATTER =

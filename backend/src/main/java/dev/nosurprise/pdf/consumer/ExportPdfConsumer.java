@@ -55,7 +55,7 @@ public class ExportPdfConsumer {
 
         dev.nosurprise.scenario.ScenarioExportData exportData;
         try {
-            exportData = scenarioService.getScenarioExportData(event.scenarioId(), event.userId());
+            exportData = scenarioService.getScenarioExportData(event.userId(), event.scenarioId());
         } catch (dev.nosurprise.scenario.ScenarioNotFoundException ex) {
             log.warn("scenario {} not found for pdf export event {}, skipping", event.scenarioId(), event.eventId());
             markProcessed(key);
@@ -66,8 +66,8 @@ public class ExportPdfConsumer {
         String fileName = "scenario-" + exportData.scenarioId() + ".pdf";
 
         Document metadata = new Document();
-        metadata.put("scenarioId", exportData.scenarioId());
-        metadata.put("userId", exportData.userId());
+        metadata.put("scenarioId", exportData.scenarioId().toString());
+        metadata.put("userId", exportData.userId().toString());
         metadata.put("calcId", exportData.calcId());
         metadata.put("fileName", fileName);
         metadata.put("contentType", "application/pdf");

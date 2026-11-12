@@ -20,7 +20,7 @@ import java.time.Duration;
 @Configuration
 public class CalculationIndexes {
 
-    @Bean
+    @Bean(name = "calculationIndexesInitializer")
     InitializingBean calculationIndexes(MongoTemplate mongoTemplate) {
         return () -> {
             IndexOperations ops = mongoTemplate.indexOps(CalculationDocument.class);

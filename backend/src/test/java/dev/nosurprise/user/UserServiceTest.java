@@ -36,7 +36,9 @@ class UserServiceTest {
         verify(repository).save(captor.capture());
         UserEntity saved = captor.getValue();
 
-        assertThat(saved.getId()).isNotNull();
+        // id не задаётся сервисом: UUID генерирует Hibernate при persist
+        // (иначе Spring Data вызвал бы merge и StaleObjectStateException).
+        assertThat(saved.getId()).isNull();
         assertThat(saved.getEmail()).isEqualTo("user@example.com");
         assertThat(saved.getPasswordHash()).isEqualTo("bcrypt-hash");
         assertThat(saved.isEmailVerified()).isFalse();
@@ -47,15 +49,14 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("createLocalUser: id разных пользователей различается")
-    void createLocalUserGeneratesUniqueIds() {
+    @DisplayName("createLocalUser: сущность создаётся без id, чтобы Hibernate сделал persist, а не merge")
+    void createLocalUserLeavesIdToHibernate() {
         service.createLocalUser("a@example.com", "h1");
         service.createLocalUser("b@example.com", "h2");
 
         ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
         verify(repository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertThat(captor.getAllValues().get(0).getId())
-                .isNotEqualTo(captor.getAllValues().get(1).getId());
+        assertThat(captor.getAllValues()).allSatisfy(user -> assertThat(user.getId()).isNull());
     }
 
     @Test
