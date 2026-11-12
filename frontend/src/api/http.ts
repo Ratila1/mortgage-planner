@@ -1,6 +1,6 @@
 import { ApiError } from './errors';
 import type {
-  Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OfferInput, Problem, Scenario,
+  Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OAuthProvider, OfferInput, Problem, Scenario,
   ScenarioSummary, StressRow,
 } from './types';
 
@@ -179,6 +179,11 @@ export const httpApi: Api = {
   },
   me: () => request<Me>('GET', '/api/me'),
   oauthUrl: (provider) => `/oauth2/authorization/${provider}`,
+  // Ошибка запроса не должна ломать страницу входа — просто не показываем кнопки.
+  oauthProviders: () =>
+    request<string[]>('GET', '/api/auth/oauth/providers')
+      .then((ids) => ids.filter((id): id is OAuthProvider => id === 'google' || id === 'github'))
+      .catch(() => []),
 
   listScenarios: async () => (await request<Raw[]>('GET', '/api/scenarios')).map(normalizeScenario),
   createScenario: async (name, params, offerId) =>

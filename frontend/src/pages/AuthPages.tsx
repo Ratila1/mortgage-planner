@@ -1,9 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError, errorMessage, USE_MOCKS } from '../api';
-
-/** Вход через Google/GitHub работает только с профилем бэкенда oauth (см. README) — по умолчанию кнопки скрыты. */
-const OAUTH_ENABLED = import.meta.env.VITE_OAUTH_ENABLED === 'true';
+import type { OAuthProvider } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Alert, Button, Field, Segmented, Spinner, Stamp, TextInput } from '../components/ui';
 
@@ -29,12 +27,30 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
   );
 }
 
+const OAUTH_LABELS: Record<OAuthProvider, string> = { google: 'Войти через Google', github: 'Войти через GitHub' };
+
+/** Коды из редиректа бэкенда /login?oauthError=… (OAuth2AuthenticationSuccessHandler, SecurityConfig). */
+const OAUTH_ERRORS: Record<string, string> = {
+  no_email: 'Провайдер не отдал адрес почты. Откройте доступ к email в настройках аккаунта или войдите по почте.',
+  failed: 'Не получилось войти через соцсеть: вход отменён или провайдер ответил ошибкой. Попробуйте ещё раз.',
+};
+
+/** Кнопки показываются, только если бэкенд запущен с профилем oauth и ключами провайдеров. */
 function OAuthButtons() {
-  if (!OAUTH_ENABLED) return null;
+  const [providers, setProviders] = useState<OAuthProvider[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api.oauthProviders().then((list) => alive && setProviders(list));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (providers.length === 0) return null;
   return (
     <>
-      <div className="grid grid-cols-2 gap-2">
-      {(['google', 'github'] as const).map((provider) => (
+      <div className={`grid gap-2 ${providers.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+      {providers.map((provider) => (
         <a
           key={provider}
           href={api.oauthUrl(provider)}
@@ -46,7 +62,7 @@ function OAuthButtons() {
           }}
           className="flex items-center justify-center gap-2 rounded-xl border border-line bg-white/70 px-3 py-2.5 text-sm font-semibold transition hover:border-ink-3"
         >
-          {provider === 'google' ? 'Google' : 'GitHub'}
+          {OAUTH_LABELS[provider]}
         </a>
       ))}
     </div>
@@ -70,6 +86,9 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? '/scenarios';
+  const [searchParams] = useSearchParams();
+  const oauthErrorCode = searchParams.get('oauthError');
+  const oauthError = oauthErrorCode ? (OAUTH_ERRORS[oauthErrorCode] ?? OAUTH_ERRORS.failed) : null;
 
   const [mode, setMode] = useState<'password' | 'otp'>('password');
   const [email, setEmail] = useState('');
@@ -120,6 +139,7 @@ export function LoginPage() {
       subtitle="Ваши сценарии на месте. Ставки банков, увы, тоже."
       footer={<>Ещё нет аккаунта? <Link to="/register" className="font-semibold text-money">Зарегистрируйтесь</Link></>}
     >
+      {oauthError && <div className="mb-4"><Alert>{oauthError}</Alert></div>}
       <OAuthButtons />
       <Segmented
         label="Способ входа"

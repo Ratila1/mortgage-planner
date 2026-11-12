@@ -7,6 +7,8 @@ import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -24,18 +26,31 @@ import java.util.Locale;
 @Component
 public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
+    /** Страница входа фронта; код ошибки фронт показывает человеческим текстом. */
+    static final String LOGIN_ERROR_URL = "/login?oauthError=";
+
     private final UserService userService;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final dev.nosurprise.auth.service.JwtProperties jwtProperties;
+    private final GitHubEmailClient gitHubEmailClient;
 
     public OAuth2AuthenticationSuccessHandler(UserService userService, TokenService tokenService,
                                              RefreshTokenService refreshTokenService,
                                              dev.nosurprise.auth.service.JwtProperties jwtProperties) {
+        this(userService, tokenService, refreshTokenService, jwtProperties, null);
+    }
+
+    @Autowired
+    public OAuth2AuthenticationSuccessHandler(UserService userService, TokenService tokenService,
+                                             RefreshTokenService refreshTokenService,
+                                             dev.nosurprise.auth.service.JwtProperties jwtProperties,
+                                             GitHubEmailClient gitHubEmailClient) {
         this.userService = userService;
         this.tokenService = tokenService;
         this.refreshTokenService = refreshTokenService;
         this.jwtProperties = jwtProperties;
+        this.gitHubEmailClient = gitHubEmailClient;
     }
 
     @Override
@@ -60,16 +75,20 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             Object id = principal.getAttribute("id");
             providerId = (id == null) ? null : String.valueOf(id);
             providerVerified = true;
-            if (email == null || email.isBlank()) {
-                // GitHub может не отдавать email в /user — в этом случае вход невозможен по контракту (по email).
-                throw new IllegalArgumentException("GitHub account has no public email");
+            if ((email == null || email.isBlank()) && gitHubEmailClient != null) {
+                // Почта скрыта в профиле GitHub — берём основной подтверждённый адрес из /user/emails.
+                String fromApi = gitHubEmailClient.findPrimaryVerifiedEmail(oauth);
+                email = fromApi == null ? null : fromApi.trim().toLowerCase(Locale.ROOT);
             }
         } else {
-            throw new IllegalArgumentException("Unsupported OAuth provider: " + registrationId);
+            response.sendRedirect(LOGIN_ERROR_URL + "unsupported_provider");
+            return;
         }
 
         if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("OAuth provider did not return email");
+            // Пользователя нельзя завести без email: возвращаем на страницу входа с понятной ошибкой.
+            response.sendRedirect(LOGIN_ERROR_URL + "no_email");
+            return;
         }
 
         UserEntity user = userService.provisionOAuthUser(email, provider, providerId, providerVerified);
@@ -80,6 +99,11 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         // Ставим refresh-cookie и возвращаем на фронт: при загрузке он сам вызовет
         // POST /api/auth/refresh и получит access-токен.
         response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
+        // Сессия нужна была только на время OAuth-обмена; дальше фронт работает по JWT.
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
         response.sendRedirect("/");
     }
 

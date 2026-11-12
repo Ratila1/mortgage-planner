@@ -74,7 +74,11 @@ public class SecurityConfig {
         if (java.util.Arrays.asList(env.getActiveProfiles()).contains("oauth")) {
             OAuth2AuthenticationSuccessHandler handler = successHandlerProvider.getIfAvailable();
             if (handler != null) {
-                http.oauth2Login(oauth2 -> oauth2.successHandler(handler));
+                http.oauth2Login(oauth2 -> oauth2
+                        .successHandler(handler)
+                        // Отказ пользователя или ошибка провайдера — назад на страницу входа фронта.
+                        .failureHandler((request, response, ex) ->
+                                response.sendRedirect(OAuth2AuthenticationSuccessHandler.LOGIN_ERROR_URL + "failed")));
             } else {
                 http.oauth2Login(Customizer.withDefaults());
             }

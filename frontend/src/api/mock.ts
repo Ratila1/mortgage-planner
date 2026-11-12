@@ -148,6 +148,9 @@ export const mockApi: Api = {
     return requireUser();
   },
   oauthUrl: () => '#oauth-mock',
+  async oauthProviders() {
+    return ['google', 'github'];
+  },
 
   async listScenarios() {
     await delay();

@@ -157,6 +157,8 @@ export interface Problem {
 }
 
 /** Всё, что умеет фронт. Реализации: api/http.ts (настоящий бэк) и api/mock.ts. */
+export type OAuthProvider = 'google' | 'github';
+
 export interface Api {
   calculate(params: CalcParams): Promise<CalcResult>;
   getCalculation(calcId: string): Promise<CalcResult>;
@@ -171,7 +173,9 @@ export interface Api {
   restoreSession(): Promise<boolean>;
   logout(): Promise<void>;
   me(): Promise<Me>;
-  oauthUrl(provider: 'google' | 'github'): string;
+  oauthUrl(provider: OAuthProvider): string;
+  /** Какие провайдеры включены на бэкенде (профиль oauth). Пусто — кнопки не показываем. */
+  oauthProviders(): Promise<OAuthProvider[]>;
 
   listScenarios(): Promise<Scenario[]>;
   createScenario(name: string, params: CalcParams, offerId?: Id | null): Promise<Scenario>;
