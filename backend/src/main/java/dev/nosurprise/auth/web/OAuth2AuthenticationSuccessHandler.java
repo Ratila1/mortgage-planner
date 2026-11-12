@@ -27,7 +27,7 @@ import java.util.Locale;
 public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
     /** Страница входа фронта; код ошибки фронт показывает человеческим текстом. */
-    static final String LOGIN_ERROR_URL = "/login?oauthError=";
+    public static final String LOGIN_ERROR_URL = "/login?oauthError=";
 
     private final UserService userService;
     private final TokenService tokenService;

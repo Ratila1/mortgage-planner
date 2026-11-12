@@ -50,10 +50,12 @@ async function refreshAccess(): Promise<boolean> {
   return refreshing;
 }
 
-async function send(method: string, path: string, body?: unknown, retry = true): Promise<Response> {
+async function send(method: string, path: string, body?: unknown, retry = true, auth = true): Promise<Response> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  // Публичные /api/auth/*-запросы не отправляем с Bearer: протухший токен дал бы 401
+  // от ресурсного сервера ещё до permitAll (например, /api/auth/oauth/providers).
+  if (accessToken && auth && !path.startsWith('/api/auth/')) headers.Authorization = `Bearer ${accessToken}`;
 
   const res = await fetch(path, {
     method,
