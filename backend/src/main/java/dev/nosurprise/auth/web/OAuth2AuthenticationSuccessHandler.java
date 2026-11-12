@@ -18,7 +18,8 @@ import java.util.Locale;
 
 /**
  * OAuth2 success handler (§7): provisioning/link пользователя, выдача access JWT (с ролями)
- * + refresh token в Redis и httpOnly cookie. Ответ — JSON, как при /api/auth/login.
+ * + refresh token в Redis и httpOnly cookie, затем редирект на фронт ("/"):
+ * access-токен фронт получает сам через POST /api/auth/refresh.
  */
 @Component
 public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccessHandler {
@@ -74,13 +75,12 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         UserEntity user = userService.provisionOAuthUser(email, provider, providerId, providerVerified);
 
         var refresh = refreshTokenService.issue(user.getId(), request.getRemoteAddr());
-        String access = tokenService.generate(user.getId(), user.getRoles());
 
-        response.setStatus(200);
-        response.setContentType("application/json");
+        // Браузер пришёл сюда с редиректа провайдера, JSON ему показать некуда.
+        // Ставим refresh-cookie и возвращаем на фронт: при загрузке он сам вызовет
+        // POST /api/auth/refresh и получит access-токен.
         response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
-        response.getWriter().write("{\"accessToken\":\"" + access
-                + "\",\"tokenType\":\"Bearer\",\"expiresIn\":" + jwtProperties.accessTtl().toSeconds() + "}");
+        response.sendRedirect("/");
     }
 
     private static String attribute(OAuth2User principal, String name) {

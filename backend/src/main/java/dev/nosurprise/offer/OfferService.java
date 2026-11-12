@@ -38,6 +38,14 @@ public class OfferService {
         });
     }
 
+    /** Все предложения, включая скрытые (active=false) — для админки. */
+    @Transactional(readOnly = true)
+    public List<OfferResponse> findAll() {
+        return repository.findAll(org.springframework.data.domain.Sort.by("bankName")).stream()
+                .map(OfferResponse::from)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public BankOffer findEntity(UUID id) {
         return repository.findById(id)

@@ -27,6 +27,15 @@ docker compose up --build
 | RabbitMQ UI | http://localhost:15672 (guest / guest) |
 | Письма (Mailpit) | http://localhost:8025 |
 
+`.env` необязателен: у всех переменных в `docker-compose.yml` есть значения по умолчанию.
+
+**Демо-доступ.** Админ создаётся при старте: `admin@nosurprise.local` / `admin12345`
+(меняется через `APP_ADMIN_EMAIL` / `APP_ADMIN_PASSWORD`). Обычный пользователь — регистрация на сайте,
+письмо с подтверждением приходит в Mailpit. Чистый старт с пустыми базами: `docker compose down -v`.
+
+Кнопки входа через Google/GitHub на фронте скрыты, пока не собран фронт с `VITE_OAUTH_ENABLED=true`
+и бэкенд не запущен с профилем `oauth` (см. ниже).
+
 Публичная ссылка через Cloudflare Tunnel:
 ```bash
 docker compose --profile tunnel up --build

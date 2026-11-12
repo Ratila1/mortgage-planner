@@ -61,8 +61,8 @@ class OAuth2AuthenticationSuccessHandlerTest {
 
         handler.onAuthenticationSuccess(request, response, auth);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(response.getContentAsString()).contains("\"accessToken\":\"access-jwt\"");
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getRedirectedUrl()).isEqualTo("/");
         assertThat(response.getHeader("Set-Cookie")).contains("HttpOnly");
         assertThat(response.getHeader("Set-Cookie")).contains("Path=/api/auth");
     }

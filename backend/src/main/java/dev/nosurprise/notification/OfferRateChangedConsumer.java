@@ -44,7 +44,8 @@ public class OfferRateChangedConsumer {
         this.from = from;
     }
 
-    @RabbitListener(queues = "notification.offer-rate-changed.q")
+    // Не слушает очередь: по §8 письмо получают только владельцы затронутых сценариев
+    // (scenario.recalc.q → scenario.recalculated → notification.q). Рассылка всем дублировала письма.
     public void on(OfferRateChanged event) {
         validate(event);
 
