@@ -56,6 +56,7 @@ flowchart LR
 backend/src/main/java/dev/nosurprise/
   calculator/     чистое расчётное ядро (без Spring, БД и IO)
   common/         Money, ошибки (ProblemDetail), Clock, утилиты
+  calc/           расчёт: web (controller, dto) → service → repository (Mongo); POST/GET /api/calc
   config/         SecurityConfig, Redis/Mongo/Rabbit конфигурации
   auth/           регистрация, логин, JWT, refresh, OAuth2, подтверждение почты
   user/           пользователи и роли
@@ -71,7 +72,7 @@ frontend/src/                              React-приложение
 - Слои внутри модуля: `web (controller, dto)` → `service` → `repository`. Контроллер не ходит в репозиторий.
 - JPA-сущности и Mongo-документы не возвращаются из контроллеров, только DTO (`record`).
 - Модули общаются через публичные сервисы или события RabbitMQ, но не через чужие репозитории.
-- Допустимые зависимости: `scenario → calculator, offer`; `auth → user`; `notification` слушает события; `offer` ни от кого.
+- Допустимые зависимости: `scenario → calculator, offer`; `calc → calculator`; `auth → user`; `notification` слушает события; `offer` ни от кого.
 
 ## 5. Расчётное ядро (`calculator`)
 

@@ -38,6 +38,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+    // pdf
+    implementation 'com.github.librepdf:openpdf:1.3.39'
+
     // metrics (stretch goal)
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
@@ -49,6 +52,7 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-mongodb'
     testImplementation 'org.testcontainers:testcontainers-rabbitmq'
+    testImplementation 'org.awaitility:awaitility'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -56,6 +60,28 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-parameters'
 }
 
+// Обычный `gradle test` не требует Docker: integration-тесты (Testcontainers)
+// помечены @Tag("integration") и исключены здесь.
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'integration'
+    }
+}
+
+// Отдельный запуск integration-тестов: `gradle integrationTest` (нужен Docker).
+tasks.register('integrationTest', Test) {
+    description = 'Testcontainers integration tests (requires Docker)'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+    shouldRunAfter tasks.named('test')
+    maxParallelForks = 1
+    systemProperty 'java.awt.headless', 'true'
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
 }
