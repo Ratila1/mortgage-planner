@@ -20,8 +20,8 @@ import java.time.Duration;
 @Configuration
 public class CalculationIndexes {
 
-    @Bean
-    InitializingBean calculationIndexInitializer(MongoTemplate mongoTemplate) {
+    @Bean(name = "calculationIndexesInitializer")
+    InitializingBean calculationIndexes(MongoTemplate mongoTemplate) {
         return () -> {
             IndexOperations ops = mongoTemplate.indexOps(CalculationDocument.class);
             ops.createIndex(new Index().on("paramsHash", Sort.Direction.ASC).named("params_hash_idx"));

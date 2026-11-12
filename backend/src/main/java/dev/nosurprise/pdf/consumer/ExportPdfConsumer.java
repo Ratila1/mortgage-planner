@@ -66,7 +66,6 @@ public class ExportPdfConsumer {
         String fileName = "scenario-" + exportData.scenarioId() + ".pdf";
 
         Document metadata = new Document();
-        // UUID в Mongo храним строкой: кодек UUID требует явной uuidRepresentation и падает при encode.
         metadata.put("scenarioId", exportData.scenarioId().toString());
         metadata.put("userId", exportData.userId().toString());
         metadata.put("calcId", exportData.calcId());
