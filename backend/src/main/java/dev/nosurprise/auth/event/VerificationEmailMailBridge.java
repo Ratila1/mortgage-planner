@@ -30,7 +30,8 @@ public class VerificationEmailMailBridge {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void on(VerificationEmailRequested event) {
-        String confirmUrl = baseUrl + "/api/auth/verify-email?token=" + event.token();
+        // Страница фронта /verify-email сама вызывает GET /api/auth/verify-email и показывает результат.
+        String confirmUrl = baseUrl + "/verify-email?token=" + event.token();
         publisher.publish(RabbitMailConfig.MAIL_REQUESTED_RK, new MailRequested(
                 UUID.randomUUID(),
                 Instant.now(),
