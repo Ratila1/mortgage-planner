@@ -27,6 +27,15 @@ docker compose up --build
 | RabbitMQ UI | http://localhost:15672 (guest / guest) |
 | Письма (Mailpit) | http://localhost:8025 |
 
+`.env` необязателен: у всех переменных в `docker-compose.yml` есть значения по умолчанию.
+
+**Демо-доступ.** Админ создаётся при старте: `admin@nosurprise.local` / `admin12345`
+(меняется через `APP_ADMIN_EMAIL` / `APP_ADMIN_PASSWORD`). Обычный пользователь — регистрация на сайте,
+письмо с подтверждением приходит в Mailpit. Чистый старт с пустыми базами: `docker compose down -v`.
+
+Кнопки «Войти через Google / GitHub» появляются сами, когда бэкенд запущен с профилем `oauth` (см. ниже):
+фронт спрашивает список провайдеров у `GET /api/auth/oauth/providers`.
+
 Публичная ссылка через Cloudflare Tunnel:
 ```bash
 docker compose --profile tunnel up --build
@@ -47,9 +56,20 @@ cd backend  && gradle build           # юнит + Testcontainers (нужен Do
 cd frontend && npm test && npm run build
 ```
 
-### OAuth (необязательно)
-Заполни в `.env` ключи `GOOGLE_*` / `GITHUB_*`, укажи `SPRING_PROFILES_ACTIVE=oauth` и `APP_BASE_URL`.
-Redirect URI: `{APP_BASE_URL}/login/oauth2/code/google` и `/github`.
+### OAuth: вход через Google и GitHub (необязательно)
+1. **Google:** [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials →
+   Create credentials → OAuth client ID → Web application.
+   Authorized redirect URI: `http://localhost:8080/login/oauth2/code/google`.
+2. **GitHub:** Settings → Developer settings → OAuth Apps → New OAuth App.
+   Homepage URL: `http://localhost:8080`, Authorization callback URL: `http://localhost:8080/login/oauth2/code/github`.
+3. В `.env`: `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `SPRING_PROFILES_ACTIVE=oauth`.
+   Нужны ключи обоих провайдеров, иначе бэкенд не стартует.
+4. `docker compose up --build` и открыть именно `http://localhost:8080` (не `:5173`).
+
+Для другого адреса (туннель, домен) поменяй `APP_BASE_URL` и redirect URI в обеих консолях.
+Как это работает: кнопка ведёт на `/oauth2/authorization/{google|github}`, после входа бэкенд ставит
+refresh-cookie и возвращает на `/`, фронт сам получает access-токен. Если GitHub скрывает почту,
+бэкенд берёт основной подтверждённый адрес из `/user/emails`. Ошибки возвращают на `/login?oauthError=…`.
 
 ## Архитектура
 

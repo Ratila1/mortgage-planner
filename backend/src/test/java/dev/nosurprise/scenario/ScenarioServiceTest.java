@@ -38,7 +38,7 @@ class ScenarioServiceTest {
         CreateScenarioRequest request = new CreateScenarioRequest("Test", params, null);
 
         CalcResponse calcResponse = new CalcResponse("calc-1", "900000", "80000", "10000", "960000", 12, null, List.of());
-        when(calculatorService.calculate(any(CalcRequest.class))).thenReturn(calcResponse);
+        when(calculatorService.calculate(any(CalcRequest.class), any())).thenReturn(calcResponse);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var response = service.create(userId, request);

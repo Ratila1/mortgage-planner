@@ -73,7 +73,9 @@ public class ScenarioService {
             throw new InvalidOfferException("invalid scenario params");
         }
 
-        CalcResponse calcResponse = calculatorService.calculate(calcRequest);
+        // С userId расчёт в Mongo живёт бессрочно; анонимный удалился бы через 7 дней (TTL),
+        // и PDF сохранённого сценария падал бы с CALC_NOT_FOUND.
+        CalcResponse calcResponse = calculatorService.calculate(calcRequest, userId);
         if (calcResponse.calcId() == null) {
             throw new IllegalStateException("calculation did not return calcId");
         }
@@ -171,7 +173,7 @@ public class ScenarioService {
                 oldRequest.price(), oldRequest.downPayment(), oldRequest.termMonths(),
                 newRate, oldRequest.type(), oldRequest.earlyRepayments());
 
-        CalcResponse newResponse = calculatorService.calculate(newRequest);
+        CalcResponse newResponse = calculatorService.calculate(newRequest, scenario.getUserId());
 
         String paramsJson;
         String summaryJson;
