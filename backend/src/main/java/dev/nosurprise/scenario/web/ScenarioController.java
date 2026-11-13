@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import io.micrometer.core.annotation.Timed;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/scenarios")
+@Timed(value = "nosurprise.controller", description = "Controller endpoint latency")
 public class ScenarioController {
 
     private final ScenarioService scenarioService;

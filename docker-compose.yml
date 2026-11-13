@@ -75,10 +75,17 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
     expose: ["8080"]   # наружу бэк не торчит, вход только через frontend (nginx)
+    healthcheck:       # порт открывается только после полного старта Spring-контекста
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 40s
 
   frontend:
     build: ./frontend
-    depends_on: [backend]
+    depends_on:
+      backend: { condition: service_healthy }
     ports: ["8080:80"]   # единая точка входа: фронт + /api + /oauth2
 
   cloudflared:   # docker compose --profile tunnel up
@@ -86,6 +93,24 @@ services:
     profiles: ["tunnel"]
     command: tunnel --no-autoupdate --url http://frontend:80
     depends_on: [frontend]
+
+  prometheus:
+    image: prom/prometheus:latest
+    depends_on:
+      backend: { condition: service_healthy }
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports: ["3000:3000"]
 
 volumes:
   pgdata:

@@ -13,6 +13,7 @@ import dev.nosurprise.calculator.MortgageCalculator;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.micrometer.core.instrument.Metrics;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -50,6 +51,7 @@ public class CalculatorService {
     }
 
     public CalcResponse calculate(CalcRequest request, UUID userId) {
+        Metrics.counter("nosurprise.calculations.total", "authenticated", String.valueOf(userId != null)).increment();
         LoanParams params = CalcRequestMapper.toParams(request);
         String paramsHash = ParamsHasher.hash(params);
         CalcResponse cached = fromCache(paramsHash, userId);

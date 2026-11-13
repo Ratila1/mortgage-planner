@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import io.micrometer.core.annotation.Timed;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/auth")
+@Timed(value = "nosurprise.controller", description = "Controller endpoint latency")
 public class AuthController {
 
     public static final String REFRESH_COOKIE = "refresh_token";

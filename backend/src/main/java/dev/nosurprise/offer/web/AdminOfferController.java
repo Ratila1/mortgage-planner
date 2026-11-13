@@ -13,12 +13,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import io.micrometer.core.annotation.Timed;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin/offers")
+@Timed(value = "nosurprise.controller", description = "Controller endpoint latency")
 public class AdminOfferController {
 
     private final OfferService offerService;
