@@ -74,6 +74,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      METRICS_USER: ${METRICS_USER:-prometheus}
+      METRICS_PASSWORD: ${METRICS_PASSWORD:-prometheus}
     expose: ["8080"]   # наружу бэк не торчит, вход только через frontend (nginx)
     healthcheck:       # порт открывается только после полного старта Spring-контекста
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
