@@ -23,7 +23,7 @@ public final class ParamsHasher {
             .comparing(EarlyRepayment::type)
             .thenComparing(er -> er.month() == null ? 0 : er.month())
             .thenComparing(er -> er.startMonth() == null ? 0 : er.startMonth())
-            .thenComparing(EarlyRepayment::everyMonths)
+            .thenComparing(er -> er.everyMonths() == null ? 0 : er.everyMonths())
             .thenComparing(er -> er.untilMonth() == null ? 0 : er.untilMonth())
             .thenComparing(EarlyRepayment::amount)
             .thenComparing(EarlyRepayment::mode);

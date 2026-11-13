@@ -46,8 +46,10 @@ services:
       timeout: 5s
       retries: 10
 
-  mailpit:   # локальный SMTP + веб-интерфейс для писем подтверждения
+  mailpit:   # локальный SMTP + веб-интерфейс для писем подтверждения: http://localhost:8025
     image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_DISABLE_RDNS: "true"   # без reverse DNS письма уходят сразу, а не через ~10 с
     ports: ["1025:1025", "8025:8025"]
 
   backend:
@@ -69,6 +71,9 @@ services:
       MAIL_HOST: mailpit
       JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      # Первый ADMIN создаётся при старте (FirstAdminBootstrap). Для демо есть значения по умолчанию.
+      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-admin@nosurprise.local}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-admin12345}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

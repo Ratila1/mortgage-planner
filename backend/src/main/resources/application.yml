@@ -14,6 +14,7 @@ spring:
       ddl-auto: validate
   mongodb:
     uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
+    uuid-representation: standard
   data:
     mongodb:
       representation:
@@ -31,7 +32,7 @@ spring:
         default-requeue-rejected: false   # исчерпание retry → reject → DLX → DLQ (§8)
         retry:
           enabled: true
-          max-retries: 2                   # 3 попытки всего: 1 первоначальная + 2 retry
+          max-retries: 2                  # 3 попытки всего: 1 + 2 retry
           initial-interval: 1s             # паузы 1с, 2с, 4с (§8)
           multiplier: 2
           max-interval: 4s

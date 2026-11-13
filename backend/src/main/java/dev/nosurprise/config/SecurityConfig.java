@@ -85,10 +85,11 @@ public class SecurityConfig {
                                     ObjectProvider<OAuth2AuthenticationSuccessHandler> successHandlerProvider) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/calc/**", "/api/offers", "/api/auth/**").permitAll()
                 .requestMatchers("/actuator/health/**").permitAll()
+                .requestMatchers("/oauth2/authorization/**", "/login/oauth2/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .httpBasic(Customizer.withDefaults());
@@ -97,7 +98,11 @@ public class SecurityConfig {
         if (java.util.Arrays.asList(env.getActiveProfiles()).contains("oauth")) {
             OAuth2AuthenticationSuccessHandler handler = successHandlerProvider.getIfAvailable();
             if (handler != null) {
-                http.oauth2Login(oauth2 -> oauth2.successHandler(handler));
+                http.oauth2Login(oauth2 -> oauth2
+                        .successHandler(handler)
+                        // Отказ пользователя или ошибка провайдера — назад на страницу входа фронта.
+                        .failureHandler((request, response, ex) ->
+                                response.sendRedirect(OAuth2AuthenticationSuccessHandler.LOGIN_ERROR_URL + "failed")));
             } else {
                 http.oauth2Login(Customizer.withDefaults());
             }

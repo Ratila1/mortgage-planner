@@ -6,6 +6,7 @@ import dev.nosurprise.user.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import io.micrometer.core.instrument.Metrics;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.Locale;
@@ -39,6 +40,7 @@ public class AuthService {
         this.clock = clock;
     }
 
+    @Transactional
     public LoginResult login(String email, String password, String issuedIp) {
         Metrics.counter("nosurprise.auth.login.attempts").increment();
         UserEntity user = userService.findByEmail(normalize(email))
@@ -53,6 +55,7 @@ public class AuthService {
         return issueTokens(user, issuedIp);
     }
 
+    @Transactional(readOnly = true)
     public LoginResult refresh(String refreshCookieValue, String issuedIp) {
         if (refreshCookieValue == null) {
             throw new InvalidRefreshTokenException();
