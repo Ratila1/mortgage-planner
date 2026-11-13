@@ -12,9 +12,12 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
+      representation:
+        big-decimal: decimal128   # деньги в Mongo — Decimal128, не строка (§6.2)
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
@@ -23,22 +26,54 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        default-requeue-rejected: false   # исчерпание retry → reject → DLX → DLQ (§8)
+        retry:
+          enabled: true
+          max-retries: 2                   # 3 попытки всего: 1 первоначальная + 2 retry
+          initial-interval: 1s             # паузы 1с, 2с, 4с (§8)
+          multiplier: 2
+          max-interval: 4s
   mail:
-    host: ${MAIL_HOST:localhost}
+    host: ${MAIL_HOST:localhost}           # локально Mailpit :1025
     port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}            # секреты только через env, в репозиторий не коммитить
+    password: ${MAIL_PASSWORD:}
 
 server:
   forward-headers-strategy: framework   # https-ссылки за nginx/Cloudflare
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  mail:
+    from: ${APP_MAIL_FROM:noreply@nosurprise.dev}
+  ratelimit:
+    calc:
+      anonymous-per-minute: 30      # аноним: 30 запросов/мин на IP (§6.3)
+      authenticated-per-minute: 120 # пользователь: 120 запросов/мин (§6.3)
+      window: 60s
   jwt:
-    secret: ${JWT_SECRET:change-me-change-me-change-me-change-me}
+    secret: ${JWT_SECRET:}   # секрет только из env, без dev-дефолта (§7); fail-fast в JwtProperties
     access-ttl: 15m
     refresh-ttl: 30d
+  metrics:
+    username: ${METRICS_USER:prometheus}
+    password: ${METRICS_PASSWORD:prometheus}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  endpoint:
+    health:
+      show-details: when-authorized
+    prometheus:
+      cache.time-to-live: 10s
