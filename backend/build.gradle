@@ -41,7 +41,8 @@ dependencies {
     // pdf
     implementation 'com.github.librepdf:openpdf:1.3.39'
 
-    // metrics (stretch goal)
+    // metrics / observability
+    implementation 'org.springframework.boot:spring-boot-starter-aspectj'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
     // tests

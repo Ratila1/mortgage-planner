@@ -4,6 +4,7 @@ import dev.nosurprise.user.Role;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import io.micrometer.core.instrument.Metrics;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -39,6 +40,7 @@ public class AuthService {
     }
 
     public LoginResult login(String email, String password, String issuedIp) {
+        Metrics.counter("nosurprise.auth.login.attempts").increment();
         UserEntity user = userService.findByEmail(normalize(email))
                 .orElseThrow(InvalidCredentialsException::new);
         if (user.getPasswordHash() == null
