@@ -22,13 +22,9 @@ public final class CalcRequestMapper {
         List<EarlyRepayment> earlyRepayments = request.earlyRepayments() == null
                 ? List.of()
                 : request.earlyRepayments().stream().map(CalcRequestMapper::toEarlyRepayment).toList();
-        try {
-            return new LoanParams(request.price(), request.downPayment(), request.termMonths(),
-                    request.annualRate(), request.type(), earlyRepayments);
-        } catch (InvalidCalculationException ex) {
-            // LoanParams валидирует модель; наружу она и так уходит как InvalidCalculationException.
-            throw ex;
-        }
+        // LoanParams валидирует модель; InvalidCalculationException и так уходит наружу.
+        return new LoanParams(request.price(), request.downPayment(), request.termMonths(),
+                request.annualRate(), request.type(), earlyRepayments);
     }
 
     private static EarlyRepayment toEarlyRepayment(EarlyRepaymentRequest request) {

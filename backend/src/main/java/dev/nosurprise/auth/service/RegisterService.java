@@ -39,6 +39,9 @@ public class RegisterService {
     public void register(RegisterRequest request) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         if (userService.findByEmail(email).isPresent()) {
+            // Ответ и время ответа одинаковы с успешной регистрацией: bcrypt выполняется
+            // всегда, иначе существование email видно по задержке (стоимость одного encode).
+            passwordEncoder.encode(request.password());
             return;
         }
         String passwordHash = passwordEncoder.encode(request.password());

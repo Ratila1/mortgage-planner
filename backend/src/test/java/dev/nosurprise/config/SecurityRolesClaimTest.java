@@ -25,6 +25,7 @@ class SecurityRolesClaimTest {
                     "app.jwt.secret=test-secret-0123456789abcdef0123456789",
                     "app.jwt.access-ttl=15m",
                     "app.jwt.refresh-ttl=30d")
+            .withBean(tools.jackson.databind.ObjectMapper.class)
             .withUserConfiguration(SecurityConfig.class, JwtPropertiesConfig.class);
 
     private static MockMvc mockMvc(WebApplicationContext context) {

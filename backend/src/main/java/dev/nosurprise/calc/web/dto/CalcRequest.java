@@ -7,6 +7,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,9 +19,11 @@ import java.util.List;
 public record CalcRequest(
         @NotNull(message = "price is required")
         @DecimalMin(value = "0.01", message = "price must be positive")
+        @DecimalMax(value = "1000000000000", message = "price must be <= 1e12")
         BigDecimal price,
         @NotNull(message = "downPayment is required")
         @DecimalMin(value = "0", message = "downPayment must be >= 0")
+        @DecimalMax(value = "1000000000000", message = "downPayment must be <= 1e12")
         BigDecimal downPayment,
         @NotNull(message = "termMonths is required")
         @Min(value = 1, message = "termMonths must be in 1..360")
@@ -33,6 +36,7 @@ public record CalcRequest(
         @NotNull(message = "type is required")
         PaymentType type,
         @Valid
+        @Size(max = 20, message = "earlyRepayments must contain at most 20 items")
         List<EarlyRepaymentRequest> earlyRepayments
 ) {
 }

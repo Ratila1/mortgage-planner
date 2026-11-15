@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -30,6 +31,7 @@ class SecurityConfigTest {
                     "app.jwt.secret=test-secret-0123456789abcdef0123456789",
                     "app.jwt.access-ttl=15m",
                     "app.jwt.refresh-ttl=30d")
+            .withBean(tools.jackson.databind.ObjectMapper.class)
             .withUserConfiguration(SecurityConfig.class, JwtPropertiesConfig.class);
 
     private static MockMvc mockMvc(WebApplicationContext context) {
@@ -102,6 +104,29 @@ class SecurityConfigTest {
         runner.run(context -> {
             MockMvc mockMvc = mockMvc(context);
             mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
+        });
+    }
+
+    @Test
+    @DisplayName("METRICS_USER/PASSWORD заданы: basic-доступ к метрикам, неверный пароль → 401")
+    void metricsWithBasicCredentials() {
+        WebApplicationContextRunner metricsRunner = new WebApplicationContextRunner()
+                .withPropertyValues(
+                        "app.jwt.secret=test-secret-0123456789abcdef0123456789",
+                        "app.jwt.access-ttl=15m",
+                        "app.jwt.refresh-ttl=30d",
+                        "app.metrics.user=metrics",
+                        "app.metrics.password=metrics-pass")
+                .withBean(tools.jackson.databind.ObjectMapper.class)
+                .withUserConfiguration(SecurityConfig.class, JwtPropertiesConfig.class);
+        metricsRunner.run(context -> {
+            MockMvc mockMvc = mockMvc(context);
+            mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
+            mockMvc.perform(get("/actuator/prometheus").with(httpBasic("metrics", "wrong")))
+                    .andExpect(status().isUnauthorized());
+            mockMvc.perform(get("/actuator/prometheus").with(httpBasic("metrics", "metrics-pass")))
+                    .andExpect(status().isNotFound()); // security пройден, контроллера нет
+            mockMvc.perform(get("/actuator/health")).andExpect(status().isNotFound()); // health не тронут
         });
     }
 }

@@ -58,7 +58,7 @@ class RateLimiterTest {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
         incrementReturns("ratelimit:calc:" + IP, 1L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isTrue();
         verify(redis).expire("ratelimit:calc:" + IP, 60L, TimeUnit.SECONDS);
@@ -71,7 +71,7 @@ class RateLimiterTest {
         incrementReturns("ratelimit:calc:" + IP, 31L);
         when(redis.getExpire("ratelimit:calc:" + IP, TimeUnit.SECONDS)).thenReturn(17L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.retryAfterSeconds()).isEqualTo(17L);
@@ -86,7 +86,7 @@ class RateLimiterTest {
         incrementReturns("ratelimit:calc:" + IP, 40L);
         when(redis.getExpire("ratelimit:calc:" + IP, TimeUnit.SECONDS)).thenReturn(-2L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.retryAfterSeconds()).isEqualTo(60L);
@@ -99,8 +99,8 @@ class RateLimiterTest {
         incrementReturns("ratelimit:calc:" + IP, 5L);
         incrementReturns("ratelimit:calc:" + USER_ID, 100L);
 
-        assertThat(limiter.tryAcquire(IP, 30).allowed()).isTrue();
-        assertThat(limiter.tryAcquire(USER_ID, 120).allowed()).isTrue();
+        assertThat(limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30).allowed()).isTrue();
+        assertThat(limiter.tryAcquire(RateLimiter.SCOPE_CALC, USER_ID, 120).allowed()).isTrue();
 
         verify(values).increment("ratelimit:calc:" + IP);
         verify(values).increment("ratelimit:calc:" + USER_ID);
@@ -112,7 +112,7 @@ class RateLimiterTest {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
         incrementReturns("ratelimit:calc:" + USER_ID, 1L);
 
-        limiter.tryAcquire(USER_ID, 120);
+        limiter.tryAcquire(RateLimiter.SCOPE_CALC, USER_ID, 120);
 
         verify(redis).expire("ratelimit:calc:" + USER_ID, 60L, TimeUnit.SECONDS);
     }

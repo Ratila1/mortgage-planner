@@ -12,9 +12,11 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * OAuth2 success handler (§7): provisioning/link пользователя, выдача access JWT (с ролями)
@@ -27,14 +29,17 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final dev.nosurprise.auth.service.JwtProperties jwtProperties;
+    private final ObjectMapper objectMapper;
 
     public OAuth2AuthenticationSuccessHandler(UserService userService, TokenService tokenService,
                                              RefreshTokenService refreshTokenService,
-                                             dev.nosurprise.auth.service.JwtProperties jwtProperties) {
+                                             dev.nosurprise.auth.service.JwtProperties jwtProperties,
+                                              ObjectMapper objectMapper) {
         this.userService = userService;
         this.tokenService = tokenService;
         this.refreshTokenService = refreshTokenService;
         this.jwtProperties = jwtProperties;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -79,8 +84,10 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         response.setStatus(200);
         response.setContentType("application/json");
         response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
-        response.getWriter().write("{\"accessToken\":\"" + access
-                + "\",\"tokenType\":\"Bearer\",\"expiresIn\":" + jwtProperties.accessTtl().toSeconds() + "}");
+        response.getWriter().write(objectMapper.writeValueAsString(Map.of(
+                "accessToken", access,
+                "tokenType", "Bearer",
+                "expiresIn", jwtProperties.accessTtl().toSeconds())));
     }
 
     private static String attribute(OAuth2User principal, String name) {

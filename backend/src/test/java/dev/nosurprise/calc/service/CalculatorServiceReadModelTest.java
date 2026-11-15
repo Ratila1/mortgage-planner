@@ -8,6 +8,7 @@ import dev.nosurprise.calculator.LoanSummary;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +25,7 @@ class CalculatorServiceReadModelTest {
     void found() {
         CalculationRepository repository = mock(CalculationRepository.class);
         CalcCache cache = mock(CalcCache.class);
-        CalculatorService service = new CalculatorService(repository, cache);
+        CalculatorService service = new CalculatorService(repository, cache, Clock.systemUTC());
 
         CalculationDocument doc = new CalculationDocument("507f1f77bcf86cd799439011", "hash", null,
                 new LoanParams(new java.math.BigDecimal("1000000"), new java.math.BigDecimal("100000"), 12,
@@ -44,7 +45,7 @@ class CalculatorServiceReadModelTest {
     void missing() {
         CalculationRepository repository = mock(CalculationRepository.class);
         CalcCache cache = mock(CalcCache.class);
-        CalculatorService service = new CalculatorService(repository, cache);
+        CalculatorService service = new CalculatorService(repository, cache, Clock.systemUTC());
         when(repository.findById("missing")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getCalculation("missing"))

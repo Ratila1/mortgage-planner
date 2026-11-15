@@ -1,6 +1,7 @@
 package dev.nosurprise.calc.service;
 
 import dev.nosurprise.calc.cache.CalcCache;
+import dev.nosurprise.calc.cache.RedisCalcCache;
 import dev.nosurprise.calc.repository.CalculationDocument;
 import dev.nosurprise.calc.repository.CalculationRepository;
 import dev.nosurprise.calc.web.CalcRequestMapper;
@@ -13,21 +14,27 @@ import dev.nosurprise.calculator.MortgageCalculator;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
  * Слой service: валидация-преобразование → paramsHash → Redis-кэш → Mongo → расчёт ядром
  * → сохранение (§6.2, §6.3).
- * Порядок: Redis calc:{paramsHash} → calcId, по calcId — документ в Mongo; промах Redis →
- * поиск в Mongo по paramsHash (с прогревом кэша); полный miss — расчёт, сохранение, запись в кэш.
- * Повторный расчёт с тем же paramsHash не создаёт новый документ — возвращается существующий calcId.
+ * Расчёты скоупятся по владельцу (§6.2): идентичность — пара (paramsHash, userId).
+ * Порядок: Redis calc:{ownerScope}:{paramsHash} → calcId, по calcId — документ в Mongo;
+ * промах Redis → поиск в Mongo по (paramsHash, userId); полный miss — расчёт, сохранение,
+ * запись в кэш. «Усыновление» анонимного документа пользователем убрано: анонимный
+ * расчёт остаётся анонимным (TTL 7 дней), пользователь получает свой документ.
  * Сбои Redis (findCalcId/save/evict) не ломают расчёт: warning и продолжение как cache miss.
- * Пользовательской аутентификации ещё нет: все расчёты анонимные → expireAt = now + 7 дней.
+ * Гонка двух одинаковых POST ловится уникальным индексом (paramsHash, userId):
+ * DuplicateKeyException → возврат уже сохранённого документа.
  */
 @Service
 public class CalculatorService {
@@ -39,45 +46,31 @@ public class CalculatorService {
 
     private final CalculationRepository repository;
     private final CalcCache cache;
+    private final Clock clock;
 
-    public CalculatorService(CalculationRepository repository, CalcCache cache) {
+    public CalculatorService(CalculationRepository repository, CalcCache cache, Clock clock) {
         this.repository = repository;
         this.cache = cache;
-    }
-
-    public CalcResponse calculate(CalcRequest request) {
-        return calculate(request, null);
+        this.clock = clock;
     }
 
     public CalcResponse calculate(CalcRequest request, UUID userId) {
         LoanParams params = CalcRequestMapper.toParams(request);
         String paramsHash = ParamsHasher.hash(params);
-        CalcResponse cached = fromCache(paramsHash, userId);
+        String ownerScope = ownerScope(userId);
+        CalcResponse cached = fromCache(ownerScope, paramsHash);
         if (cached != null) {
             return cached;
         }
-        CalculationDocument existing = repository.findByParamsHash(paramsHash).orElse(null);
+        CalculationDocument existing = repository
+                .findByParamsHashAndUserId(paramsHash, userId == null ? null : userId.toString())
+                .orElse(null);
         if (existing != null) {
-            if (userId != null && existing.userId() == null) {
-                CalculationDocument updated = new CalculationDocument(
-                        existing.id(),
-                        existing.paramsHash(),
-                        userId == null ? null : userId.toString(),
-                        existing.params(),
-                        existing.summary(),
-                        existing.savings(),
-                        existing.schedule(),
-                        existing.createdAt(),
-                        null);
-                repository.save(updated);
-                warmCache(paramsHash, updated.id());
-                return toResponse(updated);
-            }
-            warmCache(paramsHash, existing.id());
+            warmCache(ownerScope, paramsHash, existing.id());
             return toResponse(existing);
         }
         CalculationResult result = new MortgageCalculator().calculate(params);
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         CalculationDocument document = new CalculationDocument(
                 null,
                 paramsHash,
@@ -88,39 +81,89 @@ public class CalculatorService {
                 result.schedule(),
                 now,
                 userId == null ? now.plus(ANONYMOUS_TTL) : null);
-        CalculationDocument saved = repository.save(document);
-        warmCache(paramsHash, saved.id());
+        CalculationDocument saved;
+        try {
+            saved = repository.save(document);
+        } catch (DuplicateKeyException ex) {
+            // Гонка: параллельный запрос уже сохранил ту же пару (paramsHash, userId).
+            CalculationDocument winner = repository
+                    .findByParamsHashAndUserId(paramsHash, userId == null ? null : userId.toString())
+                    .orElseThrow(() -> ex);
+            warmCache(ownerScope, paramsHash, winner.id());
+            return toResponse(winner);
+        }
+        warmCache(ownerScope, paramsHash, saved.id());
         return toResponse(saved);
     }
 
-    public CalcResponse get(String calcId) {
-        if (calcId == null || !ObjectId.isValid(calcId)) {
-            throw new CalcNotFoundException("calculation not found: " + calcId);
-        }
-        CalculationDocument document = repository.findById(calcId)
-                .orElseThrow(() -> new CalcNotFoundException("calculation not found: " + calcId));
+    /**
+     * Расчёт по calcId с проверкой владения (§6.2): документ пользователя виден только
+     * владельцу (чужой и отсутствующий — один и тот же 404, чтобы не раскрывать существование);
+     * анонимный документ (userId = null) публичен — на него ведут публичные расчёты и сценарии.
+     */
+    public CalcResponse get(String calcId, UUID viewer) {
+        CalculationDocument document = findOwned(calcId, viewer);
         return toResponse(document);
     }
 
+    /** История расчётов пользователя (§9), без графика платежей. Аноним — пустой список. */
+    public List<CalcResponse> history(UUID viewer) {
+        if (viewer == null) {
+            return List.of();
+        }
+        return repository.findTop50ByUserIdOrderByCreatedAtDesc(viewer.toString()).stream()
+                .map(document -> new CalcResponse(
+                        document.id(),
+                        Objects.requireNonNull(document.params(), "params is required").loanAmount().toPlainString(),
+                        document.summary().monthlyPayment().toPlainString(),
+                        document.summary().overpayment().toPlainString(),
+                        document.summary().totalPaid().toPlainString(),
+                        document.summary().termMonths(),
+                        null,
+                        null))
+                .toList();
+    }
+
+    /** Внутренний доступ без проверки владельца — вызывается только после проверки сценария. */
     public CalculationReadModel getCalculation(String calcId) {
         return findCalculation(calcId);
     }
 
     public CalculationReadModel findCalculation(String calcId) {
-        if (calcId == null || !ObjectId.isValid(calcId)) {
-            throw new CalcNotFoundException("calculation not found: " + calcId);
-        }
-        CalculationDocument document = repository.findById(calcId)
-                .orElseThrow(() -> new CalcNotFoundException("calculation not found: " + calcId));
+        CalculationDocument document = loadDocument(calcId);
         return new CalculationReadModel(document.id(), document.params(), document.summary(),
                 document.schedule(), document.createdAt(), document.userId());
     }
 
+    private CalculationDocument findOwned(String calcId, UUID viewer) {
+        CalculationDocument document = loadDocument(calcId);
+        String owner = document.userId();
+        if (owner == null) {
+            return document; // анонимные расчёты публичны
+        }
+        if (viewer == null || !owner.equals(viewer.toString())) {
+            throw new CalcNotFoundException("calculation not found: " + calcId);
+        }
+        return document;
+    }
+
+    private CalculationDocument loadDocument(String calcId) {
+        if (calcId == null || !ObjectId.isValid(calcId)) {
+            throw new CalcNotFoundException("calculation not found: " + calcId);
+        }
+        return repository.findById(calcId)
+                .orElseThrow(() -> new CalcNotFoundException("calculation not found: " + calcId));
+    }
+
+    private static String ownerScope(UUID userId) {
+        return userId == null ? RedisCalcCache.ANONYMOUS_SCOPE : userId.toString();
+    }
+
     /** Redis → документ по calcId. null — нет в кэше или запись устарела (документ удалён). */
-    private CalcResponse fromCache(String paramsHash, UUID userId) {
+    private CalcResponse fromCache(String ownerScope, String paramsHash) {
         String calcId;
         try {
-            calcId = cache.findCalcId(paramsHash).orElse(null);
+            calcId = cache.findCalcId(ownerScope, paramsHash).orElse(null);
         } catch (RuntimeException ex) {
             log.warn("calc cache lookup failed, falling back to Mongo: {}", paramsHash, ex);
             return null;
@@ -130,25 +173,11 @@ public class CalculatorService {
         }
         CalculationDocument document = repository.findById(calcId).orElse(null);
         if (document != null) {
-            if (userId != null && document.userId() == null) {
-                CalculationDocument updated = new CalculationDocument(
-                        document.id(),
-                        document.paramsHash(),
-                        userId == null ? null : userId.toString(),
-                        document.params(),
-                        document.summary(),
-                        document.savings(),
-                        document.schedule(),
-                        document.createdAt(),
-                        null);
-                repository.save(updated);
-                return toResponse(updated);
-            }
             return toResponse(document);
         }
         // Redis опережает Mongo: запись устарела — удаляем и считаем как cache miss.
         try {
-            cache.evict(paramsHash);
+            cache.evict(ownerScope, paramsHash);
         } catch (RuntimeException ex) {
             log.warn("calc cache evict failed for stale entry: {}", paramsHash, ex);
         }
@@ -156,12 +185,12 @@ public class CalculatorService {
     }
 
     /** Прогрев/запись кэша после того, как документ уже есть в Mongo и отвечает пользователю. */
-    private void warmCache(String paramsHash, String calcId) {
+    private void warmCache(String ownerScope, String paramsHash, String calcId) {
         if (calcId == null) {
             return;
         }
         try {
-            cache.save(paramsHash, calcId);
+            cache.save(ownerScope, paramsHash, calcId);
         } catch (RuntimeException ex) {
             log.warn("calc cache save failed: {}", paramsHash, ex);
         }

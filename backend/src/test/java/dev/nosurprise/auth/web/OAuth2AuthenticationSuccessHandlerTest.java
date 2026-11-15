@@ -44,7 +44,8 @@ class OAuth2AuthenticationSuccessHandlerTest {
                         user.getId() + ".opaque", java.time.Instant.EPOCH));
 
         OAuth2AuthenticationSuccessHandler handler = new OAuth2AuthenticationSuccessHandler(
-                userService, tokenService, refreshTokenService, jwtProperties);
+                userService, tokenService, refreshTokenService, jwtProperties,
+                new tools.jackson.databind.ObjectMapper());
 
         OAuth2User principal = Mockito.mock(OAuth2User.class);
         when(principal.getAttribute("email")).thenReturn("user@example.com");

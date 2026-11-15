@@ -17,7 +17,8 @@ public record LoanParams(
         List<EarlyRepayment> earlyRepayments
 ) {
 
-    private static final BigDecimal MAX_RATE = new BigDecimal("100");
+    /** Верхняя граница годовой ставки, %; едина для ядра, DTO и стресс-сценариев. */
+    public static final BigDecimal MAX_RATE = new BigDecimal("100");
 
     public LoanParams {
         Objects.requireNonNull(price, "price is required");

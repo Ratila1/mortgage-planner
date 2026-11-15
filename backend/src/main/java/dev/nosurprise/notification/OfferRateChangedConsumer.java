@@ -91,12 +91,8 @@ public class OfferRateChangedConsumer {
     }
 
     private boolean isProcessed(String key) {
-        try {
-            return Boolean.TRUE.equals(redis.hasKey(key))
-                    || redis.opsForValue().get(key) != null;
-        } catch (RuntimeException ex) {
-            throw ex;
-        }
+        return Boolean.TRUE.equals(redis.hasKey(key))
+                || redis.opsForValue().get(key) != null;
     }
 
     private void markProcessed(String key) {

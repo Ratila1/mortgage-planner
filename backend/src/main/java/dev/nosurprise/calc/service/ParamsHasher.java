@@ -9,21 +9,32 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;import java.util.List;
+import java.util.HexFormat;
+import java.util.List;
 
 /**
  * paramsHash (§6.3): sha256 от канонического вида параметров.
  * BigDecimal — stripTrailingZeros().toPlainString() (1.50 ≡ 1.5),
  * досрочные погашения — в отсортированном порядке (порядок в списке не влияет на хэш).
  * Чистый Java, без Spring.
+ * <p>
+ * SCHEMA_VERSION — первый элемент канонической строки: любая правка математики
+ * расчёта (MortgageCalculator) должна инкрементировать её, иначе пользователи
+ * бессрочно получают графики, посчитанные старым ядром (документы в Mongo не
+ * имеют TTL, Redis-кэш живёт 1 ч).
  */
 public final class ParamsHasher {
+
+    /** Версия канонизации + алгоритма расчёта; инкрементировать при изменении математики. */
+    static final int SCHEMA_VERSION = 1;
 
     private static final Comparator<EarlyRepayment> EARLY_ORDER = Comparator
             .comparing(EarlyRepayment::type)
             .thenComparing(er -> er.month() == null ? 0 : er.month())
             .thenComparing(er -> er.startMonth() == null ? 0 : er.startMonth())
-            .thenComparing(EarlyRepayment::everyMonths)
+            // everyMonths у ONE_TIME равен null — сравнение в натуральном порядке бросало NPE
+            // на двух ONE_TIME в одном месяце (type/month/startMonth совпадают).
+            .thenComparing(er -> er.everyMonths() == null ? 0 : er.everyMonths())
             .thenComparing(er -> er.untilMonth() == null ? 0 : er.untilMonth())
             .thenComparing(EarlyRepayment::amount)
             .thenComparing(EarlyRepayment::mode);
@@ -33,6 +44,7 @@ public final class ParamsHasher {
 
     public static String hash(LoanParams params) {
         List<String> canonical = new ArrayList<>();
+        canonical.add(Integer.toString(SCHEMA_VERSION));
         canonical.add(canonical(params.price()));
         canonical.add(canonical(params.downPayment()));
         canonical.add(Integer.toString(params.termMonths()));

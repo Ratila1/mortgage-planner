@@ -85,3 +85,9 @@ tasks.register('integrationTest', Test) {
         exceptionFormat 'full'
     }
 }
+
+// `gradle build`/`check` гоняет и integration-тесты (в CI есть Docker);
+// локально без Docker проверять юниты: `gradle test`.
+tasks.named('check') {
+    dependsOn integrationTest
+}

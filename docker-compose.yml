@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-nosurprise}
       POSTGRES_USER: ${POSTGRES_USER:-nosurprise}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -17,7 +17,10 @@ services:
 
   mongo:
     image: mongo:8
-    ports: ["27017:27017"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-nosurprise}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-nosurprise}
+    ports: ["127.0.0.1:27017:27017"]
     volumes: [mongodata:/data/db]
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
@@ -27,19 +30,23 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-nosurprise}"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redisdata:/data]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nosurprise}
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
-    ports: ["5672:5672", "15672:15672"]
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nosurprise}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-nosurprise}
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -48,7 +55,7 @@ services:
 
   mailpit:   # локальный SMTP + веб-интерфейс для писем подтверждения
     image: axllent/mailpit:latest
-    ports: ["1025:1025", "8025:8025"]
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
 
   backend:
     build: ./backend
@@ -61,19 +68,24 @@ services:
       POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-nosurprise}
       POSTGRES_USER: ${POSTGRES_USER:-nosurprise}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
-      MONGODB_URI: mongodb://mongo:27017/nosurprise
+      MONGODB_URI: mongodb://${MONGO_USER:-nosurprise}:${MONGO_PASSWORD:-nosurprise}@mongo:27017/nosurprise?authSource=admin
       REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nosurprise}
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:-nosurprise}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-nosurprise}
       MAIL_HOST: mailpit
-      JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me}
+      # Секрет строго обязателен (§7): без него контейнер не поднимется,
+      # дефолт change-me убран — fail-fast в JwtProperties работает как задумано.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      METRICS_USER: ${METRICS_USER:-}
+      METRICS_PASSWORD: ${METRICS_PASSWORD:-}
     expose: ["8080"]   # наружу бэк не торчит, вход только через frontend (nginx)
 
   frontend:
@@ -90,3 +102,4 @@ services:
 volumes:
   pgdata:
   mongodata:
+  redisdata:

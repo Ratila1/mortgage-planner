@@ -18,6 +18,8 @@
 
 ```bash
 cp .env.example .env
+# JWT_SECRET обязателен: без него compose не поднимется (§7)
+# openssl rand -base64 48  или PowerShell: [Convert]::ToBase64String((1..48 | %{Get-Random -Max 256}))
 docker compose up --build
 ```
 

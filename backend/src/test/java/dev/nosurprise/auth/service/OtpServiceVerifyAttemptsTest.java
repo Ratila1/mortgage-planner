@@ -1,7 +1,6 @@
 package dev.nosurprise.auth.service;
 
-import dev.nosurprise.auth.error.OtpInvalidException;
-import dev.nosurprise.auth.service.JwtProperties;
+import dev.nosurprise.auth.service.OtpInvalidException;
 import dev.nosurprise.common.messaging.RabbitEventPublisher;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
@@ -83,7 +82,7 @@ class OtpServiceVerifyAttemptsTest {
                 .isInstanceOf(OtpInvalidException.class);
 
         verify(redis).delete(OtpService.OTP_KEY_PREFIX + EMAIL);
-        verify(redis).delete(startsWith(OtpService.OTP_KEY_PREFIX));
+        verify(redis).delete(OtpService.OTP_FAIL_KEY_PREFIX + EMAIL);
     }
 
     @Test

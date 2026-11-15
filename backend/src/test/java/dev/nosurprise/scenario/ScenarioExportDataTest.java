@@ -27,7 +27,9 @@ class ScenarioExportDataTest {
         CalculatorService calculatorService = mock(CalculatorService.class);
         OfferService offerService = mock(OfferService.class);
         ScenarioService service = new ScenarioService(repository, calculatorService, offerService,
-                new tools.jackson.databind.ObjectMapper());
+                new tools.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class),
+                jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator());
 
         UUID userId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
@@ -42,7 +44,7 @@ class ScenarioExportDataTest {
                 List.of(), Instant.now(), null);
         when(calculatorService.getCalculation("507f1f77bcf86cd799439011")).thenReturn(calc);
 
-        ScenarioExportData data = service.getScenarioExportData(userId, scenarioId);
+        ScenarioExportData data = service.findScenarioExportData(userId, scenarioId);
 
         assertThat(data.scenarioId()).isEqualTo(scenarioId);
         assertThat(data.userId()).isEqualTo(userId);
@@ -56,7 +58,9 @@ class ScenarioExportDataTest {
         CalculatorService calculatorService = mock(CalculatorService.class);
         OfferService offerService = mock(OfferService.class);
         ScenarioService service = new ScenarioService(repository, calculatorService, offerService,
-                new tools.jackson.databind.ObjectMapper());
+                new tools.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class),
+                jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator());
 
         UUID ownerId = UUID.randomUUID();
         UUID otherId = UUID.randomUUID();
@@ -65,7 +69,7 @@ class ScenarioExportDataTest {
         setField(scenario, "id", scenarioId);
         when(repository.findById(scenarioId)).thenReturn(java.util.Optional.of(scenario));
 
-        assertThatThrownBy(() -> service.getScenarioExportData(otherId, scenarioId))
+        assertThatThrownBy(() -> service.findScenarioExportData(otherId, scenarioId))
                 .isInstanceOf(dev.nosurprise.scenario.ScenarioNotFoundException.class);
     }
 
@@ -76,13 +80,15 @@ class ScenarioExportDataTest {
         CalculatorService calculatorService = mock(CalculatorService.class);
         OfferService offerService = mock(OfferService.class);
         ScenarioService service = new ScenarioService(repository, calculatorService, offerService,
-                new tools.jackson.databind.ObjectMapper());
+                new tools.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class),
+                jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator());
 
         UUID userId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
         when(repository.findById(scenarioId)).thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> service.getScenarioExportData(userId, scenarioId))
+        assertThatThrownBy(() -> service.findScenarioExportData(userId, scenarioId))
                 .isInstanceOf(dev.nosurprise.scenario.ScenarioNotFoundException.class);
     }
 

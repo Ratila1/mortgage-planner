@@ -104,4 +104,31 @@ class RefreshTokenStoreTest {
         verify(redis).delete(RefreshTokenStore.KEY_PREFIX + USER_ID + ":"
                 + TokenService.sha256Hex("opaque-token"));
     }
+
+    @Test
+    @DisplayName("consume атомарно забирает токен: GETDEL возвращает значение, ключ удалён")
+    void consumeReadsAndDeletesAtomically() {
+        String key = RefreshTokenStore.KEY_PREFIX + USER_ID + ":"
+                + TokenService.sha256Hex("opaque-token");
+        org.mockito.ArgumentCaptor<org.springframework.data.redis.core.RedisCallback<String>> callback =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.redis.core.RedisCallback.class);
+        when(redis.execute(callback.capture())).thenReturn("2030-01-01T00:00:00Z|127.0.0.1");
+
+        var metadata = store.consume(USER_ID, "opaque-token");
+
+        assertThat(metadata).contains(new RefreshTokenMetadata(
+                Instant.parse("2030-01-01T00:00:00Z"), "127.0.0.1"));
+        // callback должен выполнить getDel по ключу
+        org.mockito.Mockito.verify(redis).execute(callback.getValue());
+        assertThat(callback.getAllValues()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("consume по отсутствующему ключу → Optional.empty")
+    void consumeAbsent() {
+        when(redis.execute(org.mockito.ArgumentMatchers.any(
+                org.springframework.data.redis.core.RedisCallback.class))).thenReturn(null);
+
+        assertThat(store.consume(USER_ID, "unknown")).isEmpty();
+    }
 }

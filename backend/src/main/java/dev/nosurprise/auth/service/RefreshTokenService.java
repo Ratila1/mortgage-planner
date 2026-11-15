@@ -43,13 +43,21 @@ public class RefreshTokenService {
                 now.plus(properties.refreshTtl()));
     }
 
-    /** Ротация: старый токен удаляется, новый выдаётся для того же пользователя. */
+    /**
+     * Ротация: старый токен атомарно забирается (GETDEL) и становится невалидным,
+     * новый выдаётся для того же пользователя. Параллельный /refresh с тем же
+     * токеном получает отсутствие ключа → 401 (§7).
+     */
     public IssuedRefreshToken rotate(String cookieValue, String issuedIp) {
         ParsedCookie parsed = parse(cookieValue);
-        store.read(parsed.userId(), parsed.token())
+        store.consume(parsed.userId(), parsed.token())
                 .orElseThrow(InvalidRefreshTokenException::new);
-        store.delete(parsed.userId(), parsed.token());
         return issue(parsed.userId(), issuedIp);
+    }
+
+    /** userId из cookie-значения без потребления токена: валидация пользователя выполняется ДО GETDEL. */
+    public UUID userIdFrom(String cookieValue) {
+        return parse(cookieValue).userId();
     }
 
     /** Отзыв текущего refresh-токена (logout). Отсутствующий/истёкший — не ошибка. */

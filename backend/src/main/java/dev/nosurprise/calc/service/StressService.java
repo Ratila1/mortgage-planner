@@ -44,7 +44,7 @@ public class StressService {
         List<StressResponse> result = new ArrayList<>();
         for (BigDecimal delta : deltas) {
             BigDecimal stressedRate = base.annualRate().add(delta);
-            if (stressedRate.compareTo(BigDecimal.ZERO) < 0 || stressedRate.compareTo(new BigDecimal("100")) > 0) {
+            if (stressedRate.compareTo(BigDecimal.ZERO) < 0 || stressedRate.compareTo(LoanParams.MAX_RATE) > 0) {
                 throw new InvalidCalculationException("stressed annualRate must be in 0..100");
             }
             LoanParams stressed = new LoanParams(base.price(), base.downPayment(), base.termMonths(),

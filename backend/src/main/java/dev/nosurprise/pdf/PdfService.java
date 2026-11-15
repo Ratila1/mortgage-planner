@@ -37,9 +37,9 @@ public class PdfService {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             writePdf(exportData, out);
             return out.toByteArray();
-        } catch (RuntimeException ex) {
-            throw ex;
         } catch (Exception ex) {
+            // RuntimeException тоже оборачивается: writePdf уже даёт осмысленное сообщение,
+            // причина сохраняется в cause.
             throw new IllegalStateException("failed to generate PDF", ex);
         }
     }
