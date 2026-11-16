@@ -7,6 +7,7 @@ import dev.nosurprise.calc.web.dto.StressResponse;
 import dev.nosurprise.calculator.InvalidCalculationException;
 import dev.nosurprise.calculator.LoanParams;
 import dev.nosurprise.calculator.MortgageCalculator;
+import io.micrometer.core.instrument.Metrics;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -17,6 +18,7 @@ import java.util.List;
 public class StressService {
 
     public List<StressResponse> stress(StressRequest request) {
+        Metrics.counter("nosurprise.stress.requests").increment();
         if (request.delta() != null && request.deltas() != null) {
             throw new InvalidCalculationException("delta and deltas cannot both be provided");
         }

@@ -7,12 +7,14 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import io.micrometer.core.annotation.Timed;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/calc")
+@Timed(value = "nosurprise.controller", description = "Controller endpoint latency")
 public class StressController {
 
     private final StressService service;

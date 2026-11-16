@@ -26,7 +26,7 @@
 | Данные | PostgreSQL (+Flyway), MongoDB, Redis |
 | Очередь | RabbitMQ (Spring AMQP) |
 | Почта | JavaMailSender; локально Mailpit |
-| Фронт | React 19 + Vite + TypeScript, тесты vitest |
+| Фронт | React 19 + Vite + TypeScript, Tailwind CSS 4, React Router 7, Recharts; тесты vitest |
 | Инфра | Docker Compose, nginx как единая точка входа, Cloudflare Tunnel (опционально) |
 | CI | GitHub Actions: Backend, Frontend, Docker build, Branch policy |
 
@@ -64,7 +64,10 @@ backend/src/main/java/dev/nosurprise/
   scenario/       сохранённые сценарии, сравнение, пересчёт
   notification/   уведомления (в БД + письма), consumer-ы очереди
 backend/src/main/resources/db/migration/   Flyway: V{N}__описание.sql
-frontend/src/                              React-приложение
+frontend/src/                              React-приложение:
+  api/          типы контракта (§9), http-клиент, моки (VITE_USE_MOCKS=true; по умолчанию — настоящий API)
+  pages/        экраны; components/ — общие компоненты и блоки калькулятора
+  lib/calc.ts   расчёт на клиенте ТОЛЬКО для моков (боевые цифры считает бэкенд)
 ```
 
 Правила зависимостей (нарушать нельзя):

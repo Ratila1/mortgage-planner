@@ -14,8 +14,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -50,9 +55,27 @@ import java.util.Map;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    @Value("${app.metrics.username:prometheus}")
+    private String metricsUsername;
+
+    @Value("${app.metrics.password:prometheus}")
+    private String metricsPassword;
+
     @Bean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    @Bean
+    UserDetailsService metricsUserDetailsService(PasswordEncoder encoder) {
+        if (metricsPassword == null || metricsPassword.isBlank()) {
+            return new InMemoryUserDetailsManager();
+        }
+        UserDetails user = User.withUsername(metricsUsername)
+                .password(encoder.encode(metricsPassword))
+                .roles("METRICS")
+                .build();
+        return new InMemoryUserDetailsManager(user);
     }
 
     /** HS256-декодер Nimbus: тот же секрет, что и TokenService при генерации (§7). */
@@ -102,13 +125,18 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers("/oauth2/authorization/**", "/login/oauth2/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .anyRequest().authenticated());
+                .anyRequest().authenticated())
+            .httpBasic(Customizer.withDefaults());
 
         // OAuth2 login включается только профилем oauth (application-oauth.yml).
         if (java.util.Arrays.asList(env.getActiveProfiles()).contains("oauth")) {
             OAuth2AuthenticationSuccessHandler handler = successHandlerProvider.getIfAvailable();
             if (handler != null) {
-                http.oauth2Login(oauth2 -> oauth2.successHandler(handler));
+                http.oauth2Login(oauth2 -> oauth2
+                        .successHandler(handler)
+                        // Отказ пользователя или ошибка провайдера — назад на страницу входа фронта.
+                        .failureHandler((request, response, ex) ->
+                                response.sendRedirect("/login?oauthError=failed")));
             } else {
                 http.oauth2Login(Customizer.withDefaults());
             }

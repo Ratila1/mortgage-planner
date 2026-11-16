@@ -52,7 +52,7 @@ class VerificationEmailMailBridgeTest {
         assertThat(mail.eventId()).isNotNull();
         assertThat(mail.occurredAt()).isNotNull();
         assertThat(mail.to()).isEqualTo("user@example.com");
-        assertThat(mail.body()).contains(BASE_URL + "/api/auth/verify-email?token=token-1");
+        assertThat(mail.body()).contains(BASE_URL + "/verify-email?token=token-1");
     }
 
     @Test
