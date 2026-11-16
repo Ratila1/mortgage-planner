@@ -30,7 +30,6 @@ public class RabbitNotificationConfig {
         Binding binding = BindingBuilder.bind(queue).to(events).with(OFFER_RATE_CHANGED_RK);
         Binding dlqBinding = BindingBuilder.bind(dlq).to(dlx).with(OFFER_RATE_CHANGED_RK);
 
-        // Очередь не объявляется: у неё нет потребителя (см. OfferRateChangedConsumer).
-        return new Declarables();
+        return new Declarables(queue, dlq, binding, dlqBinding);
     }
 }

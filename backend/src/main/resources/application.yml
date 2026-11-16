@@ -22,11 +22,16 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}   # локальный Redis без пароля — пусто; в compose задаётся env
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirms: correlated   # К4: издатель дожидается подтверждения доставки брокером
+    publisher-returns: true          # К4: неразместимое сообщение возвращается (ReturnedMessage)
+    template:
+      mandatory: true                # К4: mandatory — без соответствующей очереди → return
     listener:
       simple:
         default-requeue-rejected: false   # исчерпание retry → reject → DLX → DLQ (§8)
@@ -54,27 +59,24 @@ app:
       anonymous-per-minute: 30      # аноним: 30 запросов/мин на IP (§6.3)
       authenticated-per-minute: 120 # пользователь: 120 запросов/мин (§6.3)
       window: 60s
+    auth:
+      login-per-minute: 10          # защита от перебора паролей: по IP (§7)
+      otp-verify-per-minute: 10     # защита от подбора OTP: по IP (§7)
+      register-per-minute: 5        # защита от массовых регистраций и потока писем: по IP
+      otp-request-per-minute: 5     # защита от почтовой бомбардировки чужих адресов: по IP
+      refresh-per-minute: 30        # защита от спама/абьюза ротации refresh: по IP
+      logout-per-minute: 30         # защита от спама logout: по IP
+      window: 60s
   jwt:
     secret: ${JWT_SECRET:}   # секрет только из env, без dev-дефолта (§7); fail-fast в JwtProperties
     access-ttl: 15m
     refresh-ttl: 30d
   metrics:
-    username: ${METRICS_USER:prometheus}
-    password: ${METRICS_PASSWORD:prometheus}
+    user: ${METRICS_USER:}         # пусто = /actuator/prometheus закрыт совсем (§7)
+    password: ${METRICS_PASSWORD:} # задать, если Prometheus скрейпит с basic-авторизацией
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
-  metrics:
-    tags:
-      application: ${spring.application.name}
-    distribution:
-      percentiles-histogram:
-        http.server.requests: true
-  endpoint:
-    health:
-      show-details: when-authorized
-    prometheus:
-      cache.time-to-live: 10s
+        include: health,info,prometheus

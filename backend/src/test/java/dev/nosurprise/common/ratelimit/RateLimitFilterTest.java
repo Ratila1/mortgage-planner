@@ -56,7 +56,8 @@ class RateLimitFilterTest {
     void setUp() {
         limiter = mock(RateLimiter.class);
         RateLimitProperties properties = new RateLimitProperties();
-        filter = new RateLimitFilter(limiter, properties);
+        RateLimitAuthProperties authProperties = new RateLimitAuthProperties();
+        filter = new RateLimitFilter(limiter, properties, authProperties, new tools.jackson.databind.ObjectMapper());
         mockMvc = MockMvcBuilders.standaloneSetup(new StubController())
                 .addFilters(filter)
                 .build();
@@ -70,7 +71,7 @@ class RateLimitFilterTest {
     @Test
     @DisplayName("аноним: разрешено → запрос проходит, ключ по IP, лимит 30")
     void anonymousAllowed() throws Exception {
-        when(limiter.tryAcquire(IP, 30)).thenReturn(RateLimitDecision.allow());
+        when(limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30)).thenReturn(RateLimitDecision.allow());
 
         mockMvc.perform(post("/api/calc").with(request -> {
                     request.setRemoteAddr(IP);
@@ -78,13 +79,13 @@ class RateLimitFilterTest {
                 }))
                 .andExpect(status().isOk());
 
-        verify(limiter).tryAcquire(IP, 30);
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
     }
 
     @Test
     @DisplayName("аноним: превышение → 429, Retry-After, ProblemDetail code=RATE_LIMITED")
     void anonymousLimited() throws Exception {
-        when(limiter.tryAcquire(IP, 30)).thenReturn(RateLimitDecision.limited(42));
+        when(limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30)).thenReturn(RateLimitDecision.limited(42));
 
         mockMvc.perform(post("/api/calc").with(request -> {
                     request.setRemoteAddr(IP);
@@ -102,12 +103,12 @@ class RateLimitFilterTest {
     void authenticatedUserKeyAndLimit() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 USER, "n/a", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
-        when(limiter.tryAcquire(eq(USER), eq(120))).thenReturn(RateLimitDecision.allow());
+        when(limiter.tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(USER), eq(120))).thenReturn(RateLimitDecision.allow());
 
         mockMvc.perform(post("/api/calc"))
                 .andExpect(status().isOk());
 
-        verify(limiter).tryAcquire(USER, 120);
+        verify(limiter).tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(USER), eq(120));
     }
 
     @Test
@@ -120,9 +121,65 @@ class RateLimitFilterTest {
     }
 
     @Test
+    @DisplayName("POST /api/auth/login лимитируется по IP (10/мин), даже для аутентифицированных")
+    void loginLimitedByIp() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                USER, "n/a", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_LOGIN, IP, 10)).thenReturn(RateLimitDecision.limited(30));
+
+        mockMvc.perform(post("/api/auth/login").with(request -> {
+                    request.setRemoteAddr(IP);
+                    return request;
+                }))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_LOGIN, IP, 10);
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/otp/verify лимитируется по IP отдельным лимитом (10/мин)")
+    void otpVerifyLimitedByIp() throws Exception {
+        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_OTP_VERIFY, IP, 10)).thenReturn(RateLimitDecision.allow());
+
+        mockMvc.perform(post("/api/auth/otp/verify").with(request -> {
+                    request.setRemoteAddr(IP);
+                    return request;
+                }))
+                .andExpect(status().isNotFound()); // standalone: нет контроллера, но фильтр отработал
+
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_OTP_VERIFY, IP, 10);
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/refresh лимитируется по IP отдельным лимитом (30/мин)")
+    void refreshLimitedByIp() throws Exception {
+        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_REFRESH, IP, 30)).thenReturn(RateLimitDecision.limited(20));
+
+        mockMvc.perform(post("/api/auth/refresh").with(request -> {
+                    request.setRemoteAddr(IP);
+                    return request;
+                }))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "20"))
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_REFRESH, IP, 30);
+    }
+
+    @Test
+    @DisplayName("POST на прочие пути (не calc, не auth) не лимитируется")
+    void otherPostsNotLimited() throws Exception {
+        mockMvc.perform(post("/api/offers"))
+                .andExpect(status().isNotFound()); // standalone: нет контроллера
+
+        verifyNoInteractions(limiter);
+    }
+
+    @Test
     @DisplayName("сбой Redis (исключение limiter'а) не ломает POST /api/calc")
     void redisFailureLetsRequestThrough() throws Exception {
-        when(limiter.tryAcquire(eq(IP), eq(30))).thenThrow(new IllegalStateException("redis down"));
+        when(limiter.tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(IP), eq(30))).thenThrow(new IllegalStateException("redis down"));
 
         mockMvc.perform(post("/api/calc").with(request -> {
                     request.setRemoteAddr(IP);
@@ -134,7 +191,7 @@ class RateLimitFilterTest {
     @Test
     @DisplayName("429-ответ: точный content-type application/problem+json")
     void problemJsonContentType() throws Exception {
-        when(limiter.tryAcquire(IP, 30)).thenReturn(RateLimitDecision.limited(1));
+        when(limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30)).thenReturn(RateLimitDecision.limited(1));
 
         mockMvc.perform(post("/api/calc").with(request -> {
                     request.setRemoteAddr(IP);

@@ -16,6 +16,8 @@ import dev.nosurprise.pdf.PdfNotReadyException;
 import dev.nosurprise.notification.NotificationNotFoundException;
 import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * RFC 7807 (ProblemDetail) с полем {@code code} (§9 INSTRUCTION.md).
@@ -31,6 +34,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail onValidation(MethodArgumentNotValidException ex) {
@@ -134,8 +139,23 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED, ex.getMessage());
     }
 
+    /** Битый/подделанный JWT subject → 401, а не 500/404 (§7). */
+    @ExceptionHandler(InvalidPrincipalException.class)
+    ProblemDetail onInvalidPrincipal(InvalidPrincipalException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED, ex.getMessage());
+    }
+
+    /** Некорректный тип path-variable / query-параметра (например, id не UUID) → 400, не 500. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ProblemDetail onTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED,
+                ex.getName() + ": invalid value");
+    }
+
     @ExceptionHandler(Exception.class)
     ProblemDetail onUnexpected(Exception ex) {
+        // Стек нужен, чтобы 500-е было возможно диагностировать по логам (§8).
+        log.error("unexpected error", ex);
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, "unexpected error");
     }
 

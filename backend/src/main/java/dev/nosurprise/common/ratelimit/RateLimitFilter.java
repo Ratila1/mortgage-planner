@@ -1,6 +1,7 @@
 package dev.nosurprise.common.ratelimit;
 
 import dev.nosurprise.common.problem.ErrorCode;
+import dev.nosurprise.common.problem.ProblemJson;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,17 +14,24 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.util.Map;
 
 /**
- * Rate limit POST /api/calc (§6.3, §7): аноним — по IP, пользователь — по userId.
+ * Rate limit POST (§6.3, §7):
+ * - /api/calc и /api/calc/stress — аноним по IP, пользователь по userId;
+ * - /api/auth/* (login, register, otp/request, otp/verify) — по IP, всегда
+ *   (защита от перебора паролей, OTP, массовых регистраций и почтовой бомбардировки).
+ * Каждый путь — свой scope в Redis-ключе: лимиты разных эндпоинтов не выжигают друг друга.
  * IP приходит из request.getRemoteAddr(): при forward-headers-strategy: framework
  * Spring уже подставляет клиентский IP из X-Forwarded-For доверенного прокси (nginx/Cloudflare).
  * Principal пользователя — authentication.getName() (будущий userId из JWT-subject),
  * поэтому фильтр должен стоять ПОСЛЕ SecurityFilterChain.
  * Ответ при превышении: 429, заголовок Retry-After, ProblemDetail с code=RATE_LIMITED (§9).
- * Сбой Redis не ломает /api/calc: warning и пропуск запроса (как в calc.cache).
+ * Сбой Redis: для /api/calc — fail-open (warning и пропуск, как в calc.cache);
+ * для /api/auth/* — fail-closed (503): без лимитов открыта брутфорс-защита паролей и OTP.
  */
 public class RateLimitFilter extends OncePerRequestFilter {
 
@@ -31,34 +39,46 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     static final String LIMIT_PATH = "/api/calc";
     static final java.util.Set<String> LIMIT_PATHS = java.util.Set.of("/api/calc", "/api/calc/stress");
-    static final String PROBLEM_TYPE = "about:blank";
+    static final String LOGIN_PATH = "/api/auth/login";
+    static final String REGISTER_PATH = "/api/auth/register";
+    static final String OTP_REQUEST_PATH = "/api/auth/otp/request";
+    static final String OTP_VERIFY_PATH = "/api/auth/otp/verify";
+    static final String REFRESH_PATH = "/api/auth/refresh";
+    static final String LOGOUT_PATH = "/api/auth/logout";
+    static final java.util.Set<String> AUTH_LIMIT_PATHS =
+            java.util.Set.of(LOGIN_PATH, REGISTER_PATH, OTP_REQUEST_PATH, OTP_VERIFY_PATH, REFRESH_PATH, LOGOUT_PATH);
 
     private final RateLimiter limiter;
     private final RateLimitProperties properties;
+    private final RateLimitAuthProperties authProperties;
+    private final ObjectMapper objectMapper;
 
-    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties) {
+    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties,
+                           RateLimitAuthProperties authProperties, ObjectMapper objectMapper) {
         this.limiter = limiter;
         this.properties = properties;
-    }
-
-    /**
-     * Совместимость с прежним API (Jackson 2/3 ObjectMapper передавался снаружи).
-     * JSON 429-ответа собирается вручную, сериализатор не используется — параметр игнорируется.
-     * Конструктор оставлен, чтобы не ломать вызовы/тесты, ожидающие ObjectMapper-аргумент.
-     */
-    public RateLimitFilter(RateLimiter limiter, RateLimitProperties properties, Object objectMapper) {
-        this(limiter, properties);
+        this.authProperties = authProperties;
+        this.objectMapper = objectMapper;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !HttpMethod.POST.matches(request.getMethod())
-                || !LIMIT_PATHS.contains(request.getRequestURI());
+        if (!HttpMethod.POST.matches(request.getMethod())) {
+            return true;
+        }
+        String uri = request.getRequestURI();
+        return !LIMIT_PATHS.contains(uri) && !AUTH_LIMIT_PATHS.contains(uri);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        String uri = request.getRequestURI();
+        if (AUTH_LIMIT_PATHS.contains(uri)) {
+            filterAuthPath(request, response, chain, uri);
+            return;
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean authenticated = authentication != null
                 && authentication.isAuthenticated()
@@ -67,13 +87,58 @@ public class RateLimitFilter extends OncePerRequestFilter {
         int limit = authenticated
                 ? properties.getAuthenticatedPerMinute()
                 : properties.getAnonymousPerMinute();
+        continueOrLimit(request, response, chain, RateLimiter.SCOPE_CALC, principal, limit, true);
+    }
 
+    private void filterAuthPath(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
+                                String uri) throws ServletException, IOException {
+        String principal = request.getRemoteAddr();
+        String scope;
+        int limit;
+        switch (uri) {
+            case OTP_VERIFY_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_OTP_VERIFY;
+                limit = authProperties.getOtpVerifyPerMinute();
+            }
+            case OTP_REQUEST_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_OTP_REQUEST;
+                limit = authProperties.getOtpRequestPerMinute();
+            }
+            case REGISTER_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_REGISTER;
+                limit = authProperties.getRegisterPerMinute();
+            }
+            case REFRESH_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_REFRESH;
+                limit = authProperties.getRefreshPerMinute();
+            }
+            case LOGOUT_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_LOGOUT;
+                limit = authProperties.getLogoutPerMinute();
+            }
+            case LOGIN_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_LOGIN;
+                limit = authProperties.getLoginPerMinute();
+            }
+            default -> throw new IllegalStateException("unexpected auth path: " + uri);
+        }
+        continueOrLimit(request, response, chain, scope, principal, limit, false);
+    }
+
+    private void continueOrLimit(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
+                                 String scope, String principal, int limit, boolean failOpen)
+            throws ServletException, IOException {
         RateLimitDecision decision;
         try {
-            decision = limiter.tryAcquire(principal, limit);
+            decision = limiter.tryAcquire(scope, sanitize(principal), limit);
         } catch (RuntimeException ex) {
-            log.warn("rate limiter unavailable, allowing request: {}", principal, ex);
-            chain.doFilter(request, response);
+            if (failOpen) {
+                log.warn("rate limiter unavailable, allowing request: {}", sanitize(principal), ex);
+                chain.doFilter(request, response);
+                return;
+            }
+            log.warn("rate limiter unavailable, rejecting auth request: {}", sanitize(principal), ex);
+            writeServiceUnavailable(response);
             return;
         }
         if (decision.allowed()) {
@@ -84,13 +149,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private void writeTooManyRequests(HttpServletResponse response, RateLimitDecision decision) throws IOException {
-        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setHeader("Retry-After", String.valueOf(decision.retryAfterSeconds()));
-        response.setContentType("application/problem+json");
-        response.getWriter().write("{\"type\":\"" + PROBLEM_TYPE
-                + "\",\"title\":\"" + HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase()
-                + "\",\"status\":" + HttpStatus.TOO_MANY_REQUESTS.value()
-                + ",\"detail\":\"rate limit exceeded: too many calculation requests, try again later\""
-                + ",\"code\":\"" + ErrorCode.RATE_LIMITED.name() + "\"}");
+        ProblemJson.write(objectMapper, response, HttpStatus.TOO_MANY_REQUESTS,
+                "rate limit exceeded: too many requests, try again later",
+                Map.of("code", ErrorCode.RATE_LIMITED.name()));
+    }
+
+    private void writeServiceUnavailable(HttpServletResponse response) throws IOException {
+        ProblemJson.write(objectMapper, response, HttpStatus.SERVICE_UNAVAILABLE,
+                "rate limiter is unavailable, try again later",
+                Map.of("code", ErrorCode.RATE_LIMIT_UNAVAILABLE.name()));
+    }
+
+    private static String sanitize(String principal) {
+        return principal == null ? "null" : principal.replaceAll("[\\r\\n\\t]", "_");
     }
 }

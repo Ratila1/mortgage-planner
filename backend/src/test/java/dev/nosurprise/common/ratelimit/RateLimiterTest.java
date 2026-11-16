@@ -3,27 +3,24 @@ package dev.nosurprise.common.ratelimit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Юнит-тест оконного счётчика на моках StringRedisTemplate (§6.3):
- * ключ ratelimit:calc:{principal}, INCR, EXPIRE 60 с при первом запросе окна,
+ * ключ ratelimit:{scope}:{principal}, атомарный INCR+EXPIRE через Lua-скрипт,
  * превышение лимита → отказ с Retry-After = остаток TTL.
- * Testcontainers сознательно не используются.
  */
 @ExtendWith(MockitoExtension.class)
 class RateLimiterTest {
@@ -34,12 +31,6 @@ class RateLimiterTest {
     @Mock
     StringRedisTemplate redis;
 
-    @Mock
-    ValueOperations<String, String> values;
-
-    @InjectMocks
-    RateLimiter limiter;
-
     private RateLimitProperties properties(int anonymous, int authenticated) {
         RateLimitProperties props = new RateLimitProperties();
         props.setAnonymousPerMinute(anonymous);
@@ -47,46 +38,39 @@ class RateLimiterTest {
         return props;
     }
 
-    private void incrementReturns(String key, long count) {
-        lenient().when(redis.opsForValue()).thenReturn(values);
-        lenient().when(values.increment(key)).thenReturn(count);
-    }
-
     @Test
-    @DisplayName("ключ ratelimit:calc:{ip}; ниже лимита → разрешено, EXPIRE ставится при первом INCR")
-    void belowLimitAllowsAndSetsWindow() {
+    @DisplayName("ключ ratelimit:calc:{ip}; ниже лимита → разрешено, окно 60 с передаётся в Lua-скрипт")
+    void belowLimitAllowsAndPassesWindow() {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
-        incrementReturns("ratelimit:calc:" + IP, 1L);
+        when(redis.execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"))).thenReturn(1L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isTrue();
-        verify(redis).expire("ratelimit:calc:" + IP, 60L, TimeUnit.SECONDS);
+        verify(redis).execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"));
     }
 
     @Test
     @DisplayName("превышение лимита → отказ, Retry-After = остаток TTL ключа")
     void overLimitLimitedWithRetryAfter() {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
-        incrementReturns("ratelimit:calc:" + IP, 31L);
+        when(redis.execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"))).thenReturn(31L);
         when(redis.getExpire("ratelimit:calc:" + IP, TimeUnit.SECONDS)).thenReturn(17L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.retryAfterSeconds()).isEqualTo(17L);
-        // окно уже открыто ранее — EXPIRE не обновляется
-        verify(redis, never()).expire(anyString(), eq(60L), eq(TimeUnit.SECONDS));
     }
 
     @Test
     @DisplayName("TTL ключа отсутствует/истёк → Retry-After = размер окна (60 с)")
     void missingTtlFallsBackToWindow() {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
-        incrementReturns("ratelimit:calc:" + IP, 40L);
+        when(redis.execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"))).thenReturn(40L);
         when(redis.getExpire("ratelimit:calc:" + IP, TimeUnit.SECONDS)).thenReturn(-2L);
 
-        RateLimitDecision decision = limiter.tryAcquire(IP, 30);
+        RateLimitDecision decision = limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30);
 
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.retryAfterSeconds()).isEqualTo(60L);
@@ -96,24 +80,13 @@ class RateLimiterTest {
     @DisplayName("аноним и пользователь имеют разные ключи и лимиты (30 vs 120)")
     void separateKeysAndLimitsForPrincipal() {
         RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
-        incrementReturns("ratelimit:calc:" + IP, 5L);
-        incrementReturns("ratelimit:calc:" + USER_ID, 100L);
+        when(redis.execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"))).thenReturn(5L);
+        when(redis.execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + USER_ID)), eq("60"))).thenReturn(100L);
 
-        assertThat(limiter.tryAcquire(IP, 30).allowed()).isTrue();
-        assertThat(limiter.tryAcquire(USER_ID, 120).allowed()).isTrue();
+        assertThat(limiter.tryAcquire(RateLimiter.SCOPE_CALC, IP, 30).allowed()).isTrue();
+        assertThat(limiter.tryAcquire(RateLimiter.SCOPE_CALC, USER_ID, 120).allowed()).isTrue();
 
-        verify(values).increment("ratelimit:calc:" + IP);
-        verify(values).increment("ratelimit:calc:" + USER_ID);
-    }
-
-    @Test
-    @DisplayName("первый запрос пользователя тоже открывает окно EXPIRE 60 с")
-    void firstUserRequestOpensWindow() {
-        RateLimiter limiter = new RateLimiter(redis, properties(30, 120));
-        incrementReturns("ratelimit:calc:" + USER_ID, 1L);
-
-        limiter.tryAcquire(USER_ID, 120);
-
-        verify(redis).expire("ratelimit:calc:" + USER_ID, 60L, TimeUnit.SECONDS);
+        verify(redis).execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + IP)), eq("60"));
+        verify(redis).execute(any(RedisScript.class), eq(List.of("ratelimit:calc:" + USER_ID)), eq("60"));
     }
 }

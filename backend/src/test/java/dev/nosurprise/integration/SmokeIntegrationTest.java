@@ -59,17 +59,17 @@ class SmokeIntegrationTest extends AbstractIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("Flyway применил V1-V6, таблицы и seed offers на месте")
+    @DisplayName("Flyway применил V1-V8, таблицы и seed offers на месте")
     void flywayMigrationsAndSchema() {
         List<String> versions = jdbc.queryForList(
                 "select version from flyway_schema_history where version is not null order by installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
 
         List<Boolean> successes = jdbc.queryForList(
                 "select success from flyway_schema_history where version is not null order by installed_rank",
                 Boolean.class);
-        assertThat(successes).hasSize(6).containsOnly(true);
+        assertThat(successes).hasSize(8).containsOnly(true);
 
         for (String table : List.of("users", "user_roles", "bank_offers", "saved_scenarios", "notifications")) {
             Integer count = jdbc.queryForObject(
@@ -89,12 +89,13 @@ class SmokeIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("MongoDB: индексы paramsHash, user+createdAt и TTL expireAt созданы")
+    @DisplayName("MongoDB: индексы paramsHash+user, user+createdAt и TTL expireAt созданы")
     void mongoIndexes() {
         List<IndexInfo> indexes = mongo.indexOps(CalculationDocument.class).getIndexInfo();
 
+        // Идентичность расчёта — пара (paramsHash, userId): составной уникальный индекс вместо params_hash_idx.
         assertThat(indexes).extracting(IndexInfo::getName)
-                .contains("params_hash_idx", "user_created_at_idx", "expire_at_ttl_idx");
+                .contains("params_hash_user_idx", "user_created_at_idx", "expire_at_ttl_idx");
 
         IndexInfo ttl = indexes.stream()
                 .filter(index -> index.getName().equals("expire_at_ttl_idx"))

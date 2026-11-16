@@ -3,13 +3,15 @@ package dev.nosurprise.config;
 import dev.nosurprise.auth.service.JwtProperties;
 import dev.nosurprise.auth.web.OAuth2AuthenticationSuccessHandler;
 import dev.nosurprise.common.problem.ErrorCode;
+import dev.nosurprise.common.problem.ProblemJson;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.access.AccessDeniedException;import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.core.AuthenticationException;
@@ -27,22 +31,24 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import tools.jackson.databind.ObjectMapper;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * Безопасность (§7): stateless resource server (JWT, Nimbus, HS256, секрет из JWT_SECRET).
  * Публичные: /api/calc/**, /api/offers, /api/auth/**, /actuator/health/**;
  * /api/admin/** — ROLE_ADMIN; остальное (включая /actuator/prometheus) — аутентифицированные.
- * 401/403 — ProblemDetail (RFC 7807) с полем code, пишутся напрямую (детали — константы,
- * поэтому JSON собирается без ObjectMapper: Boot 4 автоконфигурирует Jackson 3, а не
- * com.fasterxml). OAuth2 login и logout-all — вне этапа, не реализуются. Никаких отключений
+ * 401/403 — ProblemDetail (RFC 7807) с полем code, сериализуется Boot-овым ObjectMapper (§9).
+ * OAuth2 login и logout-all — вне этапа, не реализуются. Никаких отключений
  * security и небезопасных fallback-конфигураций.
  */
 @Configuration
@@ -81,8 +87,36 @@ public class SecurityConfig {
     }
 
     @Bean
+    @Order(1)
+    SecurityFilterChain metricsFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder, ObjectMapper objectMapper,
+                                           @Value("${app.metrics.user:}") String metricsUser,
+                                           @Value("${app.metrics.password:}") String metricsPassword) throws Exception {
+        HttpSecurity chain = http
+                .securityMatcher("/actuator/prometheus", "/actuator/metrics/**")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        if (metricsUser.isBlank() || metricsPassword.isBlank()) {
+            // Креды не заданы → метрики закрыты совсем (дефолт). Health остаётся публичным (основная цепочка).
+            chain.authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+                    .exceptionHandling(ex -> ex.authenticationEntryPoint(new ProblemEntryPoint(objectMapper)));
+            return chain.build();
+        }
+        // Basic только для метрик: in-memory пользователь из env (METRICS_USER / METRICS_PASSWORD).
+        UserDetails metrics = User.withUsername(metricsUser)
+                .password(passwordEncoder.encode(metricsPassword))
+                .roles("METRICS")
+                .build();
+        chain
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .userDetailsService(new InMemoryUserDetailsManager(metrics))
+                .httpBasic(Customizer.withDefaults());
+        return chain.build();
+    }
+
+    @Bean
     SecurityFilterChain filterChain(HttpSecurity http, Environment env,
-                                    ObjectProvider<OAuth2AuthenticationSuccessHandler> successHandlerProvider) throws Exception {
+                                    ObjectProvider<OAuth2AuthenticationSuccessHandler> successHandlerProvider,
+                                    ObjectMapper objectMapper) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
@@ -102,7 +136,7 @@ public class SecurityConfig {
                         .successHandler(handler)
                         // Отказ пользователя или ошибка провайдера — назад на страницу входа фронта.
                         .failureHandler((request, response, ex) ->
-                                response.sendRedirect(OAuth2AuthenticationSuccessHandler.LOGIN_ERROR_URL + "failed")));
+                                response.sendRedirect("/login?oauthError=failed")));
             } else {
                 http.oauth2Login(Customizer.withDefaults());
             }
@@ -111,12 +145,12 @@ public class SecurityConfig {
         http
             .oauth2ResourceServer(oauth2 -> oauth2
                 // невалидный JWT — не «отсутствие аутентификации», отдельный failure-handler ресурсного сервера
-                .authenticationEntryPoint(new ProblemEntryPoint())
-                .accessDeniedHandler(new ProblemAccessDeniedHandler())
+                .authenticationEntryPoint(new ProblemEntryPoint(objectMapper))
+                .accessDeniedHandler(new ProblemAccessDeniedHandler(objectMapper))
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(new ProblemEntryPoint())
-                .accessDeniedHandler(new ProblemAccessDeniedHandler()));
+                .authenticationEntryPoint(new ProblemEntryPoint(objectMapper))
+                .accessDeniedHandler(new ProblemAccessDeniedHandler(objectMapper)));
         return http.build();
     }
 
@@ -133,10 +167,16 @@ public class SecurityConfig {
     /** 401: нет/невалидный JWT — ProblemDetail code=UNAUTHORIZED. */
     static final class ProblemEntryPoint implements AuthenticationEntryPoint {
 
+        private final ObjectMapper objectMapper;
+
+        ProblemEntryPoint(ObjectMapper objectMapper) {
+            this.objectMapper = objectMapper;
+        }
+
         @Override
         public void commence(HttpServletRequest request, HttpServletResponse response,
                              AuthenticationException ex) throws IOException {
-            writeProblem(response, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED,
+            writeProblem(objectMapper, response, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED,
                     "authentication required: missing or invalid access token");
         }
     }
@@ -144,20 +184,23 @@ public class SecurityConfig {
     /** 403: аутентифицирован, но нет роли (например, не ADMIN на /api/admin/**). */
     static final class ProblemAccessDeniedHandler implements AccessDeniedHandler {
 
+        private final ObjectMapper objectMapper;
+
+        ProblemAccessDeniedHandler(ObjectMapper objectMapper) {
+            this.objectMapper = objectMapper;
+        }
+
         @Override
         public void handle(HttpServletRequest request, HttpServletResponse response,
                            AccessDeniedException ex) throws IOException {
-            writeProblem(response, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN,
+            writeProblem(objectMapper, response, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN,
                     "insufficient permissions for this resource");
         }
     }
 
-    private static void writeProblem(HttpServletResponse response, HttpStatus status,
+    /** ProblemDetail сериализуется Jackson'ом через ProblemJson — без конкатенации (§9). */
+    private static void writeProblem(ObjectMapper objectMapper, HttpServletResponse response, HttpStatus status,
                                      ErrorCode code, String detail) throws IOException {
-        response.setStatus(status.value());
-        response.setContentType("application/problem+json");
-        response.getWriter().write("{\"type\":\"about:blank\",\"title\":\""
-                + status.getReasonPhrase() + "\",\"status\":" + status.value()
-                + ",\"detail\":\"" + detail + "\",\"code\":\"" + code.name() + "\"}");
+        ProblemJson.write(objectMapper, response, status, detail, Map.of("code", code.name()));
     }
 }

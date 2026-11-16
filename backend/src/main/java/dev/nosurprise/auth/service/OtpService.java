@@ -5,6 +5,7 @@ import dev.nosurprise.common.messaging.RabbitEventPublisher;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -15,6 +16,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -22,10 +24,29 @@ import java.util.UUID;
 public class OtpService {
 
     static final String OTP_KEY_PREFIX = "otp:";
+    static final String OTP_FAIL_KEY_PREFIX = "otp:fail:";
     static final String OTP_RATE_KEY_PREFIX = "otp:rate:";
     static final Duration OTP_TTL = Duration.ofMinutes(10);
     static final Duration OTP_RATE_TTL = Duration.ofMinutes(10);
     static final int OTP_RATE_LIMIT = 3;
+    /**
+     * Защита от перебора 6-значного кода (§7): после N неудачных попыток подряд
+     * код удаляется — подобрать его за время жизни невозможно.
+     */
+    static final int MAX_VERIFY_ATTEMPTS = 5;
+
+    /** Атомарный INCR+EXPIRE (§6.3): счётчик никогда не остаётся без TTL. */
+    private static final RedisScript<Long> INCR_EXPIRE = RedisScript.of(
+            """
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            return count
+            """,
+            Long.class);
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final UserService userService;
     private final TokenService tokenService;
@@ -51,23 +72,38 @@ public class OtpService {
         String normalized = normalize(email);
         checkRateLimit(normalized);
 
+        // Письмо уходит только на зарегистрированный адрес: несуществующие email иначе
+        // бомбардируются письмами «код для входа» с произвольных IP (per-email лимит
+        // не спасает). Ответ одинаковый в обоих случаях — существование не раскрывается.
+        if (userService.findByEmail(normalized).isEmpty()) {
+            return;
+        }
+
         String code = generateCode();
         String hash = sha256(code);
         redis.opsForValue().set(OTP_KEY_PREFIX + normalized, hash, OTP_TTL);
+        // Новый код — счётчик неудачных попыток сбрасывается (иначе старые неудачи
+        // от предыдущего кода укорачивают жизнь свежему).
+        redis.delete(OTP_FAIL_KEY_PREFIX + normalized);
 
         publisher.publish("mail.requested", new MailRequested(
-                UUID.randomUUID(), Instant.now(), normalized, "Код для входа",
+                UUID.randomUUID(), clock.instant(), normalized, "Код для входа",
                 "Ваш код для входа: " + code + ". Код действителен 10 минут."));
     }
 
     public LoginResult verifyOtp(String email, String code, String issuedIp) {
         String normalized = normalize(email);
         String storedHash = redis.opsForValue().get(OTP_KEY_PREFIX + normalized);
-        if (storedHash == null || !MessageDigest.isEqual(
+        if (storedHash == null) {
+            throw new OtpInvalidException("invalid otp");
+        }
+        if (!MessageDigest.isEqual(
                 storedHash.getBytes(StandardCharsets.UTF_8), sha256(code).getBytes(StandardCharsets.UTF_8))) {
+            registerFailedAttempt(normalized);
             throw new OtpInvalidException("invalid otp");
         }
         redis.delete(OTP_KEY_PREFIX + normalized);
+        redis.delete(OTP_FAIL_KEY_PREFIX + normalized);
 
         UserEntity user = userService.findByEmail(normalized)
                 .orElseThrow(() -> new OtpInvalidException("invalid otp"));
@@ -81,14 +117,28 @@ public class OtpService {
                 refresh.cookieValue());
     }
 
+    /**
+     * Учитывает неудачную попытку проверки (§7): INCR по email с TTL, а при достижении
+     * лимита код удаляется — перебор становится невозможен, нужно запросить новый.
+     * Счётчик живёт не дольше кода: новый requestOtp его сбрасывает.
+     * INCR и EXPIRE атомарны (Lua, §6.3): ключ без TTL сделал бы счётчик вечным.
+     */
+    private void registerFailedAttempt(String normalized) {
+        String failKey = OTP_FAIL_KEY_PREFIX + normalized;
+        Long failures = redis.execute(INCR_EXPIRE, List.of(failKey),
+                Long.toString(OTP_TTL.toSeconds()));
+        if (failures != null && failures >= MAX_VERIFY_ATTEMPTS) {
+            redis.delete(OTP_KEY_PREFIX + normalized);
+            redis.delete(failKey);
+        }
+    }
+
     private void checkRateLimit(String email) {
         String key = OTP_RATE_KEY_PREFIX + email;
-        Long count = redis.opsForValue().increment(key);
+        Long count = redis.execute(INCR_EXPIRE, List.of(key),
+                Long.toString(OTP_RATE_TTL.toSeconds()));
         if (count == null) {
             throw new IllegalStateException("redis INCR returned null for " + key);
-        }
-        if (count == 1L) {
-            redis.expire(key, OTP_RATE_TTL);
         }
         if (count > OTP_RATE_LIMIT) {
             throw new OtpRateLimitExceededException("too many otp requests");
@@ -96,11 +146,11 @@ public class OtpService {
     }
 
     private static String generateCode() {
-        int value = new SecureRandom().nextInt(1_000_000);
+        int value = RANDOM.nextInt(1_000_000);
         return String.format(Locale.ROOT, "%06d", value);
     }
 
-    private static String sha256(String value) {
+    static String sha256(String value) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(value.getBytes(StandardCharsets.UTF_8));

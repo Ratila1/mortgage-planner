@@ -176,6 +176,10 @@ class RabbitScenarioChainIntegrationTest extends AbstractIntegrationTest {
                 AURORA_INITIAL_RATE, user.accessToken());
         String scenarioId = created.get("id").asString();
 
+        // Событие — только триггер: ставка берётся из оффера. Меняем ставку оффера на 8.6,
+        // иначе consumer корректно пропустит событие как устаревшее (newRate != offer.rate).
+        resetOfferRate(AURORA_OFFER_ID, "8.6");
+
         OfferRateChanged duplicate = new OfferRateChanged(UUID.randomUUID(), Instant.now(), AURORA_OFFER_ID,
                 new BigDecimal(AURORA_INITIAL_RATE), new BigDecimal("8.6"));
         rabbitTemplate.convertAndSend(RabbitMailConfig.EVENTS_EXCHANGE,

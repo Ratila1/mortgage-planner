@@ -12,12 +12,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -122,7 +126,7 @@ class CalculatorControllerTest {
     @Test
     @DisplayName("GET /api/calc/{calcId}: 200 с сохранённым расчётом")
     void getCalc() throws Exception {
-        when(service.get("665f0f0f1e1e1e1e1e1e1e1e")).thenReturn(response("665f0f0f1e1e1e1e1e1e1e1e"));
+        when(service.get("665f0f0f1e1e1e1e1e1e1e1e", null)).thenReturn(response("665f0f0f1e1e1e1e1e1e1e1e"));
 
         mockMvc.perform(get("/api/calc/665f0f0f1e1e1e1e1e1e1e1e"))
                 .andExpect(status().isOk())
@@ -131,9 +135,71 @@ class CalculatorControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/calc/{calcId}: JWT viewer передаётся в service")
+    void getCalcWithViewer() throws Exception {
+        setViewer("11111111-1111-1111-1111-111111111111");
+        when(service.get(eq("665f0f0f1e1e1e1e1e1e1e1e"), any())).thenReturn(response("665f0f0f1e1e1e1e1e1e1e1e"));
+
+        mockMvc.perform(get("/api/calc/665f0f0f1e1e1e1e1e1e1e1e"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.calcId").value("665f0f0f1e1e1e1e1e1e1e1e"));
+
+        org.mockito.ArgumentCaptor<UUID> viewer = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(service).get(eq("665f0f0f1e1e1e1e1e1e1e1e"), viewer.capture());
+        org.assertj.core.api.Assertions.assertThat(viewer.getValue())
+                .isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+    }
+
+    @Test
+    @DisplayName("GET /api/calc/history: расчёты пользователя без графика")
+    void history() throws Exception {
+        setViewer("11111111-1111-1111-1111-111111111111");
+        List<CalcResponse> items = List.of(new CalcResponse("665f0f0f1e1e1e1e1e1e1e1e",
+                "1000000.00", "88848.79", "66185.45", "1066185.45", 12, null, null));
+        when(service.history(any())).thenReturn(items);
+
+        mockMvc.perform(get("/api/calc/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].calcId").value("665f0f0f1e1e1e1e1e1e1e1e"))
+                .andExpect(jsonPath("$[0].schedule").doesNotExist());
+
+        org.mockito.ArgumentCaptor<UUID> viewer = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(service).history(viewer.capture());
+        org.assertj.core.api.Assertions.assertThat(viewer.getValue())
+                .isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+    }
+
+    /**
+     * addFilters=false: jwt()-постпроцессор не заполняет @AuthenticationPrincipal,
+     * поэтому Authentication кладётся в SecurityContextHolder напрямую.
+     */
+    private static void setViewer(String subject) {
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt
+                .withTokenValue("token").header("alg", "HS256").subject(subject).build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                        jwt, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("GET /api/calc/history: аноним → пустой список")
+    void historyAnonymous() throws Exception {
+        when(service.history(null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/calc/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
     @DisplayName("GET /api/calc/{calcId}: неизвестный calcId → 404 CALC_NOT_FOUND")
     void getUnknownCalcId() throws Exception {
-        when(service.get("aaaaaaaaaaaaaaaaaaaaaaaa"))
+        when(service.get("aaaaaaaaaaaaaaaaaaaaaaaa", null))
                 .thenThrow(new CalcNotFoundException("calculation not found"));
 
         mockMvc.perform(get("/api/calc/aaaaaaaaaaaaaaaaaaaaaaaa"))

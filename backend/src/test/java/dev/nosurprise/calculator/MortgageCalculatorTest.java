@@ -342,6 +342,15 @@ class MortgageCalculatorTest {
         }
 
         @Test
+        @DisplayName("сумма кредита округлилась до 0.00 → InvalidCalculationException (400), не 500")
+        void loanAmountRoundsToZeroThrowsInvalidCalculationException() {
+            // price=0.014, downPayment=0.01 → loanAmount=0.004 → Money.round → 0.00
+            assertThatThrownBy(() -> calculator.calculate(new LoanParams(
+                    money("0.014"), money("0.01"), 12, money("12"), PaymentType.ANNUITY, List.of())))
+                    .isInstanceOf(InvalidCalculationException.class);
+        }
+
+        @Test
         @DisplayName("разовое погашение за пределами срока → ошибка")
         void earlyRepaymentBeyondTerm() {
             assertThatThrownBy(() -> calculator.calculate(new LoanParams(

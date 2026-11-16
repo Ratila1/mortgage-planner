@@ -1,7 +1,6 @@
 package dev.nosurprise.pdf.web;
 
 import dev.nosurprise.pdf.PdfNotReadyException;
-import dev.nosurprise.scenario.Scenario;
 import dev.nosurprise.scenario.ScenarioService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,12 +47,6 @@ class ScenarioPdfControllerTest {
     @DisplayName("запуск экспорта возвращает 202")
     void exportReturns202() throws Exception {
         UUID scenarioId = UUID.randomUUID();
-        when(scenarioService.findOwnedScenario(any(), any())).thenAnswer(inv -> {
-            Scenario scenario = org.mockito.Mockito.mock(Scenario.class);
-            when(scenario.getId()).thenReturn(scenarioId);
-            when(scenario.getUserId()).thenReturn(inv.getArgument(0));
-            return scenario;
-        });
 
         mockMvc.perform(post("/api/scenarios/" + scenarioId + "/export/pdf")
                         .with(SecurityMockMvcRequestPostProcessors.jwt().jwt(j -> j.subject("00000000-0000-0000-0000-000000000000"))))
@@ -77,10 +70,7 @@ class ScenarioPdfControllerTest {
     void downloadReturnsPdf() throws Exception {
         UUID scenarioId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Scenario scenario = org.mockito.Mockito.mock(Scenario.class);
-        when(scenario.getId()).thenReturn(scenarioId);
-        when(scenario.getUserId()).thenReturn(userId);
-        when(scenarioService.findOwnedScenario(userId, scenarioId)).thenReturn(scenario);
+        org.mockito.Mockito.doNothing().when(scenarioService).assertOwned(userId, scenarioId);
 
         GridFSFile file = org.mockito.Mockito.mock(GridFSFile.class);
         when(gridFsTemplate.findOne(any())).thenReturn(file);
@@ -100,10 +90,7 @@ class ScenarioPdfControllerTest {
     void downloadNotReady() throws Exception {
         UUID scenarioId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Scenario scenario = org.mockito.Mockito.mock(Scenario.class);
-        when(scenario.getId()).thenReturn(scenarioId);
-        when(scenario.getUserId()).thenReturn(userId);
-        when(scenarioService.findOwnedScenario(userId, scenarioId)).thenReturn(scenario);
+        org.mockito.Mockito.doNothing().when(scenarioService).assertOwned(userId, scenarioId);
         when(gridFsTemplate.findOne(any())).thenReturn(null);
 
         mockMvc.perform(get("/api/scenarios/" + scenarioId + "/pdf")
