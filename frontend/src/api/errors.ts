@@ -21,7 +21,7 @@ const MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: 'Неверная почта или пароль.',
   EMAIL_NOT_VERIFIED: 'Почта ещё не подтверждена. Проверьте письмо — мы не шутим.',
   INVALID_REFRESH_TOKEN: 'Сессия истекла. Войдите снова.',
-  OTP_INVALID: 'Код не подошёл или устарел.',
+  OTP_INVALID: 'Ссылка для входа устарела или уже использована. Запросите новую.',
   UNAUTHORIZED: 'Нужно войти.',
   FORBIDDEN: 'Недостаточно прав.',
   INTERNAL_ERROR: 'На сервере что-то сломалось. Это не мы, это проценты.',

@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * Лимиты auth-эндпоинтов (§7): защита от перебора паролей и OTP-кодов.
+ * Лимиты auth-эндпоинтов (§7): защита от перебора паролей и спама письмами-ссылками.
  * Проверка всегда по IP (даже для аутентифицированных) — на этих эндпоинтах
  * аутентификация ещё не состоялась или это попытка перебора.
  */
@@ -13,9 +13,9 @@ import java.time.Duration;
 public class RateLimitAuthProperties {
 
     private int loginPerMinute = 10;
-    private int otpVerifyPerMinute = 10;
+    private int linkConsumePerMinute = 10;
     private int registerPerMinute = 5;
-    private int otpRequestPerMinute = 5;
+    private int linkRequestPerMinute = 5;
     private int refreshPerMinute = 30;
     private int logoutPerMinute = 30;
     private Duration window = Duration.ofSeconds(60);
@@ -28,12 +28,12 @@ public class RateLimitAuthProperties {
         this.loginPerMinute = loginPerMinute;
     }
 
-    public int getOtpVerifyPerMinute() {
-        return otpVerifyPerMinute;
+    public int getLinkConsumePerMinute() {
+        return linkConsumePerMinute;
     }
 
-    public void setOtpVerifyPerMinute(int otpVerifyPerMinute) {
-        this.otpVerifyPerMinute = otpVerifyPerMinute;
+    public void setLinkConsumePerMinute(int linkConsumePerMinute) {
+        this.linkConsumePerMinute = linkConsumePerMinute;
     }
 
     public int getRegisterPerMinute() {
@@ -44,12 +44,12 @@ public class RateLimitAuthProperties {
         this.registerPerMinute = registerPerMinute;
     }
 
-    public int getOtpRequestPerMinute() {
-        return otpRequestPerMinute;
+    public int getLinkRequestPerMinute() {
+        return linkRequestPerMinute;
     }
 
-    public void setOtpRequestPerMinute(int otpRequestPerMinute) {
-        this.otpRequestPerMinute = otpRequestPerMinute;
+    public void setLinkRequestPerMinute(int linkRequestPerMinute) {
+        this.linkRequestPerMinute = linkRequestPerMinute;
     }
 
     public int getRefreshPerMinute() {

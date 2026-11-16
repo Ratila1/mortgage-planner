@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
@@ -26,6 +28,9 @@ class OAuth2AuthenticationSuccessHandlerTest {
     void googleSuccess() throws Exception {
         UserService userService = Mockito.mock(UserService.class);
         dev.nosurprise.auth.service.RefreshTokenService refreshTokenService = Mockito.mock(dev.nosurprise.auth.service.RefreshTokenService.class);
+        ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider = Mockito.mock(ObjectProvider.class);
+        OAuth2AuthorizedClientService authorizedClientService = Mockito.mock(OAuth2AuthorizedClientService.class);
+        when(authorizedClientServiceProvider.getIfAvailable()).thenReturn(authorizedClientService);
 
         UserEntity user = new UserEntity(UUID.randomUUID(), "user@example.com", null, true,
                 Provider.GOOGLE, "google-1", java.time.Instant.EPOCH, Set.of(dev.nosurprise.user.Role.USER));
@@ -36,7 +41,7 @@ class OAuth2AuthenticationSuccessHandlerTest {
                         user.getId() + ".opaque", java.time.Instant.EPOCH));
 
         OAuth2AuthenticationSuccessHandler handler = new OAuth2AuthenticationSuccessHandler(
-                userService, refreshTokenService, "http://localhost:8080");
+                userService, refreshTokenService, authorizedClientServiceProvider, "http://localhost:8080");
 
         OAuth2User principal = Mockito.mock(OAuth2User.class);
         when(principal.getAttribute("email")).thenReturn("user@example.com");

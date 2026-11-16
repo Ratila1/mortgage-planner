@@ -167,10 +167,12 @@ export const httpApi: Api = {
   stress: (params, deltas) => request<StressRow[]>('POST', '/api/calc/stress', { ...calcBody(params), deltas }),
 
   register: (email, password) => request<void>('POST', '/api/auth/register', { email, password }),
-  verifyEmail: (token) => request<void>('GET', `/api/auth/verify-email?token=${encodeURIComponent(token)}`),
+  resendVerification: (email) => request<void>('POST', `/api/auth/verify-email/resend?email=${encodeURIComponent(email)}`),
+  // Токен передаём в теле POST (не в query GET): он не попадёт в access-логи сервера.
+  verifyEmail: (token) => login('/api/auth/verify-email', { token }),
   login: (email, password) => login('/api/auth/login', { email, password }),
-  requestOtp: (email) => request<void>('POST', '/api/auth/otp/request', { email }),
-  verifyOtp: (email, code) => login('/api/auth/otp/verify', { email, code }),
+  requestLoginLink: (email) => request<void>('POST', '/api/auth/login-link', { email }),
+  consumeLoginLink: (token) => login('/api/auth/login-link/consume', { token }),
   restoreSession: () => refreshAccess(),
   async logout() {
     try {

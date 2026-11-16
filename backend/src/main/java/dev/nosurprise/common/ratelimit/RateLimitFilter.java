@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * Rate limit POST (§6.3, §7):
  * - /api/calc и /api/calc/stress — аноним по IP, пользователь по userId;
- * - /api/auth/* (login, register, otp/request, otp/verify) — по IP, всегда
+ * - /api/auth/* (login, register, login-link, login-link/consume) — по IP, всегда
  *   (защита от перебора паролей, OTP, массовых регистраций и почтовой бомбардировки).
  * Каждый путь — свой scope в Redis-ключе: лимиты разных эндпоинтов не выжигают друг друга.
  * IP приходит из request.getRemoteAddr(): при forward-headers-strategy: framework
@@ -41,12 +41,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     static final java.util.Set<String> LIMIT_PATHS = java.util.Set.of("/api/calc", "/api/calc/stress");
     static final String LOGIN_PATH = "/api/auth/login";
     static final String REGISTER_PATH = "/api/auth/register";
-    static final String OTP_REQUEST_PATH = "/api/auth/otp/request";
-    static final String OTP_VERIFY_PATH = "/api/auth/otp/verify";
+    static final String LINK_REQUEST_PATH = "/api/auth/login-link";
+    static final String LINK_CONSUME_PATH = "/api/auth/login-link/consume";
     static final String REFRESH_PATH = "/api/auth/refresh";
     static final String LOGOUT_PATH = "/api/auth/logout";
     static final java.util.Set<String> AUTH_LIMIT_PATHS =
-            java.util.Set.of(LOGIN_PATH, REGISTER_PATH, OTP_REQUEST_PATH, OTP_VERIFY_PATH, REFRESH_PATH, LOGOUT_PATH);
+            java.util.Set.of(LOGIN_PATH, REGISTER_PATH, LINK_REQUEST_PATH, LINK_CONSUME_PATH, REFRESH_PATH, LOGOUT_PATH);
 
     private final RateLimiter limiter;
     private final RateLimitProperties properties;
@@ -96,13 +96,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String scope;
         int limit;
         switch (uri) {
-            case OTP_VERIFY_PATH -> {
-                scope = RateLimiter.SCOPE_AUTH_OTP_VERIFY;
-                limit = authProperties.getOtpVerifyPerMinute();
+            case LINK_CONSUME_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_LINK_CONSUME;
+                limit = authProperties.getLinkConsumePerMinute();
             }
-            case OTP_REQUEST_PATH -> {
-                scope = RateLimiter.SCOPE_AUTH_OTP_REQUEST;
-                limit = authProperties.getOtpRequestPerMinute();
+            case LINK_REQUEST_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_LINK_REQUEST;
+                limit = authProperties.getLinkRequestPerMinute();
             }
             case REGISTER_PATH -> {
                 scope = RateLimiter.SCOPE_AUTH_REGISTER;
