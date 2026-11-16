@@ -41,7 +41,7 @@ public final class AuthFixture {
         UUID userId = userId(email);
         String token = verificationToken(userId);
 
-        var verified = api.get("/api/auth/verify-email?token=" + token);
+        var verified = api.postJson("/api/auth/verify-email", "{\"token\":\"" + token + "\"}");
         assertThat(verified.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(emailVerified(email)).isTrue();
 

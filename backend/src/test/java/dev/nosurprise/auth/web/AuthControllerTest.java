@@ -4,12 +4,14 @@ import dev.nosurprise.auth.service.AuthService;
 import dev.nosurprise.auth.service.EmailNotVerifiedException;
 import dev.nosurprise.auth.service.InvalidCredentialsException;
 import dev.nosurprise.auth.service.InvalidRefreshTokenException;
+import dev.nosurprise.auth.service.LoginLinkService;
 import dev.nosurprise.auth.service.LoginResult;
+import dev.nosurprise.auth.service.OtpInvalidException;
+import dev.nosurprise.auth.service.OtpRateLimitExceededException;
 import dev.nosurprise.auth.service.RegisterService;
 import dev.nosurprise.auth.service.VerificationService;
 import dev.nosurprise.auth.service.VerifyTokenInvalidException;
 import dev.nosurprise.auth.web.dto.RegisterResponse;
-import dev.nosurprise.auth.web.dto.VerifyEmailResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,12 +23,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import jakarta.servlet.http.Cookie;
 
-import static org.mockito.Mockito.doNothing;
+import java.util.UUID;
+
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,7 +56,7 @@ class AuthControllerTest {
     AuthService authService;
 
     @MockitoBean
-    dev.nosurprise.auth.service.OtpService otpService;
+    dev.nosurprise.auth.service.LoginLinkService loginLinkService;
 
     @Test
     @DisplayName("POST /api/auth/register: 202 c generic-сообщением, существование email не раскрывается")
@@ -104,34 +106,111 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/auth/verify-email?token=: валидный токен → 200")
+    @DisplayName("POST /api/auth/verify-email: валидный токен → 200, access в теле + refresh-cookie (сразу вошёл)")
     void verifyEmailOk() throws Exception {
-        doNothing().when(verificationService).verify("token-1");
+        UUID userId = UUID.randomUUID();
+        when(verificationService.consume("token-1", "127.0.0.1"))
+                .thenReturn(new LoginResult("access-jwt", 900, userId + ".opaque"));
 
-        mockMvc.perform(get("/api/auth/verify-email").queryParam("token", "token-1"))
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"token-1\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value(VerifyEmailResponse.confirmed().message()));
+                .andExpect(jsonPath("$.accessToken").value("access-jwt"))
+                .andExpect(cookie().httpOnly("refresh_token", true))
+                .andExpect(cookie().value("refresh_token", userId + ".opaque"));
 
-        verify(verificationService).verify("token-1");
+        verify(verificationService).consume("token-1", "127.0.0.1");
     }
 
     @Test
-    @DisplayName("GET /api/auth/verify-email?token=: истёкший/неизвестный токен → 400 VERIFY_TOKEN_INVALID")
+    @DisplayName("POST /api/auth/verify-email: истёкший/использованный токен → 400 VERIFY_TOKEN_INVALID")
     void verifyEmailInvalidToken() throws Exception {
-        doThrow(new VerifyTokenInvalidException()).when(verificationService).verify("expired");
+        doThrow(new VerifyTokenInvalidException()).when(verificationService).consume("expired", "127.0.0.1");
 
-        mockMvc.perform(get("/api/auth/verify-email").queryParam("token", "expired"))
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"expired\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VERIFY_TOKEN_INVALID"))
                 .andExpect(jsonPath("$.detail").value("verification token is invalid or expired"));
     }
 
     @Test
-    @DisplayName("GET /api/auth/verify-email без токена → 400 VALIDATION_FAILED (missing parameter)")
+    @DisplayName("POST /api/auth/verify-email без токена → 400 VALIDATION_FAILED")
     void verifyEmailMissingToken() throws Exception {
-        mockMvc.perform(get("/api/auth/verify-email"))
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login-link: 202, ссылка запрошена")
+    void requestLoginLinkAccepted() throws Exception {
+        mockMvc.perform(post("/api/auth/login-link")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@example.com\"}"))
+                .andExpect(status().isAccepted());
+
+        verify(loginLinkService).requestLoginLink("user@example.com");
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login-link: невалидный email → 400 VALIDATION_FAILED")
+    void requestLoginLinkInvalidEmail() throws Exception {
+        mockMvc.perform(post("/api/auth/login-link")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        verifyNoInteractions(loginLinkService);
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login-link/consume: валидный токен → 200, access + refresh-cookie")
+    void consumeLoginLinkOk() throws Exception {
+        UUID userId = UUID.randomUUID();
+        when(loginLinkService.consumeLoginLink("tok", "127.0.0.1"))
+                .thenReturn(new LoginResult("access-jwt", 900, userId + ".opaque"));
+
+        mockMvc.perform(post("/api/auth/login-link/consume")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"tok\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("access-jwt"))
+                .andExpect(cookie().httpOnly("refresh_token", true))
+                .andExpect(cookie().value("refresh_token", userId + ".opaque"));
+
+        verify(loginLinkService).consumeLoginLink("tok", "127.0.0.1");
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login-link/consume: битый токен → 400 OTP_INVALID")
+    void consumeLoginLinkInvalidToken() throws Exception {
+        when(loginLinkService.consumeLoginLink("bad", "127.0.0.1"))
+                .thenThrow(new OtpInvalidException("invalid login link"));
+
+        mockMvc.perform(post("/api/auth/login-link/consume")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"bad\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("OTP_INVALID"));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login-link: слишком много запросов → 429 RATE_LIMITED")
+    void requestLoginLinkRateLimited() throws Exception {
+        doThrow(new OtpRateLimitExceededException("too many login link requests"))
+                .when(loginLinkService).requestLoginLink("user@example.com");
+
+        mockMvc.perform(post("/api/auth/login-link")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@example.com\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
     @Test

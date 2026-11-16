@@ -36,6 +36,18 @@ public class RegisterService {
     }
 
     @Transactional
+    public void resendVerification(String email) {
+        String normalized = email == null ? "" : email.trim().toLowerCase(java.util.Locale.ROOT);
+        var userOpt = userService.findByEmail(normalized);
+        if (userOpt.isEmpty() || userOpt.get().isEmailVerified()) {
+            return;
+        }
+        var user = userOpt.get();
+        String token = tokenStore.create(user.getId());
+        eventPublisher.publishEvent(new VerificationEmailRequested(user.getId(), normalized, token));
+    }
+
+    @Transactional
     public void register(RegisterRequest request) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         if (userService.findByEmail(email).isPresent()) {

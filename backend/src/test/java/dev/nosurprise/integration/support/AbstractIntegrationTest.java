@@ -95,6 +95,6 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.ratelimit.calc.anonymous-per-minute", () -> 1000);
         registry.add("app.ratelimit.calc.authenticated-per-minute", () -> 1000);
         registry.add("app.ratelimit.auth.login-per-minute", () -> 1000);
-        registry.add("app.ratelimit.auth.otp-verify-per-minute", () -> 1000);
+        registry.add("app.ratelimit.auth.link-consume-per-minute", () -> 1000);
     }
 }

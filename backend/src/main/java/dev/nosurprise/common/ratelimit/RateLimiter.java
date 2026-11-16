@@ -12,7 +12,7 @@ import java.util.List;
  * Retry-After = остаток TTL ключа.
  * Redis недоступен → RuntimeException (решение о пропуске запроса принимает фильтр).
  * <p>
- * Scope — часть ключа: /api/calc, login и otp/verify не должны делить один счётчик,
+ * Scope — часть ключа: /api/calc, login и login-link/consume не должны делить один счётчик,
  * иначе 30 расчётов за минуту выжигают лимит логина (и наоборот) — взаимный DoS.
  * INCR и EXPIRE атомарны (Lua): при падении процесса между ними ключ остался бы
  * без TTL и принципал получил бы перманентный 429 до ручной чистки Redis.
@@ -41,9 +41,9 @@ public class RateLimiter {
     /** Скоупы ключей — должны совпадать с константами в RateLimitFilter. */
     public static final String SCOPE_CALC = "calc";
     public static final String SCOPE_AUTH_LOGIN = "auth-login";
-    public static final String SCOPE_AUTH_OTP_VERIFY = "auth-otp-verify";
+    public static final String SCOPE_AUTH_LINK_CONSUME = "auth-link-consume";
     public static final String SCOPE_AUTH_REGISTER = "auth-register";
-    public static final String SCOPE_AUTH_OTP_REQUEST = "auth-otp-request";
+    public static final String SCOPE_AUTH_LINK_REQUEST = "auth-link-request";
     public static final String SCOPE_AUTH_REFRESH = "auth-refresh";
     public static final String SCOPE_AUTH_LOGOUT = "auth-logout";
 

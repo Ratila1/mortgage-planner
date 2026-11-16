@@ -99,23 +99,91 @@ function Divider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Гиперссылка «Отправить письмо снова» с 60-секундным кулдауном: сразу после отправки
+ * письма неактивна и серая, справа тикает «(60с)»; по истечении — активна и кликабельна.
+ */
+function ResendLink({ onResend }: { onResend: () => Promise<void> }) {
+  const [cooldown, setCooldown] = useState(60);
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  const resend = async () => {
+    if (cooldown > 0 || resending) return;
+    setResending(true);
+    setError(null);
+    try {
+      await onResend();
+      setCooldown(60);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setResending(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={resend}
+        disabled={cooldown > 0 || resending}
+        className="mt-4 text-sm font-semibold text-money underline underline-offset-4 disabled:text-ink-3"
+      >
+        {resending ? 'Отправка…' : cooldown > 0 ? `Отправить письмо снова (${cooldown}с)` : 'Отправить письмо снова'}
+      </button>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+    </>
+  );
+}
+
 export function LoginPage() {
-  const { login, verifyOtp } = useAuth();
+  const { login, consumeLoginLink } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params, setParams] = useSearchParams();
   const from = (location.state as { from?: string } | null)?.from ?? '/scenarios';
-  const [searchParams] = useSearchParams();
-  const oauthErrorCode = searchParams.get('oauthError');
+  const oauthErrorCode = params.get('oauthError');
   const oauthError = oauthErrorCode ? (OAUTH_ERRORS[oauthErrorCode] ?? OAUTH_ERRORS.failed) : null;
 
-  const [mode, setMode] = useState<'password' | 'otp'>('password');
+  const [mode, setMode] = useState<'password' | 'link'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notVerified, setNotVerified] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+
+  // Токен из письма (/login?token=...) меняем на сессию и сразу вытираем из адреса.
+  const token = params.get('token');
+  const [tokenState, setTokenState] = useState<'idle' | 'consuming' | 'done' | 'failed'>(
+    token ? 'consuming' : 'idle',
+  );
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    consumeLoginLink(token)
+      .then(() => {
+        if (!alive) return;
+        setParams({}, { replace: true });
+        navigate(from, { replace: true });
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(errorMessage(err));
+        setTokenState('failed');
+        setParams({}, { replace: true });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token, consumeLoginLink, navigate, setParams]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -138,18 +206,23 @@ export function LoginPage() {
         await login(email, password);
         navigate(from, { replace: true });
       });
-    } else if (!otpSent) {
+    } else if (!linkSent) {
       run(async () => {
-        await api.requestOtp(email);
-        setOtpSent(true);
-      });
-    } else {
-      run(async () => {
-        await verifyOtp(email, code);
-        navigate(from, { replace: true });
+        await api.requestLoginLink(email);
+        setLinkSent(true);
       });
     }
   };
+
+  if (tokenState === 'consuming') {
+    return (
+      <AuthShell title="Вход по ссылке" subtitle="Меняем ссылку из письма на сессию.">
+        <div className="py-8 text-center text-money">
+          <Spinner className="h-8 w-8" />
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -165,26 +238,34 @@ export function LoginPage() {
         onChange={(m) => {
           setMode(m);
           setError(null);
+          setLinkSent(false);
         }}
         options={[
           { value: 'password', label: 'Пароль' },
-          { value: 'otp', label: 'Код на почту' },
+          { value: 'link', label: 'Ссылка на почту' },
         ]}
       />
       <form onSubmit={submit} className="mt-5 space-y-4">
-        <Field label="Почта" htmlFor="email">
-          <TextInput id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        {mode === 'password' ? (
-          <Field label="Пароль" htmlFor="password">
-            <TextInput id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-          </Field>
+        {mode === 'link' && linkSent ? (
+          <div className="rounded-xl border border-line bg-white/60 px-4 py-3 text-sm">
+            <p>
+              Мы отправили ссылку для входа на <b>{email}</b>. Откройте письмо и перейдите
+              по ней — вы сразу окажетесь в аккаунте, ничего вводить не нужно.
+            </p>
+            <p className="mt-1 text-xs text-ink-3">Ссылка действует 10 минут и работает один раз.</p>
+            <ResendLink onResend={() => api.requestLoginLink(email)} />
+          </div>
         ) : (
-          otpSent && (
-            <Field label="Код из письма" htmlFor="code" hint={USE_MOCKS ? 'в демо: 123456' : 'действует 10 минут'}>
-              <TextInput id="code" inputMode="numeric" autoComplete="one-time-code" required maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+          <>
+            <Field label="Почта" htmlFor="email">
+              <TextInput id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </Field>
-          )
+            {mode === 'password' && (
+              <Field label="Пароль" htmlFor="password">
+                <TextInput id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              </Field>
+            )}
+          </>
         )}
         {error && (
           <Alert>
@@ -192,9 +273,11 @@ export function LoginPage() {
             {notVerified && <span className="block pt-1 text-xs">Письмо не пришло? Проверьте «Спам» — оно там в хорошей компании.</span>}
           </Alert>
         )}
-        <Button type="submit" size="lg" className="w-full" loading={busy}>
-          {mode === 'password' ? 'Войти' : otpSent ? 'Подтвердить код' : 'Прислать код'}
-        </Button>
+        {!(mode === 'link' && linkSent) && (
+          <Button type="submit" size="lg" className="w-full" loading={busy}>
+            {mode === 'password' ? 'Войти' : 'Прислать ссылку'}
+          </Button>
+        )}
       </form>
     </AuthShell>
   );
@@ -206,6 +289,7 @@ export function RegisterPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
   const weak = password.length > 0 && password.length < 8;
 
   const submit = async (e: FormEvent) => {
@@ -235,6 +319,7 @@ export function RegisterPage() {
           <p className="mt-2 text-sm text-ink-2">
             Мы отправили ссылку на <b>{email}</b>. Она действует 24 часа — дольше, чем многие акционные ставки.
           </p>
+          <ResendLink onResend={() => api.resendVerification(email)} />
           {USE_MOCKS && (
             <Link to="/verify-email?token=demo" className="mt-5 inline-block text-sm font-semibold text-money underline underline-offset-4">
               Демо: «нажать» ссылку из письма
@@ -262,21 +347,32 @@ export function RegisterPage() {
 }
 
 export function VerifyEmailPage() {
-  const [params] = useSearchParams();
+  const { verifyEmail } = useAuth();
+  const [params, setParams] = useSearchParams();
   const token = params.get('token');
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(token ? 'loading' : 'error');
   const [error, setError] = useState<string | null>(token ? null : 'В ссылке нет токена.');
 
   useEffect(() => {
     if (!token) return;
-    api
-      .verifyEmail(token)
-      .then(() => setState('ok'))
+    let alive = true;
+    verifyEmail(token)
+      .then(() => {
+        if (!alive) return;
+        setState('ok');
+        // Токен одноразовый — стираем из адреса, чтобы он не оставался в истории браузера.
+        setParams({}, { replace: true });
+      })
       .catch((err) => {
+        if (!alive) return;
         setError(errorMessage(err));
         setState('error');
+        setParams({}, { replace: true });
       });
-  }, [token]);
+    return () => {
+      alive = false;
+    };
+  }, [token, verifyEmail, setParams]);
 
   return (
     <div className="mx-auto max-w-md">
@@ -290,8 +386,8 @@ export function VerifyEmailPage() {
           <>
             <Stamp tone="money" className="mb-5">Подтверждено</Stamp>
             <h1 className="font-display text-2xl font-bold">Почта подтверждена</h1>
-            <p className="mt-2 text-sm text-ink-2">Быстрее, чем банк одобряет заявку. Теперь можно войти.</p>
-            <Link to="/login" className="mt-6 inline-block rounded-xl bg-money px-5 py-3 text-sm font-semibold text-white hover:bg-money-2">Войти</Link>
+            <p className="mt-2 text-sm text-ink-2">Вы уже вошли в аккаунт — отдельно вводить данные не нужно.</p>
+            <Link to="/scenarios" className="mt-6 inline-block rounded-xl bg-money px-5 py-3 text-sm font-semibold text-white hover:bg-money-2">К моим сценариям</Link>
           </>
         )}
         {state === 'error' && (
@@ -299,7 +395,7 @@ export function VerifyEmailPage() {
             <Stamp className="mb-5">Не вышло</Stamp>
             <h1 className="font-display text-2xl font-bold">Ссылка не сработала</h1>
             <p className="mt-2 text-sm text-ink-2">{error}</p>
-            <Link to="/register" className="mt-6 inline-block text-sm font-semibold text-money underline underline-offset-4">Зарегистрироваться заново</Link>
+            <Link to="/login" className="mt-6 inline-block text-sm font-semibold text-money underline underline-offset-4">Войти другим способом</Link>
           </>
         )}
       </div>

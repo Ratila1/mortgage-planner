@@ -7,7 +7,10 @@ interface AuthState {
   loading: boolean;
   isAdmin: boolean;
   login(email: string, password: string): Promise<void>;
-  verifyOtp(email: string, code: string): Promise<void>;
+  /** Подтверждение почты токеном из письма + мгновенный вход. */
+  verifyEmail(token: string): Promise<void>;
+  /** Вход по одноразовой ссылке из письма (magic link). */
+  consumeLoginLink(token: string): Promise<void>;
   logout(): Promise<void>;
 }
 
@@ -41,8 +44,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }, []);
 
-  const verifyOtp = useCallback(async (email: string, code: string) => {
-    await api.verifyOtp(email, code);
+  const verifyEmail = useCallback(async (token: string) => {
+    await api.verifyEmail(token);
+    setUser(await api.me());
+  }, []);
+
+  const consumeLoginLink = useCallback(async (token: string) => {
+    await api.consumeLoginLink(token);
     setUser(await api.me());
   }, []);
 
@@ -55,8 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, isAdmin: !!user?.roles.includes('ADMIN'), login, verifyOtp, logout }),
-    [user, loading, login, verifyOtp, logout],
+    () => ({ user, loading, isAdmin: !!user?.roles.includes('ADMIN'), login, verifyEmail, consumeLoginLink, logout }),
+    [user, loading, login, verifyEmail, consumeLoginLink, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
