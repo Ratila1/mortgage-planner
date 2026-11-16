@@ -164,7 +164,8 @@ export interface Api {
   getCalculation(calcId: string): Promise<CalcResult>;
   stress(params: CalcParams, deltas: number[]): Promise<StressRow[]>;
 
-  register(email: string, password: string): Promise<void>;\n  resendVerification(email: string): Promise<void>;
+  register(email: string, password: string): Promise<void>;
+  resendVerification(email: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
   login(email: string, password: string): Promise<void>;
   requestOtp(email: string): Promise<void>;
