@@ -42,9 +42,12 @@ export function Layout() {
   const links = (
     <>
       <NavLink to="/" end className={navClass}>Калькулятор</NavLink>
+      <NavLink to="/microloan" className={navClass}>Микрозайм</NavLink>
       {user && <NavLink to="/scenarios" className={navClass}>Мои сценарии</NavLink>}
       {user && <NavLink to="/compare" className={navClass}>Сравнение</NavLink>}
-      {isAdmin && <NavLink to="/admin/offers" className={navClass}>Админка</NavLink>}
+      {user && <NavLink to="/microloan/applications" className={navClass}>Мои заявки</NavLink>}
+      {isAdmin && <NavLink to="/admin/offers" className={navClass}>Админка: предложения</NavLink>}
+      {isAdmin && <NavLink to="/admin/microloan" className={navClass}>Админка: микрозаймы</NavLink>}
     </>
   );
 

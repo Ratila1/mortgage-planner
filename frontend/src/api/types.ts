@@ -159,6 +159,60 @@ export interface Problem {
 /** Всё, что умеет фронт. Реализации: api/http.ts (настоящий бэк) и api/mock.ts. */
 export type OAuthProvider = 'google' | 'github';
 
+/** Microloan domain types — frontend-only demo, stored in localStorage. */
+export type MicroloanApplicationStatus = 'NEW' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface MicroloanType {
+  id: Id;
+  name: string;
+  minAmount: Money;
+  maxAmount: Money;
+  gracePeriodDays: number;
+  dailyRatePct: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MicroloanTypeInput = Omit<MicroloanType, 'id' | 'createdAt' | 'updatedAt'>;
+
+export interface ApplicantProfile {
+  fullName: string;
+  phone: string;
+  email: string;
+}
+
+export interface MicroloanApplication {
+  id: Id;
+  userId: Id;
+  typeId: Id;
+  typeName: string;
+  amount: Money;
+  termDays: number;
+  totalAmount: Money;
+  status: MicroloanApplicationStatus;
+  profile: ApplicantProfile;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MicroloanCalculationResult {
+  typeId: Id;
+  typeName: string;
+  amount: Money;
+  termDays: number;
+  dailyRatePct: string;
+  gracePeriodDays: number;
+  interestAmount: Money;
+  totalAmount: Money;
+  paymentSchedule: Array<{
+    day: number;
+    principal: Money;
+    interest: Money;
+    total: Money;
+  }>;
+}
+
 export interface Api {
   calculate(params: CalcParams): Promise<CalcResult>;
   getCalculation(calcId: string): Promise<CalcResult>;
@@ -199,4 +253,31 @@ export interface Api {
   adminCreateOffer(input: OfferInput): Promise<BankOffer>;
   adminUpdateOffer(id: Id, input: OfferInput): Promise<BankOffer>;
   adminDeleteOffer(id: Id): Promise<void>;
+
+  // Microloan API (frontend-only demo)
+  /** Получить активные типы микрозаймов для калькулятора и заявки. */
+  listMicroloanTypes(): Promise<MicroloanType[]>;
+  /** Получить все типы микрозаймов (включая неактивные) для админки. */
+  adminListMicroloanTypes(): Promise<MicroloanType[]>;
+  /** Создать новый тип микрозайма. */
+  adminCreateMicroloanType(input: MicroloanTypeInput): Promise<MicroloanType>;
+  /** Обновить тип микрозайма. */
+  adminUpdateMicroloanType(id: Id, input: MicroloanTypeInput): Promise<MicroloanType>;
+  /** Деактивировать/активировать тип микрозайма. */
+  adminToggleMicroloanType(id: Id, active: boolean): Promise<MicroloanType>;
+  /** Рассчитать микрозайм (frontend-only, не сохраняет). */
+  calculateMicroloan(typeId: Id, amount: Money, termDays: number): Promise<MicroloanCalculationResult>;
+  /** Подать заявку на микрозайм. */
+  createMicroloanApplication(input: {
+    typeId: Id;
+    amount: Money;
+    termDays: number;
+    profile: ApplicantProfile;
+  }): Promise<MicroloanApplication>;
+  /** Получить заявки текущего пользователя. */
+  listMyMicroloanApplications(): Promise<MicroloanApplication[]>;
+  /** Админ: получить все заявки. */
+  adminListMicroloanApplications(): Promise<MicroloanApplication[]>;
+  /** Админ: изменить статус заявки. */
+  adminUpdateMicroloanApplicationStatus(id: Id, status: MicroloanApplicationStatus): Promise<MicroloanApplication>;
 }

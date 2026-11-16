@@ -1,0 +1,70 @@
+{
+  "status": "clean",
+  "findings": [],
+  "clean_check": [
+    {
+      "category": "format.ts currency",
+      "claim": "format.ts hardcodes CURRENCY = 'BYN'; all formatting functions use this constant",
+      "location": "user-spec.md lines 53, 72; frontend/src/lib/format.ts line 2",
+      "evidence": "format.ts: export const CURRENCY = 'BYN'; formatMoney appends ' BYN'. Spec acknowledges this and proposes formatRub as new addition.",
+      "verified": true
+    },
+    {
+      "category": "mock.ts localStorage error handling",
+      "claim": "Current save() function catches and discards all localStorage errors ('не страшно')",
+      "location": "user-spec.md lines 54, 73; frontend/src/api/mock.ts lines 53-60",
+      "evidence": "mock.ts save() has try/catch that swallows errors without returning success/failure. Spec accurately describes this and proposes new error-propagating helper.",
+      "verified": true
+    },
+    {
+      "category": "VITE_USE_MOCKS demo login",
+      "claim": "VITE_USE_MOCKS=true enables mock API with demo login (any email, password ≥8 chars; admin role if email contains 'admin')",
+      "location": "user-spec.md lines 34, 52, 66; frontend/src/api/index.ts line 6; frontend/src/api/mock.ts lines 10, 81-98",
+      "evidence": "api/index.ts: USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'. mock.ts signIn() creates session with roles based on email containing 'admin'. Login accepts any password ≥8 chars.",
+      "verified": true
+    },
+    {
+      "category": "RequireAuth admin guard",
+      "claim": "Existing frontend admin route guard (RequireAuth with admin prop) checks isAdmin from auth context",
+      "location": "user-spec.md lines 40, 74; frontend/src/components/RequireAuth.tsx lines 6-18; frontend/src/App.tsx line 24",
+      "evidence": "RequireAuth.tsx: admin prop checks isAdmin, redirects non-admin to '/'. App.tsx: <Route path='admin/offers' element={<RequireAuth admin><AdminOffersPage /></RequireAuth>} />. Spec correctly identifies this as reusable UI guard.",
+      "verified": true
+    },
+    {
+      "category": "Missing microloan routes (forward-looking)",
+      "claim": "No /microloan* or /admin/microloan* routes exist; spec proposes adding them",
+      "location": "user-spec.md line 55; frontend/src/App.tsx lines 16-26",
+      "evidence": "App.tsx current routes: /, /login, /register, /verify-email, /scenarios, /compare, /notifications, /admin/offers. Spec uses future tense 'Добавить новые маршруты' — accurate.",
+      "verified": true
+    },
+    {
+      "category": "Missing FileInput in ui.tsx (forward-looking)",
+      "claim": "No FileInput component exists in ui.tsx; spec proposes adding one",
+      "location": "user-spec.md line 57; frontend/src/components/ui.tsx lines 1-209",
+      "evidence": "ui.tsx exports: Button, Spinner, Card, Field, TextInput, Segmented, Badge, Stamp, Alert, EmptyState, PageTitle. No FileInput. Spec uses future tense 'добавить компонент' — accurate.",
+      "verified": true
+    },
+    {
+      "category": "Missing microloan types in types.ts (forward-looking)",
+      "claim": "No MicroloanType, ApplicantProfile, MicroloanApplication types exist; spec proposes adding them separately from mortgage types",
+      "location": "user-spec.md line 58; frontend/src/api/types.ts lines 1-202",
+      "evidence": "types.ts contains only mortgage domain types (CalcParams, CalcResult, BankOffer, Scenario, Me, etc.). Spec uses future tense 'будут добавлены' — accurate.",
+      "verified": true
+    },
+    {
+      "category": "Missing isSubmitting pattern (forward-looking)",
+      "claim": "No double-submit protection via isSubmitting flag exists; spec proposes it for application form",
+      "location": "user-spec.md line 56; frontend/src/components/ui.tsx, frontend/src/pages/AuthPages.tsx",
+      "evidence": "AuthPages forms have loading state but no submit-count guard. ui.tsx Button supports loading prop but no form-level isSubmitting pattern. Spec uses future tense 'устанавливать флаг' — accurate.",
+      "verified": true
+    },
+    {
+      "category": "Missing Layout.tsx microloan nav links (forward-looking)",
+      "claim": "Layout.tsx nav has no microloan links; spec proposes adding public 'Микрозайм', user 'Мои заявки', admin 'Микрозаймы'",
+      "location": "user-spec.md line 55; frontend/src/components/Layout.tsx lines 44-47",
+      "evidence": "Layout.tsx nav links: Calculator (public), Мои сценарии (user), Сравнение (user), Админка (admin). Spec uses future tense 'добавить' — accurate.",
+      "verified": true
+    }
+  ],
+  "summary": "All factual claims about the existing codebase in user-spec.md are accurate. The spec correctly identifies: format.ts BYN lock, mock.ts error-swallowing save(), VITE_USE_MOCKS demo login behavior, RequireAuth admin guard. All new additions (formatRub, microloan routes, FileInput, microloan types, isSubmitting, Layout nav links, mock helper) are properly expressed as forward-looking requirements using future tense. No factual mismatches found."
+}
