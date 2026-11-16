@@ -138,17 +138,17 @@ class RateLimitFilterTest {
     }
 
     @Test
-    @DisplayName("POST /api/auth/otp/verify лимитируется по IP отдельным лимитом (10/мин)")
-    void otpVerifyLimitedByIp() throws Exception {
-        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_OTP_VERIFY, IP, 10)).thenReturn(RateLimitDecision.allow());
+    @DisplayName("POST /api/auth/login-link/consume лимитируется по IP отдельным лимитом (10/мин)")
+    void linkConsumeLimitedByIp() throws Exception {
+        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_LINK_CONSUME, IP, 10)).thenReturn(RateLimitDecision.allow());
 
-        mockMvc.perform(post("/api/auth/otp/verify").with(request -> {
+        mockMvc.perform(post("/api/auth/login-link/consume").with(request -> {
                     request.setRemoteAddr(IP);
                     return request;
                 }))
                 .andExpect(status().isNotFound()); // standalone: нет контроллера, но фильтр отработал
 
-        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_OTP_VERIFY, IP, 10);
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_LINK_CONSUME, IP, 10);
     }
 
     @Test

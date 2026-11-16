@@ -8,7 +8,8 @@ import type {
  * Моки API для работы без бэкенда (VITE_USE_MOCKS != 'false').
  * Состояние хранится в localStorage, чтобы переживать перезагрузку страницы.
  * Демо-входы: любая почта и пароль от 8 символов; почта с «admin» получает роль ADMIN.
- * OTP-код в моках всегда 123456. Почта с «unverified» имитирует неподтверждённую почту.
+ * Ссылки для входа/подтверждения в моках одноразовые («expired» имитирует истёкшую).
+ * Почта с «unverified» имитирует неподтверждённую почту.
  */
 
 const STORE_KEY = 'nosurprise.mock.v2';
@@ -44,6 +45,10 @@ function load(): MockState {
 }
 
 const state: MockState = load();
+
+// Адрес, на который была «отправлена» демо-ссылка (подтверждение / вход по ссылке).
+let pendingVerificationEmail: string | null = null;
+let lastLoginLinkEmail: string | null = null;
 
 function save() {
   try {
@@ -115,6 +120,7 @@ export const mockApi: Api = {
     await delay();
     if (password.length < 8) throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', detail: 'Пароль — минимум 8 символов' });
     if (state.session?.email === email) throw new ApiError({ status: 409, code: 'EMAIL_TAKEN' });
+    pendingVerificationEmail = email;
   },
   async resendVerification(email) {
     await delay();
@@ -123,6 +129,7 @@ export const mockApi: Api = {
   async verifyEmail(token) {
     await delay();
     if (token === 'expired') throw new ApiError({ status: 400, code: 'TOKEN_EXPIRED', detail: 'Ссылка устарела. Запросите новую.' });
+    signIn(pendingVerificationEmail ?? 'demo@example.com');
   },
   async login(email, password) {
     await delay();
@@ -130,12 +137,16 @@ export const mockApi: Api = {
     if (email.toLowerCase().includes('unverified')) throw new ApiError({ status: 403, code: 'EMAIL_NOT_VERIFIED' });
     signIn(email);
   },
-  async requestOtp() {
+  async requestLoginLink(email) {
     await delay();
+    if (email.toLowerCase().includes('unverified')) return; // письмо шлём и так, но вход по ссылке не пройдёт
+    lastLoginLinkEmail = email;
   },
-  async verifyOtp(email, code) {
+  async consumeLoginLink(token) {
     await delay();
-    if (code !== '123456') throw new ApiError({ status: 401, code: 'BAD_CREDENTIALS', detail: 'Код не подошёл (в демо это 123456)' });
+    if (token === 'expired') throw new ApiError({ status: 400, code: 'OTP_INVALID', detail: 'Ссылка устарела' });
+    const email = lastLoginLinkEmail ?? 'demo@example.com';
+    if (email.toLowerCase().includes('unverified')) throw new ApiError({ status: 403, code: 'EMAIL_NOT_VERIFIED' });
     signIn(email);
   },
   async restoreSession() {

@@ -74,10 +74,13 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(unknownEmail.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(code(unknownEmail)).isEqualTo("INVALID_CREDENTIALS");
 
-        // 4. Подтверждение почты токеном из Redis.
-        ResponseEntity<String> verified = api.get("/api/auth/verify-email?token=" + verificationToken);
+        // 4. Подтверждение почты токеном из Redis — и сразу вход: access в теле, refresh в cookie.
+        ResponseEntity<String> verified = api.postJson("/api/auth/verify-email",
+                "{\"token\":\"" + verificationToken + "\"}");
         assertThat(verified.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(message(verified.getBody())).isEqualTo("Email confirmed.");
+        assertThat(objectMapper.readTree(verified.getBody()).get("accessToken").asString()).isNotBlank();
+        assertRefreshCookieAttributes(verified.getHeaders());
+        assertThat(api.cookie("refresh_token")).startsWith(userId + ".");
         assertThat(emailVerified(email)).isTrue();
         assertThat(redis.hasKey(VERIFY_KEY_PREFIX + verificationToken)).isFalse();
 

@@ -166,10 +166,13 @@ export interface Api {
 
   register(email: string, password: string): Promise<void>;
   resendVerification(email: string): Promise<void>;
+  /** Подтверждение почты одноразовым токеном из письма + мгновенный вход. */
   verifyEmail(token: string): Promise<void>;
   login(email: string, password: string): Promise<void>;
-  requestOtp(email: string): Promise<void>;
-  verifyOtp(email: string, code: string): Promise<void>;
+  /** Прислать на почту одноразовую ссылку для входа (magic link). */
+  requestLoginLink(email: string): Promise<void>;
+  /** Обменять одноразовый токен из письма на сессию. */
+  consumeLoginLink(token: string): Promise<void>;
   /** Пробует восстановить сессию по refresh-cookie. true — сессия есть. */
   restoreSession(): Promise<boolean>;
   logout(): Promise<void>;
