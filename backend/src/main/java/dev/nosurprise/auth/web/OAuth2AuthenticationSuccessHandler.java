@@ -104,11 +104,19 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     private String fetchGitHubPrimaryEmail(Authentication authentication, String registrationId) {
         OAuth2AuthorizedClientService authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
-        if (authorizedClientService == null || authentication == null || authentication.getName() == null) {
+        if (authorizedClientService == null || authentication == null) {
             return null;
         }
+        OAuth2User principal = (authentication instanceof OAuth2AuthenticationToken o) ? o.getPrincipal() : null;
         try {
-            OAuth2AuthorizedClient client = authorizedClientService.loadAuthorizedClient(registrationId, authentication.getName());
+            OAuth2AuthorizedClient client = null;
+            for (String candidate : new String[] { authentication.getName(),
+                    (principal == null ? null : String.valueOf(principal.getAttribute("login"))),
+                    (principal == null ? null : String.valueOf(principal.getAttribute("id"))) }) {
+                if (candidate == null || "null".equals(candidate)) continue;
+                client = authorizedClientService.loadAuthorizedClient(registrationId, candidate);
+                if (client != null && client.getAccessToken() != null) break;
+            }
             if (client == null || client.getAccessToken() == null) {
                 return null;
             }
