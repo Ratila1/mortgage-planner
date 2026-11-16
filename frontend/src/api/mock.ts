@@ -116,6 +116,10 @@ export const mockApi: Api = {
     if (password.length < 8) throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', detail: 'Пароль — минимум 8 символов' });
     if (state.session?.email === email) throw new ApiError({ status: 409, code: 'EMAIL_TAKEN' });
   },
+  async resendVerification(email) {
+    await delay();
+    return;
+  },
   async verifyEmail(token) {
     await delay();
     if (token === 'expired') throw new ApiError({ status: 400, code: 'TOKEN_EXPIRED', detail: 'Ссылка устарела. Запросите новую.' });

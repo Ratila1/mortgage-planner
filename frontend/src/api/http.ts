@@ -166,7 +166,7 @@ export const httpApi: Api = {
   getCalculation: (calcId) => request<CalcResult>('GET', `/api/calc/${encodeURIComponent(calcId)}`),
   stress: (params, deltas) => request<StressRow[]>('POST', '/api/calc/stress', { ...calcBody(params), deltas }),
 
-  register: (email, password) => request<void>('POST', '/api/auth/register', { email, password }),
+  register: (email, password) => request<void>('POST', '/api/auth/register', { email, password }),\n  resendVerification: (email) => request<void>('POST', /api/auth/verify-email/resend?email=),
   verifyEmail: (token) => request<void>('GET', `/api/auth/verify-email?token=${encodeURIComponent(token)}`),
   login: (email, password) => login('/api/auth/login', { email, password }),
   requestOtp: (email) => request<void>('POST', '/api/auth/otp/request', { email }),

@@ -61,6 +61,12 @@ public class AuthController {
         return RegisterResponse.generic();
     }
 
+    @PostMapping("/verify-email/resend")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    void resendVerification(@RequestParam("email") String email) {
+        registerService.resendVerification(email);
+    }
+
     @GetMapping("/verify-email")
     VerifyEmailResponse verifyEmail(@RequestParam("token") String token) {
         verificationService.verify(token);

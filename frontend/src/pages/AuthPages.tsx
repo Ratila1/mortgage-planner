@@ -205,8 +205,8 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const weak = password.length > 0 && password.length < 8;
+  const [done, setDone] = useState(false);`n  const [resendCooldown, setResendCooldown] = useState(0);`n  const [resending, setResending] = useState(false);
+  useEffect(() => {`n    if (!done || resendCooldown <= 0) return;`n    const timer = setTimeout(() => setResendCooldown((c) => Math.max(0, c - 1)), 1000);`n    return () => clearTimeout(timer);`n  }, [done, resendCooldown]);`n`n  const resend = async () => {`n    if (resendCooldown > 0 || resending) return;`n    setResending(true);`n    try {`n      await api.resendVerification(email);`n      setResendCooldown(60);`n    } catch {`n      // ignore`n    } finally {`n      setResending(false);`n    }`n  };`n`n  const weak = password.length > 0 && password.length < 8;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -235,7 +235,7 @@ export function RegisterPage() {
           <p className="mt-2 text-sm text-ink-2">
             Мы отправили ссылку на <b>{email}</b>. Она действует 24 часа — дольше, чем многие акционные ставки.
           </p>
-          {USE_MOCKS && (
+          <button type="button" onClick={resend} disabled={resendCooldown > 0 || resending} className="mt-4 text-sm font-semibold text-money underline underline-offset-4 disabled:opacity-50">`n            {resending ? 'Otpravka...' : resendCooldown > 0 ? `Otpravit pis'mo snova (${resendCooldown}s)` : 'Otpravit pis'mo snova'}`n          </button>`n          {USE_MOCKS && (
             <Link to="/verify-email?token=demo" className="mt-5 inline-block text-sm font-semibold text-money underline underline-offset-4">
               Демо: «нажать» ссылку из письма
             </Link>

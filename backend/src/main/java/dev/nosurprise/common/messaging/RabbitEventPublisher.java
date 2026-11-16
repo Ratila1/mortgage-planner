@@ -1,5 +1,7 @@
 package dev.nosurprise.common.messaging;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.ReturnedMessage;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -9,25 +11,19 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
- * Публикация событий в topic-exchange {@code domain.events} (§8). Вызывается ТОЛЬКО из
- * AFTER_COMMIT-слушателей (@TransactionalEventListener(phase = AFTER_COMMIT)),
- * чтобы consumer не видел старые данные.
- * <p>
- * К4: издатель теперь дожидается publisher-confirm от брокера перед возвратом.
- * При nack/return/тайм-ауте — повторная отправка, затем исключение (событие не теряется
- * бесследно: упавшая AFTER_COMMIT-синхронизация видна в логах, а идемпотентность
- * consumer'ов защищает от дублей при повторе). JSON-сериализация — JacksonJsonMessageConverter.
+ * Публикация событий в topic-exchange {@code domain.events} (§8). Отправка выполняется
+ * асинхронно: HTTP-запрос не ждёт publisher-confirm от брокера, чтобы не блокировать
+ * пользователя (например, при регистрации). Ошибки логируются.
  */
 @Component
 public class RabbitEventPublisher {
 
     public static final String EVENTS_EXCHANGE = "domain.events";
 
+    private static final Logger log = LoggerFactory.getLogger(RabbitEventPublisher.class);
     private static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(5);
     private static final int MAX_ATTEMPTS = 3;
 
@@ -41,18 +37,20 @@ public class RabbitEventPublisher {
     }
 
     public void publish(String routingKey, Object event) {
-        RuntimeException last = null;
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            try {
-                if (waitForConfirm(routingKey, event)) {
-                    return; // подтверждено брокером
+        CompletableFuture.runAsync(() -> {
+            RuntimeException last = null;
+            for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                    if (waitForConfirm(routingKey, event)) {
+                        return;
+                    }
+                } catch (RuntimeException ex) {
+                    last = ex;
                 }
-            } catch (RuntimeException ex) {
-                last = ex;
             }
-        }
-        throw new IllegalStateException("event not confirmed by broker after " + MAX_ATTEMPTS + " attempts: "
-                + "exchange=" + EVENTS_EXCHANGE + ", routingKey=" + routingKey, last);
+            log.error("event not confirmed by broker after {} attempts: exchange={}, routingKey={}",
+                    MAX_ATTEMPTS, EVENTS_EXCHANGE, routingKey, last);
+        });
     }
 
     private boolean waitForConfirm(String routingKey, Object event) {
@@ -66,7 +64,7 @@ public class RabbitEventPublisher {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("event publish interrupted: " + routingKey, ex);
-        } catch (ExecutionException | TimeoutException ex) {
+        } catch (Exception ex) {
             throw new IllegalStateException("event publish not confirmed within timeout: " + routingKey, ex);
         } finally {
             confirms.remove(correlationData.getId());
