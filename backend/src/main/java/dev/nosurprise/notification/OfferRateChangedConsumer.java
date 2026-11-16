@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -77,7 +78,7 @@ public class OfferRateChangedConsumer {
                     + "стало: " + event.newRate().toPlainString() + "%\n\n"
                     + "С уважением,\nкоманда сервиса";
             publisher.publish("mail.requested", new MailRequested(
-                    mailEventId, Instant.now(), user.getEmail(), subject, body));
+                    mailEventId, Clock.systemUTC().instant(), user.getEmail(), subject, body));
         }
 
         markProcessed(key);

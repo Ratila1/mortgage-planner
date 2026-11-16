@@ -3,6 +3,7 @@ package dev.nosurprise.user;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -18,9 +19,16 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository repository;
+    private final Clock clock;
 
     public UserService(UserRepository repository) {
+        this(repository, Clock.systemUTC());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public UserService(UserRepository repository, Clock clock) {
         this.repository = repository;
+        this.clock = clock;
     }
 
     @Transactional
@@ -34,7 +42,7 @@ public class UserService {
                 false,
                 Provider.LOCAL,
                 null,
-                Instant.now(),
+                (clock == null ? Clock.systemUTC() : clock).instant(),
                 Set.of(Role.USER));
         return repository.save(user);
     }
@@ -89,7 +97,7 @@ public class UserService {
                 providerEmailVerified,
                 provider,
                 providerId,
-                Instant.now(),
+                (clock == null ? Clock.systemUTC() : clock).instant(),
                 Set.of(Role.USER));
         return repository.save(user);
     }
@@ -104,7 +112,7 @@ public class UserService {
                 true,
                 Provider.LOCAL,
                 null,
-                Instant.now(),
+                (clock == null ? Clock.systemUTC() : clock).instant(),
                 Set.of(Role.ADMIN));
         return repository.save(user);
     }

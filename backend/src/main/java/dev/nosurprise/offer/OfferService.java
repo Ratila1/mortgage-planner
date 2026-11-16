@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -19,12 +20,20 @@ public class OfferService {
     private final BankOfferRepository repository;
     private final OfferCache cache;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public OfferService(BankOfferRepository repository, OfferCache cache,
                         ApplicationEventPublisher eventPublisher) {
+        this(repository, cache, eventPublisher, Clock.systemUTC());
+    }
+
+    public OfferService(BankOfferRepository repository, OfferCache cache,
+                        ApplicationEventPublisher eventPublisher, Clock clock) {
         this.repository = repository;
         this.cache = cache;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +93,7 @@ public class OfferService {
 
         if (rateChanged) {
             eventPublisher.publishEvent(new OfferRateChanged(
-                    UUID.randomUUID(), Instant.now(), id, oldRate, request.rate()));
+                    UUID.randomUUID(), clock.instant(), id, oldRate, request.rate()));
         }
         return OfferResponse.from(saved);
     }

@@ -1,8 +1,6 @@
 package dev.nosurprise.auth.web;
 
-import dev.nosurprise.auth.service.JwtProperties;
 import dev.nosurprise.auth.service.RefreshTokenService;
-import dev.nosurprise.auth.service.TokenService;
 import dev.nosurprise.user.Provider;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
@@ -31,19 +29,14 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
     private static final Logger log = LoggerFactory.getLogger(OAuth2AuthenticationSuccessHandler.class);
 
     private final UserService userService;
-    private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
-    private final JwtProperties jwtProperties;
     private final String appBaseUrl;
 
-    public OAuth2AuthenticationSuccessHandler(UserService userService, TokenService tokenService,
-                                              RefreshTokenService refreshTokenService,
-                                              JwtProperties jwtProperties,
-                                              @Value("${app.base-url}") String appBaseUrl) {
+    public OAuth2AuthenticationSuccessHandler(UserService userService,
+                                             RefreshTokenService refreshTokenService,
+                                             @Value("${app.base-url}") String appBaseUrl) {
         this.userService = userService;
-        this.tokenService = tokenService;
         this.refreshTokenService = refreshTokenService;
-        this.jwtProperties = jwtProperties;
         this.appBaseUrl = normalizeBaseUrl(appBaseUrl);
     }
 
@@ -79,10 +72,13 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 redirectFailure(response, "no_email");
                 return;
             }
+            if (!providerVerified) {
+                redirectFailure(response, "unverified_email");
+                return;
+            }
 
             UserEntity user = userService.provisionOAuthUser(email, provider, providerId, providerVerified);
             var refresh = refreshTokenService.issue(user.getId(), request.getRemoteAddr());
-            // Генерация access-токена не нужна: cookie refresh достаточна для восстановления сессии в SPA.
             response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
             response.sendRedirect(appBaseUrl + "/");
         } catch (RuntimeException ex) {

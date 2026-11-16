@@ -18,6 +18,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -90,7 +91,7 @@ public class ScenarioRecalcConsumer {
                     UUID mailEventId = UUID.nameUUIDFromBytes(
                             (event.eventId() + ":" + scenario.getId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     rabbitPublisher.publish(RabbitScenarioConfig.SCENARIO_RECALCULATED_RK, new ScenarioRecalculated(
-                            mailEventId, Instant.now(), result.scenarioId(), result.calcId(), result.userId(),
+                            mailEventId, Clock.systemUTC().instant(), result.scenarioId(), result.calcId(), result.userId(),
                             result.oldRate(), result.newRate(), result.oldMonthlyPayment(),
                             result.newMonthlyPayment(), result.oldOverpayment(), result.newOverpayment()));
                 } catch (RuntimeException ex) {

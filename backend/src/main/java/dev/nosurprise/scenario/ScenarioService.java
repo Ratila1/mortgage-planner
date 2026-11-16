@@ -23,6 +23,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -109,7 +110,7 @@ public class ScenarioService {
         repository.delete(scenario);
         // AFTER_COMMIT-слушатель (ScenarioPdfCleanupListener) чистит GridFS и PDF_READY-уведомления.
         eventPublisher.publishEvent(new dev.nosurprise.scenario.event.ScenarioDeleted(
-                UUID.randomUUID(), Instant.now(), userId, scenarioId));
+                UUID.randomUUID(), Clock.systemUTC().instant(), userId, scenarioId));
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +155,7 @@ public class ScenarioService {
     public void requestExport(UUID userId, UUID scenarioId) {
         Scenario scenario = findOwned(userId, scenarioId);
         eventPublisher.publishEvent(new ExportPdfRequested(
-                UUID.randomUUID(), Instant.now(), scenario.getId(), scenario.getCalcId(), userId));
+                UUID.randomUUID(), Clock.systemUTC().instant(), scenario.getId(), scenario.getCalcId(), userId));
     }
 
     @Transactional
@@ -212,7 +213,7 @@ public class ScenarioService {
     @Transactional(readOnly = true)
     public ScenarioExportData findScenarioExportData(UUID userId, UUID scenarioId) {
         Scenario scenario = findOwned(userId, scenarioId);
-        CalculationReadModel calculation = calculatorService.getCalculation(scenario.getCalcId());
+        CalculationReadModel calculation = calculatorService.findCalculation(scenario.getCalcId());
 
         OfferResponse offer = null;
         if (scenario.getOfferId() != null) {

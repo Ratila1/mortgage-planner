@@ -42,7 +42,7 @@ class ScenarioExportDataTest {
                         dev.nosurprise.calculator.PaymentType.ANNUITY, List.of()),
                 new LoanSummary(new BigDecimal("80000.00"), new BigDecimal("10000.00"), new BigDecimal("960000.00"), 12),
                 List.of(), Instant.now(), null);
-        when(calculatorService.getCalculation("507f1f77bcf86cd799439011")).thenReturn(calc);
+        when(calculatorService.findCalculation("507f1f77bcf86cd799439011")).thenReturn(calc);
 
         ScenarioExportData data = service.findScenarioExportData(userId, scenarioId);
 

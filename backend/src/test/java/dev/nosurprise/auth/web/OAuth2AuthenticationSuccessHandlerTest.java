@@ -25,11 +25,7 @@ class OAuth2AuthenticationSuccessHandlerTest {
     @DisplayName("Google OAuth: provisioning, refresh cookie and redirect to SPA")
     void googleSuccess() throws Exception {
         UserService userService = Mockito.mock(UserService.class);
-        dev.nosurprise.auth.service.TokenService tokenService = Mockito.mock(dev.nosurprise.auth.service.TokenService.class);
         dev.nosurprise.auth.service.RefreshTokenService refreshTokenService = Mockito.mock(dev.nosurprise.auth.service.RefreshTokenService.class);
-        dev.nosurprise.auth.service.JwtProperties jwtProperties =
-                new dev.nosurprise.auth.service.JwtProperties("test-secret-0123456789abcdef0123456789",
-                        java.time.Duration.ofMinutes(15), java.time.Duration.ofDays(30));
 
         UserEntity user = new UserEntity(UUID.randomUUID(), "user@example.com", null, true,
                 Provider.GOOGLE, "google-1", java.time.Instant.EPOCH, Set.of(dev.nosurprise.user.Role.USER));
@@ -40,7 +36,7 @@ class OAuth2AuthenticationSuccessHandlerTest {
                         user.getId() + ".opaque", java.time.Instant.EPOCH));
 
         OAuth2AuthenticationSuccessHandler handler = new OAuth2AuthenticationSuccessHandler(
-                userService, tokenService, refreshTokenService, jwtProperties, "http://localhost:8080");
+                userService, refreshTokenService, "http://localhost:8080");
 
         OAuth2User principal = Mockito.mock(OAuth2User.class);
         when(principal.getAttribute("email")).thenReturn("user@example.com");

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -33,7 +34,7 @@ public class VerificationEmailMailBridge {
         String confirmUrl = baseUrl + "/api/auth/verify-email?token=" + event.token();
         publisher.publish(RabbitMailConfig.MAIL_REQUESTED_RK, new MailRequested(
                 UUID.randomUUID(),
-                Instant.now(),
+                Clock.systemUTC().instant(),
                 event.email(),
                 "Confirm your email",
                 "Confirm your email: " + confirmUrl + " . The link is valid for 24 hours."));

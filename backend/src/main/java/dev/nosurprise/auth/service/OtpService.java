@@ -87,7 +87,7 @@ public class OtpService {
         redis.delete(OTP_FAIL_KEY_PREFIX + normalized);
 
         publisher.publish("mail.requested", new MailRequested(
-                UUID.randomUUID(), Instant.now(), normalized, "Код для входа",
+                UUID.randomUUID(), clock.instant(), normalized, "Код для входа",
                 "Ваш код для входа: " + code + ". Код действителен 10 минут."));
     }
 

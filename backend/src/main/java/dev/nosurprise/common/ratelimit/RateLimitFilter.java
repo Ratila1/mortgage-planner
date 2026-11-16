@@ -92,7 +92,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private void filterAuthPath(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
                                 String uri) throws ServletException, IOException {
-        // Auth-эндпоинты лимитируются по IP всегда: аутентификация там ещё не состоялась.
         String principal = request.getRemoteAddr();
         String scope;
         int limit;
@@ -117,10 +116,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 scope = RateLimiter.SCOPE_AUTH_LOGOUT;
                 limit = authProperties.getLogoutPerMinute();
             }
-            default -> {
+            case LOGIN_PATH -> {
                 scope = RateLimiter.SCOPE_AUTH_LOGIN;
                 limit = authProperties.getLoginPerMinute();
             }
+            default -> throw new IllegalStateException("unexpected auth path: " + uri);
         }
         continueOrLimit(request, response, chain, scope, principal, limit, false);
     }
@@ -137,7 +137,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 chain.doFilter(request, response);
                 return;
             }
-            // Auth-эндпоинты без Redis открыты для брутфорса паролей и OTP — отказываем.
             log.warn("rate limiter unavailable, rejecting auth request: {}", sanitize(principal), ex);
             writeServiceUnavailable(response);
             return;
@@ -162,7 +161,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 Map.of("code", ErrorCode.RATE_LIMIT_UNAVAILABLE.name()));
     }
 
-    /** Principal при прямом доступе — контролируемый атакующим X-Forwarded-For: не даём CRLF попасть в лог. */
     private static String sanitize(String principal) {
         return principal == null ? "null" : principal.replaceAll("[\\r\\n\\t]", "_");
     }

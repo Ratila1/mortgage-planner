@@ -20,6 +20,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -110,7 +111,7 @@ public class ScenarioRecalculatedConsumer {
 
             UUID mailEventId = UUID.nameUUIDFromBytes((event.eventId() + ":" + event.userId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             eventPublisher.publishEvent(new ScenarioRecalculatedMailRequested(
-                    mailEventId, Instant.now(), user.getEmail(), subject, body));
+                    mailEventId, Clock.systemUTC().instant(), user.getEmail(), subject, body));
 
             // complete строго после коммита: откат транзакции не должен оставлять
             // событие «обработанным».

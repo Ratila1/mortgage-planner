@@ -125,10 +125,6 @@ public class CalculatorService {
     }
 
     /** Внутренний доступ без проверки владельца — вызывается только после проверки сценария. */
-    public CalculationReadModel getCalculation(String calcId) {
-        return findCalculation(calcId);
-    }
-
     public CalculationReadModel findCalculation(String calcId) {
         CalculationDocument document = loadDocument(calcId);
         return new CalculationReadModel(document.id(), document.params(), document.summary(),

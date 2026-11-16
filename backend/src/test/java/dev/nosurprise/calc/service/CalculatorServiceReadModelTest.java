@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 class CalculatorServiceReadModelTest {
 
     @Test
-    @DisplayName("getCalculation возвращает read model")
+    @DisplayName("findCalculation возвращает read model")
     void found() {
         CalculationRepository repository = mock(CalculationRepository.class);
         CalcCache cache = mock(CalcCache.class);
@@ -34,21 +34,21 @@ class CalculatorServiceReadModelTest {
                         new java.math.BigDecimal("960000.00"), 12), null, List.of(), Instant.now(), null);
         when(repository.findById("507f1f77bcf86cd799439011")).thenReturn(Optional.of(doc));
 
-        CalculationReadModel result = service.getCalculation("507f1f77bcf86cd799439011");
+        CalculationReadModel result = service.findCalculation("507f1f77bcf86cd799439011");
 
         assertThat(result.calcId()).isEqualTo("507f1f77bcf86cd799439011");
         assertThat(result.params().annualRate()).isEqualByComparingTo("12");
     }
 
     @Test
-    @DisplayName("getCalculation для отсутствующего расчёта -> CALC_NOT_FOUND")
+    @DisplayName("findCalculation для отсутствующего расчёта -> CALC_NOT_FOUND")
     void missing() {
         CalculationRepository repository = mock(CalculationRepository.class);
         CalcCache cache = mock(CalcCache.class);
         CalculatorService service = new CalculatorService(repository, cache, Clock.systemUTC());
         when(repository.findById("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getCalculation("missing"))
+        assertThatThrownBy(() -> service.findCalculation("missing"))
                 .isInstanceOf(dev.nosurprise.calc.service.CalcNotFoundException.class);
     }
 }
