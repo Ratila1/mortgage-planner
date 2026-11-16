@@ -87,6 +87,22 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("некорректный тип path-variable / query-параметра → 400 VALIDATION_FAILED, не 500")
+    void typeMismatchBecomesBadRequest() throws Exception {
+        mockMvc.perform(get("/throw/type-mismatch/not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("InvalidPrincipalException (битый JWT subject) → 401 UNAUTHORIZED")
+    void invalidPrincipalBecomesUnauthorized() throws Exception {
+        mockMvc.perform(get("/throw/invalid-principal"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
     @DisplayName("IllegalArgumentException и прочие непойманные → 500 INTERNAL_ERROR")
     void unexpectedBecomesInternalError() throws Exception {
         mockMvc.perform(get("/throw/illegal-argument"))
@@ -124,6 +140,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/throw/verify-token")
         String verifyToken() {
             throw new dev.nosurprise.auth.service.VerifyTokenInvalidException();
+        }
+
+        @GetMapping("/throw/type-mismatch/{id}")
+        String typeMismatch(@org.springframework.web.bind.annotation.PathVariable java.util.UUID id) {
+            return "ok";
+        }
+
+        @GetMapping("/throw/invalid-principal")
+        String invalidPrincipal() {
+            throw new InvalidPrincipalException();
         }
 
         @GetMapping("/throw/illegal-argument")

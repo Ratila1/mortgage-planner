@@ -48,11 +48,15 @@ public class ScenarioPdfController {
     @GetMapping("/{id}/pdf")
     public ResponseEntity<Resource> download(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
         UUID userId = UUID.fromString(jwt.getSubject());
-        Scenario scenario = scenarioService.findOwnedScenario(userId, id);
+        scenarioService.assertOwned(userId, id);
 
+        // Несколько экспортов могут оставить несколько файлов: берём самый свежий.
         com.mongodb.client.gridfs.model.GridFSFile file = gridFsTemplate.findOne(
-                Query.query(Criteria.where("metadata.scenarioId").is(scenario.getId().toString())
-                        .and("metadata.userId").is(userId.toString())));
+                Query.query(Criteria.where("metadata.scenarioId").is(id.toString())
+                                .and("metadata.userId").is(userId.toString()))
+                        .with(org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.DESC, "uploadDate"))
+                        .limit(1));
 
         if (file == null) {
             throw new PdfNotReadyException("pdf not ready for scenario: " + id);

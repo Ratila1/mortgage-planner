@@ -57,24 +57,24 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    @DisplayName("rotate: валидный токен → старый удалён, новый выдан тому же userId")
+    @DisplayName("rotate: валидный токен → атомарно забран (consume), новый выдан тому же userId")
     void rotateIssuesNewTokenAndDeletesOld() {
         String oldCookie = RefreshTokenService.cookieValue(USER_ID, "old-token");
-        when(store.read(USER_ID, "old-token")).thenReturn(Optional.of(
+        when(store.consume(USER_ID, "old-token")).thenReturn(Optional.of(
                 new RefreshTokenMetadata(NOW.minus(Duration.ofDays(1)), "10.0.0.1")));
 
         var rotated = service().rotate(oldCookie, "10.0.0.2");
 
         assertThat(rotated.userId()).isEqualTo(USER_ID);
         assertThat(rotated.token()).isNotEqualTo("old-token");
-        verify(store).delete(USER_ID, "old-token");
+        verify(store).consume(USER_ID, "old-token");
         verify(store).create(eq(USER_ID), eq(rotated.token()), any(RefreshTokenMetadata.class));
     }
 
     @Test
-    @DisplayName("rotate: после ротации старый токен невалиден (ключ удалён из Redis)")
+    @DisplayName("rotate: после ротации старый токен невалиден (consume вернул empty — ключ уже удалён)")
     void oldTokenInvalidAfterRotation() {
-        when(store.read(USER_ID, "old-token")).thenReturn(Optional.empty());
+        when(store.consume(USER_ID, "old-token")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().rotate(
                 RefreshTokenService.cookieValue(USER_ID, "old-token"), "10.0.0.2"))

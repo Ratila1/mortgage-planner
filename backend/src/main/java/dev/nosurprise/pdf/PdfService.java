@@ -13,7 +13,6 @@ import com.lowagie.text.pdf.PdfWriter;
 import dev.nosurprise.calculator.ScheduleRow;
 import dev.nosurprise.offer.web.dto.OfferResponse;
 import dev.nosurprise.scenario.ScenarioExportData;
-import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
@@ -22,6 +21,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
+
+import org.springframework.stereotype.Service;
 
 @Service
 public class PdfService {
@@ -36,9 +37,9 @@ public class PdfService {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             writePdf(exportData, out);
             return out.toByteArray();
-        } catch (RuntimeException ex) {
-            throw ex;
         } catch (Exception ex) {
+            // RuntimeException тоже оборачивается: writePdf уже даёт осмысленное сообщение,
+            // причина сохраняется в cause.
             throw new IllegalStateException("failed to generate PDF", ex);
         }
     }

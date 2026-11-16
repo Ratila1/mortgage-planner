@@ -1,8 +1,10 @@
 package dev.nosurprise.auth.service;
 
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -32,6 +34,23 @@ public class RefreshTokenStore {
 
     public Optional<RefreshTokenMetadata> read(UUID userId, String token) {
         String value = redis.opsForValue().get(key(userId, token));
+        if (value == null) {
+            return Optional.empty();
+        }
+        return parse(value);
+    }
+
+    /**
+     * Атомарно забирает токен (§7): GETDEL — читает значение и удаляет ключ одним
+     * вызовом. Защита от гонки ротации: два параллельных /refresh с одним и тем же
+     * токеном не могут оба пройти проверку — второй получает отсутствие ключа.
+     */
+    public Optional<RefreshTokenMetadata> consume(UUID userId, String token) {
+        String value = redis.execute((RedisCallback<String>) connection -> {
+            byte[] raw = connection.stringCommands()
+                    .getDel(key(userId, token).getBytes(StandardCharsets.UTF_8));
+            return raw == null ? null : new String(raw, StandardCharsets.UTF_8);
+        });
         if (value == null) {
             return Optional.empty();
         }

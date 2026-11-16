@@ -158,10 +158,11 @@ class AuthServiceTest {
     @Test
     @DisplayName("refresh: ротация — новый access, cookie-значение обновлённого refresh")
     void refreshRotatesTokens() {
+        when(refreshTokenService.userIdFrom(USER_ID + ".old-token")).thenReturn(USER_ID);
+        when(userService.findById(USER_ID)).thenReturn(Optional.of(user(true)));
         when(refreshTokenService.rotate(USER_ID + ".old-token", "10.0.0.1"))
                 .thenReturn(new IssuedRefreshToken(USER_ID, "new-token",
                         USER_ID + ".new-token", Instant.EPOCH));
-        when(userService.findById(USER_ID)).thenReturn(Optional.of(user(true)));
         when(tokenService.generate(USER_ID, Set.of(Role.USER))).thenReturn("access-jwt");
 
         LoginResult result = service().refresh(USER_ID + ".old-token", "10.0.0.1");

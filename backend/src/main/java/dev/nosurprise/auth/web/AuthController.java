@@ -45,11 +45,6 @@ public class AuthController {
     private final AuthService authService;
     private final OtpService otpService;
 
-    public AuthController(RegisterService registerService, VerificationService verificationService,
-                          AuthService authService) {
-        this(registerService, verificationService, authService, null);
-    }
-
     @Autowired
     public AuthController(RegisterService registerService, VerificationService verificationService,
                           AuthService authService, OtpService otpService) {
@@ -108,18 +103,12 @@ public class AuthController {
     @PostMapping("/otp/request")
     @ResponseStatus(HttpStatus.ACCEPTED)
     void requestOtp(@Valid @RequestBody OtpRequest request) {
-        if (otpService == null) {
-            throw new IllegalStateException("otp service is not configured");
-        }
         otpService.requestOtp(request.email());
     }
 
     @PostMapping("/otp/verify")
     ResponseEntity<LoginResponse> verifyOtp(@Valid @RequestBody OtpVerifyRequest request,
                                            HttpServletRequest httpRequest) {
-        if (otpService == null) {
-            throw new IllegalStateException("otp service is not configured");
-        }
         LoginResult result = otpService.verifyOtp(request.email(), request.code(),
                 httpRequest.getRemoteAddr());
         return ResponseEntity.ok()

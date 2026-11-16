@@ -68,6 +68,18 @@ class ParamsHasherTest {
     }
 
     @Test
+    @DisplayName("два ONE_TIME в одном месяце — NPE не выбрасывается, хэш вычисляется")
+    void twoOneTimeInSameMonthDoesNotThrowNpe() {
+        EarlyRepayment er1 = EarlyRepayment.oneTime(3, new BigDecimal("100000"), EarlyRepaymentMode.REDUCE_TERM);
+        EarlyRepayment er2 = EarlyRepayment.oneTime(3, new BigDecimal("200000"), EarlyRepaymentMode.REDUCE_PAYMENT);
+
+        LoanParams a = params("1000000", "0", 12, "12", PaymentType.ANNUITY, List.of(er1, er2));
+        LoanParams b = params("1000000", "0", 12, "12", PaymentType.ANNUITY, List.of(er2, er1));
+
+        assertThat(ParamsHasher.hash(a)).isEqualTo(ParamsHasher.hash(b));
+    }
+
+    @Test
     @DisplayName("хэш — sha256: 64 hex-символа")
     void hashShape() {
         String hash = ParamsHasher.hash(base);

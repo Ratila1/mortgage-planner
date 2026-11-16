@@ -49,8 +49,26 @@ class FirstAdminBootstrapTest {
     }
 
     @Test
-    @DisplayName("существующий пользователь получает роль ADMIN без перезаписи")
-    void ensuresAdminRoleForExisting() {
+    @DisplayName("существующий ПОДТВЕРЖДЁННЫЙ пользователь получает роль ADMIN")
+    void verifiedExistingUserGetsAdminRole() {
+        UserService userService = mock(UserService.class);
+        FirstAdminBootstrap bootstrap = new FirstAdminBootstrap(userService,
+                mock(org.springframework.security.crypto.password.PasswordEncoder.class));
+        ReflectionTestUtils.setField(bootstrap, "adminEmail", "admin@example.com");
+        ReflectionTestUtils.setField(bootstrap, "adminPassword", "secret");
+        UserEntity existing = new UserEntity(UUID.randomUUID(), "admin@example.com", "hash", true,
+                dev.nosurprise.user.Provider.LOCAL, null, java.time.Instant.EPOCH,
+                java.util.Set.of(dev.nosurprise.user.Role.USER));
+        when(userService.findByEmail("admin@example.com")).thenReturn(Optional.of(existing));
+
+        bootstrap.run(null);
+
+        verify(userService).ensureAdminRole(existing);
+    }
+
+    @Test
+    @DisplayName("существующий НЕПОДТВЕРЖДЁННЫЙ пользователь НЕ получает роль ADMIN — только warning")
+    void unverifiedExistingUserDoesNotGetAdminRole() {
         UserService userService = mock(UserService.class);
         FirstAdminBootstrap bootstrap = new FirstAdminBootstrap(userService,
                 mock(org.springframework.security.crypto.password.PasswordEncoder.class));
@@ -63,6 +81,6 @@ class FirstAdminBootstrapTest {
 
         bootstrap.run(null);
 
-        verify(userService).ensureAdminRole(existing);
+        verify(userService, never()).ensureAdminRole(any());
     }
 }

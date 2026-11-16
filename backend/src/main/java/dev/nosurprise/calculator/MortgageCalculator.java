@@ -28,6 +28,12 @@ public class MortgageCalculator {
 
     public CalculationResult calculate(LoanParams params) {
         BigDecimal loanAmount = Money.round(params.loanAmount());
+        // Сумма кредита могла округлиться до нуля (price=0.014, downPayment=0.01 → 0.004 → 0.00):
+        // тогда график пуст, а это InvalidCalculationException (400), а не IllegalStateException (500).
+        if (loanAmount.signum() <= 0) {
+            throw new InvalidCalculationException(
+                    "loan amount must be positive: " + params.loanAmount().toPlainString());
+        }
         CalculationResult result = compute(loanAmount, params);
         if (params.earlyRepayments().isEmpty()) {
             return result;
@@ -167,8 +173,15 @@ public class MortgageCalculator {
                             "earlyRepayment startMonth " + start + " is beyond term " + termMonths);
                 }
                 int limit = er.untilMonth() != null ? Math.min(er.untilMonth(), termMonths) : termMonths;
-                for (int month = start; month <= limit; month += er.everyMonths()) {
+                // Инкремент без переполнения int: everyMonths ограничен только ">= 1", и
+                // startMonth + everyMonths может уйти в отрицательные числа, зацикливая
+                // график на чужих месяцах. Шаг выполняется лишь если следующий месяц <= limit.
+                int every = er.everyMonths();
+                for (int month = start; month <= limit; month += every) {
                     byMonth.computeIfAbsent(month, m -> new ArrayList<>()).add(er);
+                    if (every > limit - month) {
+                        break;
+                    }
                 }
             }
         }

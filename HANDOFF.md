@@ -200,3 +200,51 @@
 - История расчётов как endpoint не описана в §9; реализованы только модель и индексы.
 - Testcontainers не используются по зафиксированному решению.
 - Frontend/proxy-изменения для новых путей, если потребуются, выполняются отдельно.
+
+---
+
+## Проход `global-fix` (аудит-фиксы, ветка `global-fix`)
+
+Пакет исправлений по результатам аудита (безопасность → серьёзные баги → чистка → CI/доки). Ниже — что изменилось относительно описанного выше состояния.
+
+### Безопасность
+
+- **nginx:** `X-Forwarded-For` ставится заново (`$remote_addr`), клиентский XFF не пробрасывается — иначе rate limit по IP обходится подделкой заголовка.
+- **Rate limit auth-эндпоинтов:** `RateLimitFilter` теперь лимитирует и `POST /api/auth/login`, и `POST /api/auth/otp/verify` по IP (по умолчанию 10/мин, `app.ratelimit.auth.*` в application.yml, `RateLimitAuthProperties`).
+- **OTP-перебор:** `OtpService` ведёт счётчик неудачных проверок (`otp:fail:{email}`, INCR+TTL); после 5 неудач подряд код удаляется — подобрать 6-значный код за время жизни нельзя; счётчик сбрасывается при выдаче нового кода и при успехе.
+- **Ротация refresh — атомарно:** `RefreshTokenStore.consume` делает GETDEL (читает и удаляет ключ одним вызовом); параллельный `/refresh` с тем же токеном больше не может пройти проверку дважды.
+- **docker-compose:** `JWT_SECRET: ${JWT_SECRET:?}` — обязателен (fail-fast); Mongo/Redis/Rabbit подняты с паролями (дефолты — для локальной разработки, см. `.env.example`); Redis с `requirepass` и volume; все infra-порты слушают только `127.0.0.1`; backend не торчит наружу (вход только через nginx-фронт). CI генерирует stub `JWT_SECRET` для `docker compose config/build`.
+- **Метрики:** `/actuator/prometheus` и `/actuator/metrics/**` — отдельная security-цепочка (`@Order(1)`): без `app.metrics.user/password` → 401 (denyAll); с кредами → basic-пользователь ROLE_METRICS из env.
+
+### Серьёзные баги
+
+- **Сценарии:** валидация входа через `jakarta.validation.Validator` (конструктор `ScenarioService` — 6 аргументов); параметры сценария сверяются с оффером (ставка == `offer.rate`, взнос >= `minDownPaymentPercent`, срок <= `maxTermMonths`) → 400; в summary сценария не хранится график (он доступен по calcId); `delete()` публикует `ScenarioDeleted` (раньше cleanup-листенер был мёртвым — PDF/уведомления не чистились); чужой сценарий → 404 (не раскрывает существование).
+- **PDF:** повторный экспорт удаляет старые файлы из GridFS (по `metadata.scenarioId`, `_id != нового`); `GET /api/scenarios/{id}/pdf` берёт самый свежий файл (`uploadDate desc`); контроллер проверяет владение через `assertOwned`.
+- **Rabbit-пайплайн пересчёта переписан:** ставка берётся из текущего оффера (событие — только триггер; устаревшее событие пропускается и отмечается обработанным); каждый сценарий пересчитывается в своей транзакции (сбой одного не валит пачку в DLQ); идемпотентность через `IdempotencyGuard` (isDone → skip, tryClaim → skip, complete/release; у транзакционного consumer'а complete — после коммита). `ScenarioRecalculated` публикуется напрямую в `scenario.recalculated`. Удалены мёртвые классы `ScenarioRecalculationConsumer`, `ScenarioRecalculatedNotificationConsumer`, `ScenarioRecalculatedPublisher`.
+- **Расчёты скоупятся по владельцу:** идентичность расчёта — пара `(paramsHash, userId)`; уникальный составной индекс `params_hash_user_idx` (гонка двух одинаковых POST ловится `DuplicateKeyException` → возврат существующего); «усыновление» анонимного документа убрано; Redis-кэш скоупится (`calc:{ownerScope}:{paramsHash}`, анонимы — общий `calc:anon:`); `GET /api/calc/{calcId}` отдаёт анонимные расчёты всем, пользовательские — только владельцу (чужой — тот же 404); новый `GET /api/calc/history` (последние 50 своих, без графика; аноним — пусто).
+- **Ошибки:** битый JWT subject → 401 `InvalidPrincipalException` (вместо 500/404); `MethodArgumentTypeMismatchException` → 400; `compare` с не-UUID id → 400; непойманные исключения логируются со стеком перед 500.
+- **Дедуп уведомлений оптимистичный:** вставка-first в отдельной транзакции (`TransactionTemplate` REQUIRES_NEW), конфликт уникального индекса V8 → возврат существующего; полный скан остался только в редкой ветке конфликта.
+
+### Чистка
+
+- JSON-ответы 429/401/403 пишутся через общий `ProblemJson` (Map-сериализация Jackson'ом, свойства code — на верхнем уровне), ручная конкатенация строк убрана из `RateLimitFilter`/`SecurityConfig`/`OAuth2AuthenticationSuccessHandler`.
+- Catch-rethrow убраны: `CalcRequestMapper`, `PdfService.generatePdf`, `OfferRateChangedConsumer.isProcessed`.
+- `Clock` — там, где время влияет на поведение: JWT/OTP/refresh (уже было) + `CalculatorService` (TTL расчётов). Метки времени событий/сущностей (`createdAt`, `occurredAt`) оставлены как `Instant.now()` сознательно.
+
+### CI/доки
+
+- `backend/build.gradle`: `check → integrationTest` — `gradle build` гоняет и Testcontainers-тесты (в CI Docker есть; локально без Docker проверять юниты — `gradle test`).
+- `.env.example` переписан: обязательный `JWT_SECRET`, пароли инфраструктуры, `METRICS_USER/PASSWORD` (пусто = метрики закрыты).
+- README: инструкция по `JWT_SECRET`.
+
+### Проверки прохода
+
+- `gradlew compileJava compileTestJava test` — BUILD SUCCESSFUL (237 юнит-тестов).
+- Два блокера компиляции прежнего состояния устранены (`NotificationService.deletePdfReadyForScenario` реализован; тест `OtpServiceVerifyAttemptsTest` приведён к реальному API).
+- Интеграционные тесты (Testcontainers, `gradlew integrationTest`) — 17 тестов. По ходу прогона исправлено:
+  - auth rate limit (новый, 10/мин на `/api/auth/login` и `/api/auth/otp/verify`) валил 4 теста с 429 — в `AbstractIntegrationTest` auth-лимиты подняты до 1000, как уже было сделано для calc-лимитов;
+  - `SmokeIntegrationTest` обновлён под текущую схему: миграции V1–V8 (было ожидание V1–V6), индекс `params_hash_user_idx` вместо `params_hash_idx` (замена — часть фикса ownership расчётов);
+  - `RabbitScenarioChainIntegrationTest.duplicateEventIsIdempotent` публиковал событие с newRate=8.6 при ставке оффера 9.50 — по новому контракту consumer корректно пропускает событие как устаревшее (ставка берётся из оффера, событие — только триггер); тест теперь сначала меняет ставку оффера, затем шлёт дубликат события.
+- Интеграционный прогон вскрыл **реальный баг в `ScenarioRecalcConsumer`**: сравнение ставки `offer.getRate().equals(event.newRate())` — `BigDecimal.equals` чувствителен к scale (колонка `numeric(5,2)` всегда возвращает scale 2, событие может нести scale 1: «8.6» vs «8.60»), из-за чего свежее событие ложно считалось устаревшим и сценарии не пересчитывались. Заменено на `compareTo` (как уже сделано в `validateAgainstOffer` и `OfferService.update`).
+- Кросс-загрязнение ставки оффера между тест-классами (Rabbit-тест меняет ставку в общей БД → PdfFlow/Smoke падают) устранено: `AbstractIntegrationTest` перед каждым тестом возвращает seed-ставки (9.50 / 10.20) и чистит кэш `offers:all`.
+- Итог: `gradlew integrationTest` — **17/17 зелёные** (AuthFlow 2, CalcScenario 3, PdfFlow 2, RabbitScenarioChain 4, Smoke 6).

@@ -98,7 +98,7 @@ class RegisterServiceTest {
 
         service.register(new RegisterRequest("taken@example.com", PASSWORD));
 
-        verify(passwordEncoder, never()).encode(anyString());
+        verify(passwordEncoder).encode(PASSWORD);
         verify(userService, never()).createLocalUser(anyString(), anyString());
         verify(tokenStore, never()).create(any());
         verify(eventPublisher, never()).publishEvent(any(Object.class));

@@ -8,15 +8,16 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
  * Минимальный Spring-контекст с RateLimitConfig/RateLimitFilter:
- * проверяет, что конфигурация стартует без Jackson-2 ObjectMapper-бина
- * (Boot 4 автоконфигурирует Jackson 3). RateLimiter подменяется моком,
- * чтобы не требовать Redis.
+ * конфигурация стартует, получая Boot-овый Jackson-3 ObjectMapper
+ * (в приложении его автоконфигурирует Boot 4, здесь — заглушка).
+ * RateLimiter подменяется моком, чтобы не требовать Redis.
  */
 class RateLimitConfigContextTest {
 
@@ -25,6 +26,11 @@ class RateLimitConfigContextTest {
         @Bean
         RateLimiter rateLimiter() {
             return mock(RateLimiter.class);
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
         }
     }
 

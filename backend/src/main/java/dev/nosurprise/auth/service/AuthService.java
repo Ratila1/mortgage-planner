@@ -4,12 +4,12 @@ import dev.nosurprise.user.Role;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import io.micrometer.core.instrument.Metrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Логин / refresh / logout (§7, §9).
@@ -40,13 +40,27 @@ public class AuthService {
         this.clock = clock;
     }
 
+    /**
+     * Фиктивное сравнение: bcrypt выполняется и для неизвестного email / пользователя
+     * без пароля, иначе по задержкам ответа (~100 мс) видно, какие emails зарегистрированы.
+     * Хэш-константа структурно валидна, результат сравнения не учитывается.
+     */
+    private static final String DUMMY_BCRYPT_HASH =
+            "{bcrypt}$2a$10$7EqJtq98hPqEX7fNZaFWoOhi5B0S1M0VjUYfKjP0Ff5XyXq0eS0XW";
+
     @Transactional
     public LoginResult login(String email, String password, String issuedIp) {
-        Metrics.counter("nosurprise.auth.login.attempts").increment();
-        UserEntity user = userService.findByEmail(normalize(email))
-                .orElseThrow(InvalidCredentialsException::new);
-        if (user.getPasswordHash() == null
-                || !passwordEncoder.matches(password, user.getPasswordHash())) {
+        UserEntity user = userService.findByEmail(normalize(email)).orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(password, DUMMY_BCRYPT_HASH);
+            throw new InvalidCredentialsException();
+        }
+        if (user.getPasswordHash() == null) {
+            // OAuth-пользователь без локального пароля — тот же тайминг, что и у неверного пароля.
+            passwordEncoder.matches(password, DUMMY_BCRYPT_HASH);
+            throw new InvalidCredentialsException();
+        }
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             throw new InvalidCredentialsException();
         }
         if (!user.isEmailVerified()) {
@@ -60,10 +74,13 @@ public class AuthService {
         if (refreshCookieValue == null) {
             throw new InvalidRefreshTokenException();
         }
-        IssuedRefreshToken rotated = refreshTokenService.rotate(refreshCookieValue, issuedIp);
-        java.util.Set<Role> roles = userService.findById(rotated.userId())
+        // Пользователь проверяется ДО потребления токена: сбой БД после GETDEL
+        // разлогинивал пользователя безвозвратно (старый токен уже удалён из Redis).
+        UUID userId = refreshTokenService.userIdFrom(refreshCookieValue);
+        java.util.Set<Role> roles = userService.findById(userId)
                 .map(dev.nosurprise.user.UserEntity::getRoles)
-                .orElse(java.util.Set.of());
+                .orElseThrow(InvalidRefreshTokenException::new);
+        IssuedRefreshToken rotated = refreshTokenService.rotate(refreshCookieValue, issuedIp);
         return new LoginResult(
                 tokenService.generate(rotated.userId(), roles),
                 jwtProperties.accessTtl().toSeconds(),
