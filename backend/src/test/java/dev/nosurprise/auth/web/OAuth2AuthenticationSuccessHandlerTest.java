@@ -11,8 +11,6 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -24,7 +22,7 @@ import static org.mockito.Mockito.when;
 class OAuth2AuthenticationSuccessHandlerTest {
 
     @Test
-    @DisplayName("Google OAuth: provisioning, JWT, refresh cookie")
+    @DisplayName("Google OAuth: provisioning, refresh cookie and redirect to SPA")
     void googleSuccess() throws Exception {
         UserService userService = Mockito.mock(UserService.class);
         dev.nosurprise.auth.service.TokenService tokenService = Mockito.mock(dev.nosurprise.auth.service.TokenService.class);
@@ -37,15 +35,12 @@ class OAuth2AuthenticationSuccessHandlerTest {
                 Provider.GOOGLE, "google-1", java.time.Instant.EPOCH, Set.of(dev.nosurprise.user.Role.USER));
         when(userService.provisionOAuthUser(eq("user@example.com"), eq(Provider.GOOGLE), eq("google-1"), eq(true)))
                 .thenReturn(user);
-        when(tokenService.generate(eq(user.getId()), org.mockito.ArgumentMatchers.anyCollection()))
-                .thenReturn("access-jwt");
         when(refreshTokenService.issue(eq(user.getId()), any()))
                 .thenReturn(new dev.nosurprise.auth.service.IssuedRefreshToken(user.getId(), "opaque",
                         user.getId() + ".opaque", java.time.Instant.EPOCH));
 
         OAuth2AuthenticationSuccessHandler handler = new OAuth2AuthenticationSuccessHandler(
-                userService, tokenService, refreshTokenService, jwtProperties,
-                new tools.jackson.databind.ObjectMapper());
+                userService, tokenService, refreshTokenService, jwtProperties, "http://localhost:8080");
 
         OAuth2User principal = Mockito.mock(OAuth2User.class);
         when(principal.getAttribute("email")).thenReturn("user@example.com");
@@ -62,8 +57,8 @@ class OAuth2AuthenticationSuccessHandlerTest {
 
         handler.onAuthenticationSuccess(request, response, auth);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(response.getContentAsString()).contains("\"accessToken\":\"access-jwt\"");
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:8080/");
         assertThat(response.getHeader("Set-Cookie")).contains("HttpOnly");
         assertThat(response.getHeader("Set-Cookie")).contains("Path=/api/auth");
     }

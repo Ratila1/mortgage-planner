@@ -44,6 +44,8 @@ public class RateLimiter {
     public static final String SCOPE_AUTH_OTP_VERIFY = "auth-otp-verify";
     public static final String SCOPE_AUTH_REGISTER = "auth-register";
     public static final String SCOPE_AUTH_OTP_REQUEST = "auth-otp-request";
+    public static final String SCOPE_AUTH_REFRESH = "auth-refresh";
+    public static final String SCOPE_AUTH_LOGOUT = "auth-logout";
 
     public RateLimitDecision tryAcquire(String scope, String principal, int limitPerMinute) {
         String key = "ratelimit:" + scope + ":" + principal;

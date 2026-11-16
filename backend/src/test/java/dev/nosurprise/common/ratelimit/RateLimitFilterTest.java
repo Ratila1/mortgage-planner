@@ -103,12 +103,12 @@ class RateLimitFilterTest {
     void authenticatedUserKeyAndLimit() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 USER, "n/a", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
-        when(limiter.tryAcquire(RateLimiter.SCOPE_CALC, eq(USER), eq(120))).thenReturn(RateLimitDecision.allow());
+        when(limiter.tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(USER), eq(120))).thenReturn(RateLimitDecision.allow());
 
         mockMvc.perform(post("/api/calc"))
                 .andExpect(status().isOk());
 
-        verify(limiter).tryAcquire(RateLimiter.SCOPE_CALC, USER, 120);
+        verify(limiter).tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(USER), eq(120));
     }
 
     @Test
@@ -152,6 +152,22 @@ class RateLimitFilterTest {
     }
 
     @Test
+    @DisplayName("POST /api/auth/refresh лимитируется по IP отдельным лимитом (30/мин)")
+    void refreshLimitedByIp() throws Exception {
+        when(limiter.tryAcquire(RateLimiter.SCOPE_AUTH_REFRESH, IP, 30)).thenReturn(RateLimitDecision.limited(20));
+
+        mockMvc.perform(post("/api/auth/refresh").with(request -> {
+                    request.setRemoteAddr(IP);
+                    return request;
+                }))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "20"))
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        verify(limiter).tryAcquire(RateLimiter.SCOPE_AUTH_REFRESH, IP, 30);
+    }
+
+    @Test
     @DisplayName("POST на прочие пути (не calc, не auth) не лимитируется")
     void otherPostsNotLimited() throws Exception {
         mockMvc.perform(post("/api/offers"))
@@ -163,7 +179,7 @@ class RateLimitFilterTest {
     @Test
     @DisplayName("сбой Redis (исключение limiter'а) не ломает POST /api/calc")
     void redisFailureLetsRequestThrough() throws Exception {
-        when(limiter.tryAcquire(RateLimiter.SCOPE_CALC, eq(IP), eq(30))).thenThrow(new IllegalStateException("redis down"));
+        when(limiter.tryAcquire(eq(RateLimiter.SCOPE_CALC), eq(IP), eq(30))).thenThrow(new IllegalStateException("redis down"));
 
         mockMvc.perform(post("/api/calc").with(request -> {
                     request.setRemoteAddr(IP);

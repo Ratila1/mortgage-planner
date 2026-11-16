@@ -64,6 +64,8 @@ app:
       otp-verify-per-minute: 10     # защита от подбора OTP: по IP (§7)
       register-per-minute: 5        # защита от массовых регистраций и потока писем: по IP
       otp-request-per-minute: 5     # защита от почтовой бомбардировки чужих адресов: по IP
+      refresh-per-minute: 30        # защита от спама/абьюза ротации refresh: по IP
+      logout-per-minute: 30         # защита от спама logout: по IP
       window: 60s
   jwt:
     secret: ${JWT_SECRET:}   # секрет только из env, без dev-дефолта (§7); fail-fast в JwtProperties

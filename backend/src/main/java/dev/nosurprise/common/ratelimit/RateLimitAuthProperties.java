@@ -16,6 +16,8 @@ public class RateLimitAuthProperties {
     private int otpVerifyPerMinute = 10;
     private int registerPerMinute = 5;
     private int otpRequestPerMinute = 5;
+    private int refreshPerMinute = 30;
+    private int logoutPerMinute = 30;
     private Duration window = Duration.ofSeconds(60);
 
     public int getLoginPerMinute() {
@@ -48,6 +50,22 @@ public class RateLimitAuthProperties {
 
     public void setOtpRequestPerMinute(int otpRequestPerMinute) {
         this.otpRequestPerMinute = otpRequestPerMinute;
+    }
+
+    public int getRefreshPerMinute() {
+        return refreshPerMinute;
+    }
+
+    public void setRefreshPerMinute(int refreshPerMinute) {
+        this.refreshPerMinute = refreshPerMinute;
+    }
+
+    public int getLogoutPerMinute() {
+        return logoutPerMinute;
+    }
+
+    public void setLogoutPerMinute(int logoutPerMinute) {
+        this.logoutPerMinute = logoutPerMinute;
     }
 
     public Duration getWindow() {

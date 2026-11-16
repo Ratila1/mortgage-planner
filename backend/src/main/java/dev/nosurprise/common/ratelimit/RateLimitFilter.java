@@ -43,8 +43,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     static final String REGISTER_PATH = "/api/auth/register";
     static final String OTP_REQUEST_PATH = "/api/auth/otp/request";
     static final String OTP_VERIFY_PATH = "/api/auth/otp/verify";
+    static final String REFRESH_PATH = "/api/auth/refresh";
+    static final String LOGOUT_PATH = "/api/auth/logout";
     static final java.util.Set<String> AUTH_LIMIT_PATHS =
-            java.util.Set.of(LOGIN_PATH, REGISTER_PATH, OTP_REQUEST_PATH, OTP_VERIFY_PATH);
+            java.util.Set.of(LOGIN_PATH, REGISTER_PATH, OTP_REQUEST_PATH, OTP_VERIFY_PATH, REFRESH_PATH, LOGOUT_PATH);
 
     private final RateLimiter limiter;
     private final RateLimitProperties properties;
@@ -106,6 +108,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             case REGISTER_PATH -> {
                 scope = RateLimiter.SCOPE_AUTH_REGISTER;
                 limit = authProperties.getRegisterPerMinute();
+            }
+            case REFRESH_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_REFRESH;
+                limit = authProperties.getRefreshPerMinute();
+            }
+            case LOGOUT_PATH -> {
+                scope = RateLimiter.SCOPE_AUTH_LOGOUT;
+                limit = authProperties.getLogoutPerMinute();
             }
             default -> {
                 scope = RateLimiter.SCOPE_AUTH_LOGIN;

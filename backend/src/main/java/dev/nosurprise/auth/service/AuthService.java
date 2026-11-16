@@ -46,7 +46,7 @@ public class AuthService {
      * Хэш-константа структурно валидна, результат сравнения не учитывается.
      */
     private static final String DUMMY_BCRYPT_HASH =
-            "$2a$10$7EqJtq98hPqEX7fNZaFWoOhi5B0S1M0VjUYfKjP0Ff5XyXq0eS0XW";
+            "{bcrypt}$2a$10$7EqJtq98hPqEX7fNZaFWoOhi5B0S1M0VjUYfKjP0Ff5XyXq0eS0XW";
 
     @Transactional
     public LoginResult login(String email, String password, String issuedIp) {
