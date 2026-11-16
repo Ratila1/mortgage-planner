@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -38,16 +39,16 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     private final UserService userService;
     private final RefreshTokenService refreshTokenService;
-    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider;
     private final String appBaseUrl;
 
     public OAuth2AuthenticationSuccessHandler(UserService userService,
                                              RefreshTokenService refreshTokenService,
-                                             OAuth2AuthorizedClientService authorizedClientService,
+                                             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
                                              @Value("${app.base-url}") String appBaseUrl) {
         this.userService = userService;
         this.refreshTokenService = refreshTokenService;
-        this.authorizedClientService = authorizedClientService;
+        this.authorizedClientServiceProvider = authorizedClientServiceProvider;
         this.appBaseUrl = normalizeBaseUrl(appBaseUrl);
     }
 
@@ -102,6 +103,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
     }
 
     private String fetchGitHubPrimaryEmail(Authentication authentication, String registrationId) {
+        OAuth2AuthorizedClientService authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
         if (authorizedClientService == null || authentication == null || authentication.getName() == null) {
             return null;
         }
