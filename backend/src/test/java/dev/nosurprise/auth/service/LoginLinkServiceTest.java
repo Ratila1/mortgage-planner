@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -55,7 +56,6 @@ class LoginLinkServiceTest {
     ValueOperations<String, String> values;
 
     private LoginLinkService service() {
-        when(redis.opsForValue()).thenReturn(values);
         return new LoginLinkService(userService, tokenService, refreshTokenService,
                 new JwtProperties("test-secret-0123456789abcdef0123456789",
                         Duration.ofMinutes(15), Duration.ofDays(30)),
@@ -65,22 +65,29 @@ class LoginLinkServiceTest {
 
     private UserEntity user(UUID userId, boolean verified) {
         UserEntity user = mock(UserEntity.class);
-        when(user.getId()).thenReturn(userId);
+        // getId() и getRoles() используются только в успешном consume; в остальных
+        // путях они не вызываются — lenient, чтобы strict-stubs не ругался.
+        lenient().when(user.getId()).thenReturn(userId);
         when(user.isEmailVerified()).thenReturn(verified);
-        when(user.getRoles()).thenReturn(java.util.Set.of(dev.nosurprise.user.Role.USER));
+        lenient().when(user.getRoles()).thenReturn(java.util.Set.of(dev.nosurprise.user.Role.USER));
         return user;
+    }
+
+    private void allowRateLimit() {
+        when(redis.execute(any(RedisScript.class), eq(List.of(LoginLinkService.LINK_RATE_KEY_PREFIX + EMAIL)),
+                eq(Long.toString(LoginLinkService.RATE_TTL.toSeconds())))).thenReturn(1L);
     }
 
     @Test
     @DisplayName("requestLoginLink: сохраняет хэш токена в Redis и шлёт письмо со ссылкой")
     void requestStoresHashedTokenAndPublishesEmail() {
         LoginLinkService service = service();
+        when(redis.opsForValue()).thenReturn(values);
         UUID userId = UUID.randomUUID();
         UserEntity user = mock(UserEntity.class);
         when(user.getId()).thenReturn(userId);
         when(userService.findByEmail(EMAIL)).thenReturn(Optional.of(user));
-        when(redis.execute(any(RedisScript.class), eq(List.of(LoginLinkService.LINK_RATE_KEY_PREFIX + EMAIL)),
-                eq(Long.toString(LoginLinkService.RATE_TTL.toSeconds())))).thenReturn(1L);
+        allowRateLimit();
 
         service.requestLoginLink(EMAIL);
 
@@ -101,8 +108,7 @@ class LoginLinkServiceTest {
     void unknownEmailDoesNotPublish() {
         LoginLinkService service = service();
         when(userService.findByEmail(EMAIL)).thenReturn(Optional.empty());
-        when(redis.execute(any(RedisScript.class), eq(List.of(LoginLinkService.LINK_RATE_KEY_PREFIX + EMAIL)),
-                eq(Long.toString(LoginLinkService.RATE_TTL.toSeconds())))).thenReturn(1L);
+        allowRateLimit();
 
         service.requestLoginLink(EMAIL);
 
@@ -127,6 +133,7 @@ class LoginLinkServiceTest {
     @DisplayName("consumeLoginLink: валидный токен → ключ удалён (одноразовость), сессия выдана")
     void consumeIssuesSessionAndDeletesKey() {
         LoginLinkService service = service();
+        when(redis.opsForValue()).thenReturn(values);
         String token = "tok";
         String key = LoginLinkService.LINK_KEY_PREFIX + LoginLinkService.sha256(token);
         UUID userId = UUID.randomUUID();
@@ -148,6 +155,8 @@ class LoginLinkServiceTest {
     @DisplayName("consumeLoginLink: неизвестный/использованный токен → OtpInvalidException")
     void consumeUnknownToken() {
         LoginLinkService service = service();
+        when(redis.opsForValue()).thenReturn(values);
+
         assertThatThrownBy(() -> service.consumeLoginLink("nope", "127.0.0.1"))
                 .isInstanceOf(OtpInvalidException.class);
 
@@ -159,6 +168,7 @@ class LoginLinkServiceTest {
     @DisplayName("consumeLoginLink: почта не подтверждена → EmailNotVerifiedException, ключ уже удалён")
     void consumeUnverifiedUser() {
         LoginLinkService service = service();
+        when(redis.opsForValue()).thenReturn(values);
         String token = "tok";
         String key = LoginLinkService.LINK_KEY_PREFIX + LoginLinkService.sha256(token);
         UUID userId = UUID.randomUUID();
@@ -177,6 +187,8 @@ class LoginLinkServiceTest {
     @DisplayName("consumeLoginLink: null-токен → OtpInvalidException")
     void consumeNullToken() {
         LoginLinkService service = service();
+        when(redis.opsForValue()).thenReturn(values);
+
         assertThatThrownBy(() -> service.consumeLoginLink(null, "127.0.0.1"))
                 .isInstanceOf(OtpInvalidException.class);
     }

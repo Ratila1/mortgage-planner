@@ -51,8 +51,9 @@ class VerificationServiceTest {
     @InjectMocks
     VerificationService service;
 
-    private UserEntity user(boolean verified) {
-        return new UserEntity(UUID.randomUUID(), "user@example.com", "h", verified,
+    /** Сущность с тем же userId, что лежит в токене, — иначе стабы не совпадут. */
+    private UserEntity user(UUID userId, boolean verified) {
+        return new UserEntity(userId, "user@example.com", "h", verified,
                 Provider.LOCAL, null, Instant.now(), Set.of(Role.USER));
     }
 
@@ -61,20 +62,23 @@ class VerificationServiceTest {
                 Duration.ofMinutes(15), Duration.ofDays(30));
     }
 
+    private VerificationService serviceWithSessionDeps() {
+        return new VerificationService(tokenStore, userService,
+                tokenService, refreshTokenService, jwtProperties());
+    }
+
     @Test
     @DisplayName("валидный токен: пользователь подтверждается, токен удаляется, сессия выдана")
     void validTokenConfirmsUserAndLogsIn() {
         UUID userId = UUID.randomUUID();
         when(tokenStore.read(TOKEN)).thenReturn(Optional.of(userId));
-        UserEntity unverified = user(false);
+        UserEntity unverified = user(userId, false);
         when(userService.findById(userId)).thenReturn(Optional.of(unverified));
         when(tokenService.generate(userId, Set.of(Role.USER))).thenReturn("access-token");
         when(refreshTokenService.issue(userId, "127.0.0.1"))
                 .thenReturn(new IssuedRefreshToken(userId, "opaque", userId + ".opaque", Instant.EPOCH));
-        VerificationService real = new VerificationService(tokenStore, userService,
-                tokenService, refreshTokenService, jwtProperties());
 
-        LoginResult result = real.consume(TOKEN, "127.0.0.1");
+        LoginResult result = serviceWithSessionDeps().consume(TOKEN, "127.0.0.1");
 
         verify(userService).markEmailVerified(unverified);
         verify(tokenStore).delete(TOKEN);
@@ -111,15 +115,13 @@ class VerificationServiceTest {
     void alreadyVerifiedStillLogsIn() {
         UUID userId = UUID.randomUUID();
         when(tokenStore.read(TOKEN)).thenReturn(Optional.of(userId));
-        UserEntity alreadyVerified = user(true);
+        UserEntity alreadyVerified = user(userId, true);
         when(userService.findById(userId)).thenReturn(Optional.of(alreadyVerified));
         when(tokenService.generate(userId, Set.of(Role.USER))).thenReturn("access-token");
         when(refreshTokenService.issue(userId, "127.0.0.1"))
                 .thenReturn(new IssuedRefreshToken(userId, "opaque", userId + ".opaque", Instant.EPOCH));
-        VerificationService real = new VerificationService(tokenStore, userService,
-                tokenService, refreshTokenService, jwtProperties());
 
-        LoginResult result = real.consume(TOKEN, "127.0.0.1");
+        LoginResult result = serviceWithSessionDeps().consume(TOKEN, "127.0.0.1");
 
         verify(userService, never()).markEmailVerified(alreadyVerified);
         verify(tokenStore).delete(TOKEN);
