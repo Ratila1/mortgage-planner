@@ -13,6 +13,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * Публикация событий в topic-exchange {@code domain.events} (§8). Вызывается ТОЛЬКО из
+ * AFTER_COMMIT-слушателей (@TransactionalEventListener(phase = AFTER_COMMIT)),
+ * чтобы consumer не видел старые данные.
+ * <p>
+ * К4: издатель теперь дожидается publisher-confirm от брокера перед возвратом.
+ * При nack/return/тайм-ауте — повторная отправка, затем исключение (событие не теряется
+ * бесследно: упавшая AFTER_COMMIT-синхронизация видна в логах, а идемпотентность
+ * consumer'ов защищает от дублей при повторе). JSON-сериализация — JacksonJsonMessageConverter.
+ */
 @Component
 public class RabbitEventPublisher {
 
@@ -35,7 +45,7 @@ public class RabbitEventPublisher {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
                 if (waitForConfirm(routingKey, event)) {
-                    return;
+                    return; // подтверждено брокером
                 }
             } catch (RuntimeException ex) {
                 last = ex;
