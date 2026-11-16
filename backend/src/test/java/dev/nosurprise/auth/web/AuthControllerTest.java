@@ -23,6 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import jakarta.servlet.http.Cookie;
 
+import java.util.UUID;
+
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
