@@ -10,12 +10,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.Locale;
 
 /**
@@ -30,13 +38,16 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     private final UserService userService;
     private final RefreshTokenService refreshTokenService;
+    private final OAuth2AuthorizedClientService authorizedClientService;
     private final String appBaseUrl;
 
     public OAuth2AuthenticationSuccessHandler(UserService userService,
                                              RefreshTokenService refreshTokenService,
+                                             OAuth2AuthorizedClientService authorizedClientService,
                                              @Value("${app.base-url}") String appBaseUrl) {
         this.userService = userService;
         this.refreshTokenService = refreshTokenService;
+        this.authorizedClientService = authorizedClientService;
         this.appBaseUrl = normalizeBaseUrl(appBaseUrl);
     }
 
@@ -63,6 +74,9 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 Object id = principal.getAttribute("id");
                 providerId = (id == null) ? null : String.valueOf(id);
                 providerVerified = true;
+                if (email == null || email.isBlank()) {
+                    email = fetchGitHubPrimaryEmail(authentication, registrationId);
+                }
             } else {
                 redirectFailure(response, "failed");
                 return;
@@ -84,6 +98,50 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         } catch (RuntimeException ex) {
             log.warn("OAuth2 login failed", ex);
             redirectFailure(response, "failed");
+        }
+    }
+
+    private String fetchGitHubPrimaryEmail(Authentication authentication, String registrationId) {
+        if (authorizedClientService == null || authentication == null || authentication.getName() == null) {
+            return null;
+        }
+        try {
+            OAuth2AuthorizedClient client = authorizedClientService.loadAuthorizedClient(registrationId, authentication.getName());
+            if (client == null || client.getAccessToken() == null) {
+                return null;
+            }
+            String token = client.getAccessToken().getTokenValue();
+            HttpClient http = HttpClient.newHttpClient();
+            HttpRequest req = HttpRequest.newBuilder(URI.create("https://api.github.com/user/emails"))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github+json")
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                return null;
+            }
+            JsonNode node = new ObjectMapper().readTree(resp.body());
+            String fallback = null;
+            for (JsonNode e : node) {
+                String email = e.path("email").asText(null);
+                if (email == null || email.isBlank()) {
+                    continue;
+                }
+                boolean verified = e.path("verified").asBoolean(false);
+                boolean primary = e.path("primary").asBoolean(false);
+                String normalized = email.trim().toLowerCase(Locale.ROOT);
+                if (primary && verified) {
+                    return normalized;
+                }
+                if (verified && fallback == null) {
+                    fallback = normalized;
+                }
+            }
+            return fallback;
+        } catch (Exception ex) {
+            log.warn("Failed to fetch GitHub primary email", ex);
+            return null;
         }
     }
 
