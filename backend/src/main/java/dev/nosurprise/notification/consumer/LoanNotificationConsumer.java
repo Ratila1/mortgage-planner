@@ -81,7 +81,8 @@ public class LoanNotificationConsumer {
                 notificationType = null;
             }
             case LoanApplicationEvent.CONTRACT_READY -> {
-                subject = "По вашей заявке принято решение";
+                // Письмо уходит, когда договор уже сгенерирован: по ссылке клиент сразу может его скачать и подписать.
+                subject = "Ваша заявка на микрозайм одобрена";
                 notificationType = "LOAN_APPROVED";
                 if (view.contractDocumentId() != null) {
                     payload.put("contractUrl", "/api/loans/applications/" + view.applicationId()

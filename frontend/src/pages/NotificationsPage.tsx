@@ -4,6 +4,7 @@ import {
   api, errorMessage, type AppNotification, type LoanNotificationPayload, type PdfReadyPayload,
   type Scenario, type ScenarioRecalculatedPayload,
 } from '../api';
+import { ContractSigning } from '../components/ContractSigning';
 import { Alert, Badge, Button, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, formatRate, toNumber } from '../lib/format';
 
@@ -62,40 +63,16 @@ const LOAN_NOTIFICATIONS: Record<string, { title: string; text: string }> = {
 
 function LoanNotification({ n }: { n: AppNotification }) {
   const p = (n.payload ?? {}) as LoanNotificationPayload;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const downloadContract = async () => {
-    if (!p.contractUrl) return;
-    setBusy(true);
-    setError(null);
-    try {
-      saveBlob(await api.downloadContract(p.contractUrl), `contract-${p.applicationId}.pdf`);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   if (n.type === 'LOAN_APPROVED') {
+    // Подпись прямо в уведомлении: скачать договор → код по SMS → ввести код (MICROLOANS.md §3.10).
     return (
       <div>
-        <p className="font-semibold">Вашу заявку одобрили 🎉</p>
-        <p className="mt-0.5 text-sm text-ink-2">
-          Договор уже готов — скачайте его, ознакомьтесь с условиями и подпишите кодом из SMS.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {p.contractUrl && (
-            <Button size="sm" variant="secondary" loading={busy} onClick={downloadContract}>
-              Скачать договор (PDF)
-            </Button>
-          )}
-          <Link to="/cabinet/applications" className="text-sm font-semibold text-money">
-            Подписать в личном кабинете →
-          </Link>
+        <p className="font-semibold">Вашу заявку на микрозайм одобрили</p>
+        <p className="mt-0.5 text-sm text-ink-2">Скачайте договор и ознакомьтесь с условиями.</p>
+        <div className="mt-3">
+          <ContractSigning id={p.applicationId} />
         </div>
-        {error && <p className="mt-2 text-sm text-stamp">{error}</p>}
       </div>
     );
   }

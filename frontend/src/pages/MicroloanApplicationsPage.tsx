@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
   api,
   errorMessage,
-  type CustomerProfile,
   type MicroloanApplication,
   type MicroloanApplicationStatus,
 } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Spinner, TextInput } from '../components/ui';
-import { PhoneVerifyPanel } from '../components/PhoneVerifyPanel';
+import { Alert, Badge, Button, Card, EmptyState, PageTitle, Spinner } from '../components/ui';
+import { ContractSigning } from '../components/ContractSigning';
 import { formatDateTime, formatMoney } from '../lib/format';
 
 export const MICROLOAN_STATUS_LABELS: Record<MicroloanApplicationStatus, string> = {
@@ -36,22 +35,15 @@ const BLOCKING: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE
 /** Клиент может отменить заявку до подписи. */
 const CANCELLABLE: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED'];
 
-function saveBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function MicroloanApplicationsPage() {
   const navigate = useNavigate();
   const [applications, setApplications] = useState<MicroloanApplication[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Ссылка из письма (/loans/{id}) ведёт сюда с ?open={id} — сразу раскрываем подпись этой заявки.
+  const [params] = useSearchParams();
+  const [openId, setOpenId] = useState<string | null>(params.get('open'));
 
   const load = useCallback(
     () =>
@@ -195,165 +187,10 @@ function ApplicationRow({
       {open && app.status === 'APPROVED' && (
         <tr className="border-t border-line/40 bg-paper-2/40">
           <td colSpan={7} className="p-4">
-            <SigningPanel id={app.id} expiresAt={app.offerExpiresAt} onSigned={onSigned} />
+            <ContractSigning id={app.id} onSigned={() => onSigned('Договор подписан — заём выдан')} />
           </td>
         </tr>
       )}
     </>
-  );
-}
-
-/**
- * Подпись договора (MICROLOANS.md §3.10): скачать договор → подтвердить телефон → код из SMS → подписать.
- * Договор доступен сразу после одобрения; подписать нужно до offerExpiresAt (5 рабочих дней).
- */
-function SigningPanel({
-  id,
-  expiresAt,
-  onSigned,
-}: {
-  id: string;
-  expiresAt: string | null;
-  onSigned: (message: string) => void;
-}) {
-  const [card, setCard] = useState<MicroloanApplication | null>(null);
-  const [profile, setProfile] = useState<CustomerProfile | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [signError, setSignError] = useState<string | null>(null);
-
-  const load = useCallback(
-    () =>
-      Promise.all([api.getMicroloanApplication(id), api.getProfile()])
-        .then(([c, p]) => {
-          setCard(c);
-          setProfile(p);
-          setError(null);
-        })
-        .catch((err) => setError(errorMessage(err))),
-    [id],
-  );
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
-
-  if (error) return <Alert>{error}</Alert>;
-  if (!card || (profile === null && !error)) {
-    return (
-      <div className="grid place-items-center py-6 text-money">
-        <Spinner className="h-6 w-6" />
-      </div>
-    );
-  }
-
-  const contract = card.documents.find((d) => d.type === 'CONTRACT') ?? card.documents[0] ?? null;
-  const phoneVerified = profile?.phoneVerified ?? false;
-
-  const downloadContract = async () => {
-    if (!contract) return;
-    setDownloading(true);
-    setSignError(null);
-    try {
-      saveBlob(await api.downloadContract(contract.downloadUrl), `contract-${id}.pdf`);
-    } catch (err) {
-      setSignError(errorMessage(err));
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const requestCode = async () => {
-    setBusy(true);
-    setSignError(null);
-    try {
-      await api.requestSignatureCode(id);
-      setCodeSent(true);
-      setCooldown(60);
-    } catch (err) {
-      setSignError(errorMessage(err));
-      if (err instanceof Error && 'retryAfter' in err) {
-        const retryAfter = (err as { retryAfter?: number }).retryAfter;
-        if (retryAfter) setCooldown(retryAfter);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sign = async () => {
-    setBusy(true);
-    setSignError(null);
-    try {
-      await api.confirmSignature(id, code.trim());
-      onSigned('Договор подписан — заём выдан');
-    } catch (err) {
-      setSignError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={MICROLOAN_STATUS_TONES[card.status]}>{MICROLOAN_STATUS_LABELS[card.status]}</Badge>
-        {expiresAt && <span className="text-xs text-ink-3">Подписать до {formatDateTime(expiresAt)}</span>}
-      </div>
-
-      <div className="rounded-xl border border-line bg-white/60 p-4">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-3">Договор</p>
-        {contract ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button size="sm" variant="secondary" loading={downloading} onClick={downloadContract}>
-              Скачать договор (PDF)
-            </Button>
-            <span className="text-xs text-ink-3">подписан SHA-256 при отправке кода — документ не может незаметно поменяться</span>
-          </div>
-        ) : (
-          <p className="text-sm text-ink-3">Документ ещё готовится — попробуйте через минуту-другую.</p>
-        )}
-      </div>
-
-      {!phoneVerified ? (
-        <PhoneVerifyPanel phone={profile?.phone ?? ''} onVerified={load} />
-      ) : (
-        <div className="rounded-xl border border-line bg-white/60 p-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-3">Подпись кодом из SMS</p>
-          <p className="text-sm text-ink-2">
-            Нажмите кнопку — код придёт SMS на номер <span className="num font-semibold">{profile?.phone}</span>.
-            Введите его здесь, чтобы подписать договор. Код действует 5 минут, на ввод 3 попытки.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" loading={busy} disabled={cooldown > 0} onClick={requestCode}>
-              {cooldown > 0 ? `Отправить код (${cooldown}с)` : codeSent ? 'Отправить код заново' : 'Отправить код по SMS'}
-            </Button>
-            <TextInput
-              className="w-40"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="Код из SMS"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            />
-            <Button size="sm" loading={busy} disabled={!codeSent || code.trim().length < 4} onClick={sign}>
-              Подписать
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {signError && <Alert>{signError}</Alert>}
-    </div>
   );
 }

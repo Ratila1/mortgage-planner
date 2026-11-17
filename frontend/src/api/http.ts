@@ -466,9 +466,9 @@ export const httpApi: Api = {
   confirmSignature: async (id, code) =>
     mapApplication(await request<Raw>('POST', `/api/loans/applications/${id}/signature/confirm`, { code })),
   // Подтверждение телефона (условие подписи): 202 — код отправлен; 204 — подтверждено.
-  requestPhoneVerification: () => request<void>('POST', '/api/me/profile/phone/verification'),
+  requestPhoneVerification: () => request<void>('POST', '/api/me/phone/verification'),
   confirmPhoneVerification: (code) =>
-    request<void>('POST', '/api/me/profile/phone/verification/confirm', { code }),
+    request<void>('POST', '/api/me/phone/verification/confirm', { code }),
 
   async adminListMicroloanApplications(status: MicroloanApplicationStatus) {
     const page = await request<Raw>('GET', `/api/admin/loan-applications?status=${status}&page=0&size=100`);

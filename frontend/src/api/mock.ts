@@ -583,6 +583,7 @@ export const mockApi: Api = {
       rejectionReason: null,
       offerExpiresAt: null,
       createdAt: now(),
+      documents: [],
     };
     state.microloanApplications.push(app);
     persistMicroloan();
