@@ -39,6 +39,11 @@ export function AdminMicroloanApplicationsPage() {
 
   useEffect(() => { reload(); }, []);
 
+  const forceReload = () => {
+    // Перечитываем из localStorage через реинициализацию мока (простая перезагрузка страницы)
+    window.location.reload();
+  };
+
   const changeStatus = async (app: MicroloanApplication, newStatus: MicroloanApplicationStatus) => {
     try {
       await api.adminUpdateMicroloanApplicationStatus(app.id, newStatus);
@@ -51,7 +56,11 @@ export function AdminMicroloanApplicationsPage() {
 
   return (
     <div>
-      <PageTitle eyebrow="Админка" title="Заявки на микрозаймы" />
+      <PageTitle eyebrow="Админка" title="Заявки на микрозаймы">
+        <Button variant="secondary" size="sm" onClick={forceReload} disabled={loading}>
+          Обновить
+        </Button>
+      </PageTitle>
 
       {notice && <div className="mb-4"><Alert tone="money">{notice}</Alert></div>}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
