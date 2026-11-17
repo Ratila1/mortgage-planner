@@ -1,16 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import { api, errorMessage, type MicroloanType, type MicroloanCalculationResult } from '../api';
-import { ScheduleTable } from '../components/calculator/ScheduleTable';
-import { Alert, Badge, Button, Card, EmptyState, Field, PageTitle, Select, Spinner, TextInput, cx } from '../components/ui';
-import { formatRate, parseMoneyInput, toNumber, formatMoney, formatMoneyShort } from '../lib/format';
+import { api, errorMessage, type MicroloanCalculationResult, type MicroloanType } from '../api';
+import { Alert, Button, Card, EmptyState, Field, Select, Spinner, TextInput } from '../components/ui';
+import { formatMoney, formatMoneyShort, formatRate, parseMoneyInput, toNumber } from '../lib/format';
 
-const STATUS_TONES: Record<string, 'money' | 'stamp' | 'gold' | 'neutral'> = {
-  NEW: 'gold',
-  UNDER_REVIEW: 'stamp',
-  APPROVED: 'money',
-  REJECTED: 'neutral',
-};
+/** Пауза перед запросом к /api/loans/quote: пока ползунок тянут, на бэк не ходим. */
+const QUOTE_DEBOUNCE_MS = 300;
 
 function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
@@ -21,118 +16,142 @@ function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactN
   );
 }
 
+/**
+ * Мгновенный предпросмотр по той же формуле, что LoanQuoteCalculator на бэке:
+ * interest = round(amount × daily_rate / 100 × term_days, 2), total = amount + interest + modifier.
+ * Нужен, чтобы итог менялся вместе с ползунком без ожидания сети. Источник истины — ответ /quote,
+ * он заменяет предпросмотр, как только приходит.
+ */
+function previewQuote(type: MicroloanType, amount: number, termDays: number): MicroloanCalculationResult {
+  const interest = Math.round(amount * (toNumber(type.dailyRatePct) / 100) * termDays * 100) / 100;
+  const modifier = toNumber(type.modifier);
+  return {
+    amount: amount.toFixed(2),
+    termDays,
+    dailyRatePct: type.dailyRatePct,
+    interestAmount: interest.toFixed(2),
+    modifier: modifier.toFixed(2),
+    totalAmount: (amount + interest + modifier).toFixed(2),
+  };
+}
+
+const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+
 export function MicroloanCalculatorPage() {
   const navigate = useNavigate();
-  const [types, setTypes] = useState<MicroloanType[]>([]);
-  const [selectedTypeId, setSelectedTypeId] = useState<string>('');
+  const [types, setTypes] = useState<MicroloanType[] | null>(null);
+  const [typesError, setTypesError] = useState<string | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState('');
   const [amount, setAmount] = useState('');
-  const [termDays, setTermDays] = useState(15);
-  const [result, setResult] = useState<MicroloanCalculationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [termDays, setTermDays] = useState(0);
+  const [serverQuote, setServerQuote] = useState<MicroloanCalculationResult | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listMicroloanTypes().then(setTypes).catch(() => setTypes([]));
+    api
+      .listMicroloanTypes()
+      .then(setTypes)
+      .catch((err) => {
+        setTypes([]);
+        setTypesError(errorMessage(err));
+      });
   }, []);
 
-  // Auto-select first active type and set defaults
+  const selectedType = types?.find((t) => t.id === selectedTypeId) ?? null;
+
+  // При выборе типа ставим сумму и срок в его лимиты (середина диапазона срока).
+  const selectType = (type: MicroloanType) => {
+    setSelectedTypeId(type.id);
+    setAmount(String(Math.round(toNumber(type.minAmount))));
+    setTermDays(Math.round((type.minTermDays + type.maxTermDays) / 2));
+    setServerQuote(null);
+  };
+
   useEffect(() => {
-    if (types.length > 0 && !selectedTypeId) {
-      const first = types[0];
-      setSelectedTypeId(first.id);
-      setAmount(first.minAmount);
-      setTermDays(15);
-    }
-  }, [types]);
+    if (types && types.length > 0 && !selectedTypeId) selectType(types[0]);
+  }, [types, selectedTypeId]);
 
-  // Reset amount/term when type changes
-  useEffect(() => {
-    if (selectedTypeId) {
-      const type = types.find((t) => t.id === selectedTypeId);
-      if (type) {
-        setAmount(type.minAmount);
-        setTermDays(15);
-      }
-    }
-  }, [selectedTypeId]);
+  const minAmount = selectedType ? toNumber(selectedType.minAmount) : 0;
+  const maxAmount = selectedType ? toNumber(selectedType.maxAmount) : 0;
+  const amountNum = toNumber(amount);
 
-  const selectedType = types.find((t) => t.id === selectedTypeId) ?? null;
-
-  const validateForm = () => {
-    if (!selectedType) return 'Нет доступных типов займа';
-    const amt = toNumber(amount);
-    const days = termDays;
-    if (!(amt >= toNumber(selectedType.minAmount) && amt <= toNumber(selectedType.maxAmount))) {
-      return `Сумма должна быть от ${formatMoneyShort(selectedType.minAmount)} до ${formatMoneyShort(selectedType.maxAmount)}`;
+  const validation = useMemo(() => {
+    if (!selectedType) return null;
+    if (!(amountNum >= minAmount && amountNum <= maxAmount)) {
+      return `Сумма — от ${formatMoneyShort(minAmount)} до ${formatMoneyShort(maxAmount)}`;
     }
-    if (!(days >= 1 && days <= 30)) return 'Срок — от 1 до 30 дней';
     return null;
-  };
+  }, [selectedType, amountNum, minAmount, maxAmount]);
 
-  const validation = validateForm();
+  const preview = useMemo(
+    () => (selectedType && !validation ? previewQuote(selectedType, amountNum, termDays) : null),
+    [selectedType, validation, amountNum, termDays],
+  );
 
+  // Запрос к бэку с паузой; устаревшие ответы отбрасываем по номеру запроса.
+  const requestSeq = useRef(0);
   useEffect(() => {
-    if (validation || !selectedType) {
-      setResult(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    api
-      .calculateMicroloan(selectedType.id, amount, termDays)
-      .then((r) => {
-        if (cancelled) return;
-        setResult(r);
-        setError(null);
-      })
-      .catch((err) => !cancelled && setError(errorMessage(err)))
-      .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
-  }, [selectedType, amount, termDays, validation]);
+    if (!selectedType || validation) return;
+    const seq = ++requestSeq.current;
+    const timer = setTimeout(() => {
+      setQuoting(true);
+      api
+        .calculateMicroloan(selectedType.id, amountNum.toFixed(2), termDays)
+        .then((r) => {
+          if (seq !== requestSeq.current) return;
+          setServerQuote(r);
+          setQuoteError(null);
+        })
+        .catch((err) => seq === requestSeq.current && setQuoteError(errorMessage(err)))
+        .finally(() => seq === requestSeq.current && setQuoting(false));
+    }, QUOTE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [selectedType, validation, amountNum, termDays]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Ответ бэка показываем, только если он про текущие параметры; иначе — предпросмотр.
+  const shown =
+    serverQuote && preview && serverQuote.termDays === preview.termDays && toNumber(serverQuote.amount) === amountNum
+      ? serverQuote
+      : preview;
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitError(null);
-    const err = validateForm();
-    if (err) return setSubmitError(err);
-    if (!selectedType) return setSubmitError('Тип займа не выбран');
-    try {
-      // Navigate to application page with prefilled data
-      navigate('/microloan/application', {
-        state: { typeId: selectedType.id, amount, termDays },
-      });
-    } catch (err) {
-      setSubmitError(errorMessage(err));
-    }
+    if (!selectedType || validation) return;
+    navigate('/microloan/application', {
+      state: { typeId: selectedType.id, amount: amountNum.toFixed(2), termDays },
+    });
   };
-
-  const minAmount = selectedType ? toNumber(selectedType.minAmount) : 3000;
-  const maxAmount = selectedType ? toNumber(selectedType.maxAmount) : 100000;
 
   return (
     <div className="space-y-8">
       <section className="max-w-3xl">
-        <p className="eyebrow mb-3">Калькулятор микрозайма · Демо для разработчиков</p>
+        <p className="eyebrow mb-3">Калькулятор микрозайма</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
           Микрозайм без <span className="relative whitespace-nowrap text-money">сюрпризов<svg aria-hidden="true" viewBox="0 0 300 12" className="absolute -bottom-1 left-0 h-3 w-full text-gold" preserveAspectRatio="none"><path d="M2 9c60-6 140-8 296-3" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" /></svg></span>
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-ink-2">
-          Выберите тип, сумму и срок — увидите точную сумму возврата, график и платеж. Расчёт локальный, без бэкенда.
+          Выберите тип, сумму и срок — увидите точную сумму к возврату одним платежом в конце срока.
         </p>
       </section>
 
-      {types.length === 0 && (
+      {types === null && (
+        <div className="grid place-items-center py-16 text-money">
+          <Spinner className="h-8 w-8" />
+        </div>
+      )}
+
+      {types !== null && types.length === 0 && (
         <Card>
-          <EmptyState
-            title="Сейчас нет доступных займов"
-            text="Администратор не активировал ни одного типа микрозайма. Как только появится активный тип — калькулятор заработает."
-            emoji="📭"
-          />
+          {typesError ? (
+            <Alert>{typesError}</Alert>
+          ) : (
+            <EmptyState title="Сейчас нет доступных займов" text="Активных типов микрозайма пока нет." emoji="📭" />
+          )}
         </Card>
       )}
 
-      {types.length > 0 && (
+      {selectedType && types && (
         <div className="grid gap-6 lg:grid-cols-12">
           <Card className="lg:col-span-5">
             <SectionTitle>Параметры</SectionTitle>
@@ -141,34 +160,37 @@ export function MicroloanCalculatorPage() {
                 <Select
                   value={selectedTypeId}
                   options={types.map((t) => ({ value: t.id, label: t.name }))}
-                  onChange={setSelectedTypeId}
+                  onChange={(id) => {
+                    const type = types.find((t) => t.id === id);
+                    if (type) selectType(type);
+                  }}
                 />
-                {selectedType && (
-                  <p className="mt-1.5 text-xs text-ink-3">
-                    Лимит: {formatMoneyShort(selectedType.minAmount)}–{formatMoneyShort(selectedType.maxAmount)} BYN · Срок: 1–30 дней · Льготный период: {selectedType.gracePeriodDays} дней · Ставка: {formatRate(selectedType.dailyRatePct)}/день
-                  </p>
-                )}
+                {selectedType.description && <p className="mt-1.5 text-sm text-ink-2">{selectedType.description}</p>}
+                <p className="mt-1.5 text-xs text-ink-3">
+                  Лимит: {formatMoneyShort(selectedType.minAmount)}–{formatMoneyShort(selectedType.maxAmount)} · Срок:{' '}
+                  {selectedType.minTermDays}–{selectedType.maxTermDays} дн. · Ставка: {formatRate(selectedType.dailyRatePct)} в день
+                  {toNumber(selectedType.modifier) > 0 && <> · Надбавка: {formatMoneyShort(selectedType.modifier)}</>}
+                </p>
               </Field>
 
-              <Field label="Сумма займа" htmlFor="ml-amount" hint={formatMoneyShort(amount)}>
+              <Field label="Сумма займа" htmlFor="ml-amount">
                 <TextInput
                   id="ml-amount"
                   inputMode="decimal"
                   value={amount}
                   suffix="BYN"
                   onChange={(e) => setAmount(parseMoneyInput(e.target.value))}
-                  disabled={!selectedType}
                 />
+                {/* step=1: ползунок двигается плавно по всей длине, а не скачками по 1000. */}
                 <input
                   type="range"
                   className="range mt-3"
                   aria-label="Сумма займа, ползунок"
-                  min={String(minAmount)}
-                  max={String(maxAmount)}
-                  step="1000"
-                  value={Math.min(Math.max(toNumber(amount), minAmount), maxAmount)}
+                  min={minAmount}
+                  max={maxAmount}
+                  step={1}
+                  value={clamp(Math.round(amountNum), minAmount, maxAmount)}
                   onChange={(e) => setAmount(e.target.value)}
-                  disabled={!selectedType}
                 />
               </Field>
 
@@ -177,25 +199,22 @@ export function MicroloanCalculatorPage() {
                   id="ml-term"
                   type="range"
                   className="range"
-                  min="1"
-                  max="30"
-                  step="1"
+                  min={selectedType.minTermDays}
+                  max={selectedType.maxTermDays}
+                  step={1}
                   value={termDays}
                   onChange={(e) => setTermDays(Number(e.target.value))}
-                  disabled={!selectedType}
                 />
                 <div className="mt-1 flex justify-between text-xs text-ink-3">
-                  <span>1 день</span>
-                  <span>15</span>
-                  <span>30 дней</span>
+                  <span>{selectedType.minTermDays} дн.</span>
+                  <span>{selectedType.maxTermDays} дн.</span>
                 </div>
               </Field>
 
               {validation && <Alert tone="gold">{validation}</Alert>}
-              {submitError && <Alert>{submitError}</Alert>}
 
               <div className="flex gap-2 pt-2">
-                <Button type="submit" size="lg" loading={loading} disabled={!!validation || !selectedType || loading}>
+                <Button type="submit" size="lg" disabled={!!validation}>
                   Оформить заявку
                 </Button>
               </div>
@@ -204,56 +223,43 @@ export function MicroloanCalculatorPage() {
 
           <div className="space-y-6 lg:col-span-7">
             <Card className="lg:sticky lg:top-24">
-              <SectionTitle aside={loading ? <Spinner className="h-4 w-4 text-money" /> : undefined}>Итог</SectionTitle>
-              {validation ? (
-                <Alert tone="gold">{validation}</Alert>
-              ) : error && !result ? (
-                <Alert>{error}</Alert>
-              ) : result ? (
-                <div className={cx('transition-opacity', loading && 'opacity-60')}>
-                  <ResultSummary result={result} type={selectedType} />
-                </div>
-              ) : (
-                <div className="grid place-items-center py-16 text-money">
-                  <Spinner className="h-8 w-8" />
-                </div>
-              )}
+              <SectionTitle aside={quoting ? <Spinner className="h-4 w-4 text-money" /> : undefined}>Итог</SectionTitle>
+              {shown ? <ResultSummary result={shown} /> : <Alert tone="gold">{validation}</Alert>}
+              {quoteError && <Alert className="mt-4">{quoteError}</Alert>}
             </Card>
           </div>
         </div>
-      )}
-
-      {result && !validation && types.length > 0 && (
-        <Card>
-          <SectionTitle>График платежей</SectionTitle>
-          <MicroloanScheduleTable schedule={result.paymentSchedule} />
-        </Card>
       )}
     </div>
   );
 }
 
-function ResultSummary({ result, type }: { result: MicroloanCalculationResult; type: MicroloanType | null }) {
+function ResultSummary({ result }: { result: MicroloanCalculationResult }) {
   const loan = toNumber(result.amount);
-  const over = toNumber(result.interestAmount);
+  const interest = toNumber(result.interestAmount);
+  const modifier = toNumber(result.modifier);
   const total = toNumber(result.totalAmount);
-  const interestShare = total > 0 ? Math.round((over / total) * 100) : 0;
+  const costShare = total > 0 ? Math.round(((interest + modifier) / total) * 100) : 0;
 
   return (
-    <div className="relative">
+    <div>
       <p className="eyebrow">К возврату (один платёж в конце срока)</p>
       <p className="num mt-1 text-4xl font-bold tracking-tight sm:text-5xl">{formatMoney(result.totalAmount)}</p>
 
-      <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl bg-stamp-soft/70 p-3.5">
-          <dt className="text-xs font-medium text-stamp">Проценты</dt>
-          <dd className="num mt-1 text-lg font-bold text-stamp">{formatMoneyShort(over)}</dd>
-        </div>
+      <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Сумма займа</dt>
           <dd className="num mt-1 text-lg font-bold">{formatMoneyShort(loan)}</dd>
         </div>
-        <div className="col-span-2 rounded-xl bg-paper-2/70 p-3.5 sm:col-span-1">
+        <div className="rounded-xl bg-stamp-soft/70 p-3.5">
+          <dt className="text-xs font-medium text-stamp">Проценты</dt>
+          <dd className="num mt-1 text-lg font-bold text-stamp">{formatMoneyShort(interest)}</dd>
+        </div>
+        <div className="rounded-xl bg-paper-2/70 p-3.5">
+          <dt className="text-xs font-medium text-ink-3">Надбавка типа</dt>
+          <dd className="num mt-1 text-lg font-bold">{formatMoneyShort(modifier)}</dd>
+        </div>
+        <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Срок</dt>
           <dd className="mt-1 text-lg font-bold">{result.termDays} дн.</dd>
         </div>
@@ -262,49 +268,13 @@ function ResultSummary({ result, type }: { result: MicroloanCalculationResult; t
       <div className="mt-6">
         <div className="mb-2 flex justify-between text-xs text-ink-3">
           <span>Долг: <span className="num text-money">{formatMoneyShort(loan)}</span></span>
-          <span>Проценты: <span className="num text-stamp">{interestShare}%</span> от возврата</span>
+          <span>Переплата: <span className="num text-stamp">{costShare}%</span> от возврата</span>
         </div>
         <div className="flex h-3 overflow-hidden rounded-full bg-paper-2" aria-hidden="true">
-          <div className="bg-money transition-all" style={{ width: `${100 - interestShare}%` }} />
-          <div className="bg-stamp transition-all" style={{ width: `${interestShare}%` }} />
+          <div className="bg-money transition-all" style={{ width: `${100 - costShare}%` }} />
+          <div className="bg-stamp transition-all" style={{ width: `${costShare}%` }} />
         </div>
-        {interestShare === 0 && (
-          <p className="mt-3 text-sm text-money-2">В льготный период — процентов нет. Платите ровно ту сумму, что взяли.</p>
-        )}
       </div>
-    </div>
-  );
-}
-
-function MicroloanScheduleTable({ schedule }: { schedule: MicroloanCalculationResult['paymentSchedule'] }) {
-  const termDays = schedule[schedule.length - 1]?.day ?? 0;
-  return (
-    <div className="overflow-x-auto rounded-xl border border-line">
-      <table className="w-full min-w-[520px] text-sm">
-        <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-          <tr>
-            <th className="px-3 py-2.5 font-semibold">Срок</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Основной долг</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Проценты</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Итого к оплате</th>
-          </tr>
-        </thead>
-        <tbody>
-          {schedule.map((row) => (
-            <tr key={row.day} className="border-t border-line/60 bg-white/40">
-              <td className="px-3 py-2 font-semibold">
-                {row.day === termDays
-                  ? `Конец срока (${row.day}-й день)`
-                  : `${row.day}-й день`}
-              </td>
-              <td className="num px-3 py-2 text-right text-money">{formatMoney(row.principal, false)}</td>
-              <td className="num px-3 py-2 text-right text-stamp">{formatMoney(row.interest, false)}</td>
-              <td className="num px-3 py-2 text-right text-ink">{formatMoney(row.total, false)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-ink-3">Платёж один — в последний день срока. Проценты начисляются только за дни после льготного периода.</p>
     </div>
   );
 }

@@ -5,12 +5,20 @@ import { formatMoneyShort, formatRate, parseMoneyInput } from '../lib/format';
 
 const EMPTY: MicroloanTypeInput = {
   name: '',
-  minAmount: '3000',
-  maxAmount: '100000',
-  gracePeriodDays: 7,
+  description: '',
+  minAmount: '50',
+  maxAmount: '1000',
+  minTermDays: 7,
+  maxTermDays: 30,
   dailyRatePct: '0.8',
+  modifier: '0',
   active: true,
 };
+
+/** Срок микрозайма по требованиям — от 7 до 30 дней (MICROLOANS.md §3.1), бэк проверяет то же. */
+const TERM_MIN = 7;
+const TERM_MAX = 30;
+const clampTerm = (v: number) => Math.min(TERM_MAX, Math.max(TERM_MIN, Math.round(v) || TERM_MIN));
 
 function MicroloanTypeForm({
   initial,
@@ -23,7 +31,7 @@ function MicroloanTypeForm({
 }) {
   const [form, setForm] = useState<MicroloanTypeInput>(() => {
     if (!initial) return EMPTY;
-    const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = initial;
+    const { id: _id, version: _version, ...input } = initial;
     return input;
   });
   const [busy, setBusy] = useState(false);
@@ -39,15 +47,15 @@ function MicroloanTypeForm({
     if (!(minAmount > 0)) return setError('Минимальная сумма должна быть положительной');
     if (!(maxAmount > 0)) return setError('Максимальная сумма должна быть положительной');
     if (minAmount > maxAmount) return setError('Минимальная сумма не может превышать максимальную');
-    if (!(Number.isInteger(form.gracePeriodDays) && form.gracePeriodDays >= 0 && form.gracePeriodDays <= 30)) {
-      return setError('Льготный период — целое число от 0 до 30 дней');
-    }
+    if (!form.description.trim()) return setError('Укажите описание');
+    if (form.minTermDays > form.maxTermDays) return setError('Мин. срок не может превышать максимальный');
+    if (!(Number(form.modifier) >= 0)) return setError('Модификатор — число не меньше 0');
     const dailyRate = Number(form.dailyRatePct);
     if (!(Number.isFinite(dailyRate) && dailyRate >= 0)) return setError('Дневная ставка — число не меньше 0');
     setBusy(true);
     setError(null);
     try {
-      await onSubmit({ ...form, name: form.name.trim() });
+      await onSubmit({ ...form, name: form.name.trim(), description: form.description.trim() });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -60,7 +68,11 @@ function MicroloanTypeForm({
       <h2 className="font-display text-lg font-bold">{initial ? `Редактирование: ${initial.name}` : 'Новый тип микрозайма'}</h2>
 
       <Field label="Название" htmlFor="mlt-name">
-        <TextInput id="mlt-name" value={form.name} maxLength={120} onChange={(e) => set('name', e.target.value)} placeholder="Например: Первый займ" />
+        <TextInput id="mlt-name" value={form.name} maxLength={120} onChange={(e) => set('name', e.target.value)} placeholder="Например: До зарплаты" />
+      </Field>
+
+      <Field label="Описание" htmlFor="mlt-desc">
+        <TextInput id="mlt-desc" value={form.description} maxLength={1000} onChange={(e) => set('description', e.target.value)} />
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
@@ -85,16 +97,29 @@ function MicroloanTypeForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Льготный период (дней)" htmlFor="mlt-grace">
+        <Field label="Мин. срок, дней" htmlFor="mlt-term-min">
           <TextInput
-            id="mlt-grace"
+            id="mlt-term-min"
             type="number"
-            min="0"
-            max="30"
-            value={form.gracePeriodDays}
-            onChange={(e) => set('gracePeriodDays', Math.min(30, Math.max(0, Number(e.target.value) || 0)))}
+            min={TERM_MIN}
+            max={TERM_MAX}
+            value={form.minTermDays}
+            onChange={(e) => set('minTermDays', clampTerm(Number(e.target.value)))}
           />
         </Field>
+        <Field label="Макс. срок, дней" htmlFor="mlt-term-max">
+          <TextInput
+            id="mlt-term-max"
+            type="number"
+            min={TERM_MIN}
+            max={TERM_MAX}
+            value={form.maxTermDays}
+            onChange={(e) => set('maxTermDays', clampTerm(Number(e.target.value)))}
+          />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Дневная ставка, %" htmlFor="mlt-rate">
           <TextInput
             id="mlt-rate"
@@ -102,6 +127,15 @@ function MicroloanTypeForm({
             value={form.dailyRatePct}
             suffix="%"
             onChange={(e) => set('dailyRatePct', parseMoneyInput(e.target.value))}
+          />
+        </Field>
+        <Field label="Модификатор (надбавка)" htmlFor="mlt-mod">
+          <TextInput
+            id="mlt-mod"
+            inputMode="decimal"
+            value={form.modifier}
+            suffix="BYN"
+            onChange={(e) => set('modifier', parseMoneyInput(e.target.value))}
           />
         </Field>
       </div>
@@ -134,7 +168,7 @@ export function AdminMicroloanTypesPage() {
       await api.adminCreateMicroloanType(input);
       setNotice(`Добавили тип «${input.name}».`);
     } else if (editing) {
-      await api.adminUpdateMicroloanType(editing.id, input);
+      await api.adminUpdateMicroloanType(editing.id, input, editing.version);
       setNotice('Сохранено.');
     }
     setEditing(null);
@@ -143,7 +177,13 @@ export function AdminMicroloanTypesPage() {
 
   const toggle = async (type: MicroloanType) => {
     try {
-      await api.adminToggleMicroloanType(type.id, !type.active);
+      // Выключение — отдельный эндпоинт; включение — обычное обновление с active=true.
+      if (type.active) {
+        await api.adminDeactivateMicroloanType(type.id);
+      } else {
+        const { id, version, ...input } = type;
+        await api.adminUpdateMicroloanType(id, { ...input, active: true }, version);
+      }
       setNotice(`${type.active ? 'Деактивировали' : 'Активировали'} «${type.name}».`);
       await reload();
     } catch (err) {
@@ -171,8 +211,9 @@ export function AdminMicroloanTypesPage() {
                   <tr>
                     <th className="p-4 font-semibold">Название</th>
                     <th className="p-4 text-right font-semibold">Сумма, BYN</th>
-                    <th className="p-4 text-right font-semibold">Льготный пер., дн.</th>
+                    <th className="p-4 text-right font-semibold">Срок, дн.</th>
                     <th className="p-4 text-right font-semibold">Ставка, %/день</th>
+                    <th className="p-4 text-right font-semibold">Модификатор</th>
                     <th className="p-4 font-semibold">Статус</th>
                     <th className="p-4" />
                   </tr>
@@ -182,11 +223,12 @@ export function AdminMicroloanTypesPage() {
                     <tr key={t.id} className={cx('border-b border-line/60 last:border-0', !t.active && 'text-ink-3')}>
                       <td className="p-4">
                         <span className="font-semibold">{t.name}</span>
-                        <span className="block text-xs text-ink-3">ID: {t.id.slice(0, 12)}…</span>
+                        <span className="block max-w-xs text-xs text-ink-3">{t.description}</span>
                       </td>
                       <td className="num p-4 text-right">{formatMoneyShort(t.minAmount)} – {formatMoneyShort(t.maxAmount)}</td>
-                      <td className="num p-4 text-right">{t.gracePeriodDays}</td>
+                      <td className="num p-4 text-right">{t.minTermDays} – {t.maxTermDays}</td>
                       <td className="num p-4 text-right">{formatRate(t.dailyRatePct)}</td>
+                      <td className="num p-4 text-right">+{formatMoneyShort(t.modifier)}</td>
                       <td className="p-4">{t.active ? <Badge tone="money">активен</Badge> : <Badge>скрыт</Badge>}</td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <Button size="sm" variant="ghost" onClick={() => setEditing(t)}>Изменить</Button>
@@ -212,4 +254,4 @@ export function AdminMicroloanTypesPage() {
       </div>
     </div>
   );
-}
+}

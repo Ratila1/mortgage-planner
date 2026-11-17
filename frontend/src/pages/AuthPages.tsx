@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
-import { api, ApiError, errorMessage, USE_MOCKS } from '../api';
+import { api, ApiError, errorMessage } from '../api';
 import type { OAuthProvider } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Alert, Button, Field, Segmented, Spinner, Stamp, TextInput } from '../components/ui';
@@ -71,12 +71,6 @@ function OAuthButtons() {
         <a
           key={provider}
           href={api.oauthUrl(provider)}
-          onClick={(e) => {
-            if (USE_MOCKS) {
-              e.preventDefault();
-              alert('В демо-режиме вход через соцсети не работает. Он заработает вместе с бэкендом.');
-            }
-          }}
           className="flex items-center justify-center gap-2 rounded-xl border border-line bg-white/70 px-3 py-2.5 text-sm font-semibold transition hover:border-ink-3"
         >
           {OAUTH_ICONS[provider]}
@@ -320,11 +314,6 @@ export function RegisterPage() {
             Мы отправили ссылку на <b>{email}</b>. Она действует 24 часа — дольше, чем многие акционные ставки.
           </p>
           <ResendLink onResend={() => api.resendVerification(email)} />
-          {USE_MOCKS && (
-            <Link to="/verify-email?token=demo" className="mt-5 inline-block text-sm font-semibold text-money underline underline-offset-4">
-              Демо: «нажать» ссылку из письма
-            </Link>
-          )}
         </div>
       ) : (
         <>

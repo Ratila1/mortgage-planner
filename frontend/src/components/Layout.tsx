@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { api, USE_MOCKS } from '../api';
+import { api } from '../api';
+import { cabinetTabFromPath } from '../pages/UserCabinetPage';
 import { useAuth } from '../auth/AuthContext';
 import { Logo } from './Logo';
 import { Button, cx } from './ui';
@@ -41,21 +42,24 @@ export function Layout() {
 
   const links = (
     <>
-      <NavLink to="/" end className={navClass}>Калькулятор</NavLink>
-      <NavLink to="/microloan" className={navClass}>Микрозайм</NavLink>
-      {user && <NavLink to="/cabinet" className={navClass}>Личный кабинет</NavLink>}
+      {/* У админа только его панель: клиентские разделы ему закрыты (см. NotForAdmin). */}
+      {!isAdmin && (
+        <>
+          <NavLink to="/" end className={navClass}>Калькулятор</NavLink>
+          <NavLink to="/microloan" className={navClass}>Микрозайм</NavLink>
+          {user && (
+            <NavLink to="/scenarios" className={() => navClass({ isActive: cabinetTabFromPath(location.pathname) !== null })}>
+              Личный кабинет
+            </NavLink>
+          )}
+        </>
+      )}
       {isAdmin && <NavLink to="/admin" className={navClass}>Панель админа</NavLink>}
     </>
   );
 
   return (
     <div className="flex min-h-screen flex-col">
-      {USE_MOCKS && (
-        <div className="bg-ink px-4 py-1.5 text-center text-xs text-paper/80">
-          Демо-режим: данные ненастоящие, как обещания в рекламе ипотеки. Вход — любая почта и пароль от 8 символов
-          (с «admin» в почте — админка).
-        </div>
-      )}
       <header className="sticky top-0 z-30 border-b border-line/80 bg-paper/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <Logo />

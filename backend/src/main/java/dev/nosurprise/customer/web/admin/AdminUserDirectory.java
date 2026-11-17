@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -39,8 +40,11 @@ public class AdminUserDirectory {
                 .addValue("limit", size)
                 .addValue("offset", (long) page * size);
         Long total = jdbc.queryForObject("SELECT count(*)" + FROM + WHERE, params, Long.class);
-        List<Row> rows = jdbc.query("SELECT u.id, u.email, u.email_verified, u.blocked, u.created_at, "
-                + "p.last_name, p.first_name, p.middle_name, p.phone" + FROM + WHERE
+        // provider и роли берём прямо из users/user_roles: админка показывает способ входа,
+        // сохранённый при регистрации, а не догадку фронта. Зарплата — из профиля клиента.
+        List<Row> rows = jdbc.query("SELECT u.id, u.email, u.email_verified, u.blocked, u.created_at, u.provider, "
+                + "(SELECT string_agg(r.role, ',' ORDER BY r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles, "
+                + "p.last_name, p.first_name, p.middle_name, p.phone, p.monthly_income" + FROM + WHERE
                 + "ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset", params, AdminUserDirectory::row);
         return new Page(rows, total == null ? 0 : total, page, size);
     }
@@ -48,12 +52,23 @@ public class AdminUserDirectory {
     private static Row row(ResultSet rs, int rowNum) throws SQLException {
         return new Row(rs.getObject("id", UUID.class), rs.getString("email"), rs.getBoolean("email_verified"),
                 rs.getBoolean("blocked"), rs.getTimestamp("created_at").toInstant(),
+                rs.getString("provider"), roles(rs.getString("roles")),
                 rs.getString("last_name"), rs.getString("first_name"), rs.getString("middle_name"),
-                rs.getString("phone"));
+                rs.getString("phone"), money(rs.getBigDecimal("monthly_income")));
+    }
+
+    private static List<String> roles(String csv) {
+        return csv == null || csv.isBlank() ? List.of() : List.of(csv.split(","));
+    }
+
+    /** Деньги строками, как во всём API (INSTRUCTION.md §9). */
+    private static String money(BigDecimal value) {
+        return value == null ? null : value.toPlainString();
     }
 
     public record Row(UUID id, String email, boolean emailVerified, boolean blocked, Instant createdAt,
-                      String lastName, String firstName, String middleName, String phone) {
+                      String provider, List<String> roles,
+                      String lastName, String firstName, String middleName, String phone, String monthlyIncome) {
     }
 
     public record Page(List<Row> items, long total, int page, int size) {

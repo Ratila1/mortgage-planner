@@ -86,16 +86,21 @@ export interface Me {
   roles: Role[];
 }
 
-/** Admin user list — frontend-only demo. */
+/** Пользователь в админке (GET /api/admin/users). Способ входа и роли — из БД. */
+export type LoginProvider = 'LOCAL' | 'GOOGLE' | 'GITHUB';
+
 export interface AdminUser {
   id: Id;
   email: string;
-  fullName: string;
+  /** ФИО из профиля клиента; null, если профиль ещё не заполнен. */
+  fullName: string | null;
   salary: Money | null;
-  provider: OAuthProvider | 'email' | null;
+  provider: LoginProvider;
   createdAt: string;
   phone: string | null;
   roles: Role[];
+  emailVerified: boolean;
+  blocked: boolean;
 }
 
 export interface ScenarioSummary {
@@ -171,58 +176,92 @@ export interface Problem {
 /** Всё, что умеет фронт. Реализации: api/http.ts (настоящий бэк) и api/mock.ts. */
 export type OAuthProvider = 'google' | 'github';
 
-/** Microloan domain types — frontend-only demo, stored in localStorage. */
-export type MicroloanApplicationStatus = 'NEW' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
+/** Статусы заявки на микрозайм — как на бэке (MICROLOANS.md §3.8). */
+export type MicroloanApplicationStatus =
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'ACTIVE'
+  | 'EXPIRED'
+  | 'REPAID';
 
+/** Тип микрозайма (GET /api/loan-types, /api/admin/loan-types). */
 export interface MicroloanType {
   id: Id;
   name: string;
+  description: string;
   minAmount: Money;
   maxAmount: Money;
-  gracePeriodDays: number;
+  minTermDays: number;
+  maxTermDays: number;
   dailyRatePct: string;
+  /** Фиксированная надбавка типа в BYN, прибавляется к сумме к возврату. */
+  modifier: Money;
   active: boolean;
-  createdAt: string;
-  updatedAt: string;
+  version: number;
 }
 
-export type MicroloanTypeInput = Omit<MicroloanType, 'id' | 'createdAt' | 'updatedAt'>;
+export type MicroloanTypeInput = Omit<MicroloanType, 'id' | 'version'>;
 
-export interface ApplicantProfile {
-  fullName: string;
+/** Профиль клиента (GET/PUT /api/me/profile). Email не входит: он берётся из учётной записи. */
+export interface CustomerProfile {
+  lastName: string;
+  firstName: string;
+  middleName: string;
   phone: string;
-  email: string;
+  monthlyIncome: Money;
+  phoneVerified: boolean;
 }
 
+export type CustomerProfileInput = Omit<CustomerProfile, 'phoneVerified'>;
+
+/** Фото паспорта: загружено или удалено по сроку хранения. */
+export interface PassportStatus {
+  uploadedAt: string;
+  deleted: boolean;
+}
+
+/** Заявка клиента на микрозайм (GET /api/loans/applications). */
 export interface MicroloanApplication {
   id: Id;
-  userId: Id;
   typeId: Id;
   typeName: string;
   amount: Money;
   termDays: number;
+  interest: Money;
+  modifier: Money;
   totalAmount: Money;
+  monthlyIncome: Money;
+  debtLoadPercent: string;
   status: MicroloanApplicationStatus;
-  profile: ApplicantProfile;
+  rejectionReason: string | null;
+  offerExpiresAt: string | null;
   createdAt: string;
-  updatedAt: string;
 }
 
-export interface MicroloanCalculationResult {
-  typeId: Id;
+/** Строка списка заявок в админке. */
+export interface AdminMicroloanApplication {
+  id: Id;
+  fullName: string;
   typeName: string;
+  amount: Money;
+  termDays: number;
+  monthlyIncome: Money;
+  debtLoadPercent: string;
+  debtLoadWarning: boolean;
+  status: MicroloanApplicationStatus;
+  createdAt: string;
+}
+
+/** Расчёт микрозайма (POST /api/loans/quote): проценты от суммы + модификатор типа. */
+export interface MicroloanCalculationResult {
   amount: Money;
   termDays: number;
   dailyRatePct: string;
-  gracePeriodDays: number;
   interestAmount: Money;
+  modifier: Money;
   totalAmount: Money;
-  paymentSchedule: Array<{
-    day: number;
-    principal: Money;
-    interest: Money;
-    total: Money;
-  }>;
 }
 
 export interface Api {
@@ -266,33 +305,40 @@ export interface Api {
   adminUpdateOffer(id: Id, input: OfferInput): Promise<BankOffer>;
   adminDeleteOffer(id: Id): Promise<void>;
 
-  // Microloan API (frontend-only demo)
-  /** Получить активные типы микрозаймов для калькулятора и заявки. */
+  // Микрозаймы (MICROLOANS.md §4.6)
+  /** Активные типы микрозаймов для калькулятора и заявки. */
   listMicroloanTypes(): Promise<MicroloanType[]>;
-  /** Получить все типы микрозаймов (включая неактивные) для админки. */
+  /** Админ: все типы, включая выключенные. */
   adminListMicroloanTypes(): Promise<MicroloanType[]>;
-  /** Создать новый тип микрозайма. */
   adminCreateMicroloanType(input: MicroloanTypeInput): Promise<MicroloanType>;
-  /** Обновить тип микрозайма. */
-  adminUpdateMicroloanType(id: Id, input: MicroloanTypeInput): Promise<MicroloanType>;
-  /** Деактивировать/активировать тип микрозайма. */
-  adminToggleMicroloanType(id: Id, active: boolean): Promise<MicroloanType>;
-  /** Рассчитать микрозайм (frontend-only, не сохраняет). */
+  adminUpdateMicroloanType(id: Id, input: MicroloanTypeInput, version: number): Promise<MicroloanType>;
+  /** Выключение типа (удаления нет — на тип ссылаются старые заявки). */
+  adminDeactivateMicroloanType(id: Id): Promise<MicroloanType>;
+  /** Расчёт на бэке (публично, ничего не сохраняет). */
   calculateMicroloan(typeId: Id, amount: Money, termDays: number): Promise<MicroloanCalculationResult>;
-  /** Подать заявку на микрозайм. */
+
+  /** Профиль клиента; null — ещё не заполнен. */
+  getProfile(): Promise<CustomerProfile | null>;
+  saveProfile(input: CustomerProfileInput): Promise<CustomerProfile>;
+  /** Фото паспорта; null — ещё не загружено. */
+  getPassport(): Promise<PassportStatus | null>;
+  uploadPassport(file: File): Promise<PassportStatus>;
+
+  /** Подать заявку: данные формы сохраняются в профиль в той же транзакции. */
   createMicroloanApplication(input: {
     typeId: Id;
     amount: Money;
     termDays: number;
-    profile: ApplicantProfile;
+    profile: CustomerProfileInput;
   }): Promise<MicroloanApplication>;
-  /** Получить заявки текущего пользователя. */
   listMyMicroloanApplications(): Promise<MicroloanApplication[]>;
-  /** Админ: получить все заявки. */
-  adminListMicroloanApplications(): Promise<MicroloanApplication[]>;
-  /** Админ: изменить статус заявки. */
-  adminUpdateMicroloanApplicationStatus(id: Id, status: MicroloanApplicationStatus): Promise<MicroloanApplication>;
+  cancelMicroloanApplication(id: Id): Promise<void>;
 
-  /** Админ: получить список пользователей. */
+  adminListMicroloanApplications(status: MicroloanApplicationStatus): Promise<AdminMicroloanApplication[]>;
+  adminApproveMicroloanApplication(id: Id): Promise<void>;
+  adminRejectMicroloanApplication(id: Id, reason: string): Promise<void>;
+  /** Отметка «Погашен» для займа в ACTIVE. */
+  adminMarkMicroloanRepaid(id: Id): Promise<void>;
+
   adminListUsers(): Promise<AdminUser[]>;
 }

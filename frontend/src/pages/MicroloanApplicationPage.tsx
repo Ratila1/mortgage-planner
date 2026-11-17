@@ -1,215 +1,243 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { api, errorMessage, type MicroloanType, type MicroloanCalculationResult, type ApplicantProfile } from '../api';
-import { Alert, Badge, Button, Card, Field, PageTitle, Spinner, TextInput, cx, FileInput } from '../components/ui';
-import { parseMoneyInput, toNumber, formatMoney, formatMoneyShort } from '../lib/format';
+import { Navigate, useLocation, useNavigate } from 'react-router';
+import {
+  api,
+  errorMessage,
+  type CustomerProfileInput,
+  type MicroloanCalculationResult,
+  type MicroloanType,
+  type PassportStatus,
+} from '../api';
+import { Alert, Button, Card, Field, FileInput, PageTitle, Spinner, TextInput } from '../components/ui';
+import { formatDateTime, formatMoney, formatMoneyShort, parseMoneyInput, toNumber } from '../lib/format';
 
+/** Параметры займа приходят из калькулятора через state навигации. */
 interface PrefillState {
-  typeId?: string;
-  amount?: string;
-  termDays?: number;
+  typeId: string;
+  amount: string;
+  termDays: number;
 }
 
+const EMPTY_PROFILE: CustomerProfileInput = { lastName: '', firstName: '', middleName: '', phone: '', monthlyIncome: '' };
+const PHONE_RE = /^\+\d{10,15}$/;
+const MAX_PASSPORT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Подача заявки (MICROLOANS.md §4.1). Email не спрашиваем: он уже есть в учётной записи.
+ * Данные профиля (ФИО, телефон, зарплата) подставляются из /api/me/profile и сохраняются бэком
+ * вместе с заявкой. Фото паспорта обязательно: без него бэк отвечает 409 KYC_REQUIRED,
+ * поэтому выбранный файл сначала загружается на /api/me/kyc/passport, затем подаётся заявка.
+ */
 export function MicroloanApplicationPage() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const prefill = (location.state as PrefillState | null) ?? null;
+  const prefill = location.state as PrefillState | null;
+  if (!prefill?.typeId) return <Navigate to="/microloan" replace />;
+  return <ApplicationForm prefill={prefill} />;
+}
 
-  const [types, setTypes] = useState<MicroloanType[]>([]);
-  const [selectedType, setSelectedType] = useState<MicroloanType | null>(null);
-  const [calculation, setCalculation] = useState<MicroloanCalculationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function ApplicationForm({ prefill }: { prefill: PrefillState }) {
+  const navigate = useNavigate();
+  const [type, setType] = useState<MicroloanType | null>(null);
+  const [quote, setQuote] = useState<MicroloanCalculationResult | null>(null);
+  const [profile, setProfile] = useState<CustomerProfileInput>(EMPTY_PROFILE);
+  const [passport, setPassport] = useState<PassportStatus | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [profile, setProfile] = useState<ApplicantProfile>({ fullName: '', phone: '', email: '' });
-  const [file, setFile] = useState<File | null>(null);
-  const [fileName, setFileName] = useState<string>('');
-
   useEffect(() => {
-    api.listMicroloanTypes().then(setTypes).catch(() => setTypes([]));
-  }, []);
-
-  // Initialize from prefill or first active type
-  useEffect(() => {
-    if (prefill?.typeId) {
-      const t = types.find((x) => x.id === prefill.typeId);
-      if (t) {
-        setSelectedType(t);
-        setAmount(prefill.amount ?? '10000');
-        setTermDays(prefill.termDays ?? 10);
-      }
-    } else if (types.length > 0 && !selectedType) {
-      setSelectedType(types[0]);
-      setAmount('10000');
-      setTermDays(10);
-    }
-  }, [types, prefill]);
-
-  const [amount, setAmount] = useState(prefill?.amount ?? '10000');
-  const [termDays, setTermDays] = useState(prefill?.termDays ?? 10);
-
-  // Calculate when params change
-  useEffect(() => {
-    if (!selectedType) return;
     let cancelled = false;
-    setLoading(true);
-    api
-      .calculateMicroloan(selectedType.id, amount, termDays)
-      .then((r) => {
+    Promise.all([
+      api.listMicroloanTypes(),
+      api.calculateMicroloan(prefill.typeId, prefill.amount, prefill.termDays),
+      api.getProfile(),
+      api.getPassport(),
+    ])
+      .then(([types, q, savedProfile, savedPassport]) => {
         if (cancelled) return;
-        setCalculation(r);
-        setError(null);
+        setType(types.find((t) => t.id === prefill.typeId) ?? null);
+        setQuote(q);
+        if (savedProfile) {
+          setProfile({
+            lastName: savedProfile.lastName,
+            firstName: savedProfile.firstName,
+            middleName: savedProfile.middleName,
+            phone: savedProfile.phone,
+            monthlyIncome: savedProfile.monthlyIncome,
+          });
+        }
+        setPassport(savedPassport);
       })
-      .catch((err) => !cancelled && setError(errorMessage(err)))
+      .catch((err) => !cancelled && setLoadError(errorMessage(err)))
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
-  }, [selectedType, amount, termDays]);
+    return () => {
+      cancelled = true;
+    };
+  }, [prefill.typeId, prefill.amount, prefill.termDays]);
 
-  const validateForm = () => {
-    if (!selectedType) return 'Тип займа не выбран';
-    const amt = toNumber(amount);
-    const days = termDays;
-    if (!(amt >= toNumber(selectedType.minAmount) && amt <= toNumber(selectedType.maxAmount))) {
-      return `Сумма должна быть от ${selectedType.minAmount} до ${selectedType.maxAmount} BYN`;
-    }
-    if (!(days >= 1 && days <= 30)) return 'Срок — от 1 до 30 дней';
-    if (!profile.fullName.trim()) return 'Укажите ФИО';
-    if (!profile.phone.trim()) return 'Укажите телефон';
-    if (!profile.email.trim()) return 'Укажите email';
-    if (!file) return 'Выберите файл (обязательно)';
+  // Фото, удалённое после подписи или по сроку хранения, нужно загрузить заново.
+  const hasPassport = !!passport && !passport.deleted;
+
+  const validate = () => {
+    if (!profile.lastName.trim()) return 'Укажите фамилию';
+    if (!profile.firstName.trim()) return 'Укажите имя';
+    if (!PHONE_RE.test(profile.phone.trim())) return 'Телефон в формате +375291234567';
+    if (!(toNumber(profile.monthlyIncome) > 0)) return 'Укажите зарплату в месяц';
+    if (!hasPassport && !file) return 'Загрузите фото паспорта';
+    if (file && !['image/jpeg', 'image/png'].includes(file.type)) return 'Фото паспорта — только JPEG или PNG';
+    if (file && file.size > MAX_PASSPORT_BYTES) return 'Фото паспорта — не больше 5 МБ';
     return null;
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
-    const err = validateForm();
+    const err = validate();
     if (err) return setSubmitError(err);
-    if (!selectedType) return setSubmitError('Тип займа не выбран');
-
     setSubmitting(true);
     try {
+      if (file) {
+        setPassport(await api.uploadPassport(file));
+        setFile(null);
+      }
       await api.createMicroloanApplication({
-        typeId: selectedType.id,
-        amount,
-        termDays,
+        typeId: prefill.typeId,
+        amount: prefill.amount,
+        termDays: prefill.termDays,
         profile,
       });
-      navigate('/microloan/applications', { replace: true });
-    } catch (err) {
-      setSubmitError(errorMessage(err));
+      navigate('/cabinet/applications', { replace: true });
+    } catch (error) {
+      setSubmitError(errorMessage(error));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="grid place-items-center py-24 text-money">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+  if (loadError) return <Alert>{loadError}</Alert>;
+
   return (
     <div className="max-w-2xl space-y-8">
       <section>
-        <p className="eyebrow mb-3">Подача заявки · Демо для разработчиков</p>
+        <p className="eyebrow mb-3">Подача заявки</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
           Оформить заявку на микрозайм
         </h1>
-        <p className="mt-3 text-lg text-ink-2">
-          Заполните данные, выберите файл (демо-шаг) и отправьте заявку. Расчёт и сохранение — локально в этом браузере.
-        </p>
       </section>
 
-      <Card>
-        <PageTitle title="Расчёт" eyebrow={selectedType ? selectedType.name : 'Выберите тип'} />
-        {error && !calculation ? (
-          <Alert>{error}</Alert>
-        ) : calculation ? (
+      {quote && (
+        <Card>
+          <PageTitle title="Расчёт" eyebrow={type?.name} />
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-paper-2/70 p-4">
                 <dt className="text-xs font-medium text-ink-3">Сумма займа</dt>
-                <dd className="num mt-1 text-xl font-bold">{formatMoney(calculation.amount)}</dd>
+                <dd className="num mt-1 text-xl font-bold">{formatMoney(quote.amount)}</dd>
               </div>
               <div className="rounded-xl bg-paper-2/70 p-4">
                 <dt className="text-xs font-medium text-ink-3">Срок</dt>
-                <dd className="num mt-1 text-xl font-bold">{calculation.termDays} дн.</dd>
+                <dd className="num mt-1 text-xl font-bold">{quote.termDays} дн.</dd>
               </div>
             </div>
             <div className="rounded-xl bg-stamp-soft/70 p-4">
               <dt className="text-xs font-medium text-stamp">К возврату (в конце срока)</dt>
-              <dd className="num mt-1 text-2xl font-bold text-stamp">{formatMoney(calculation.totalAmount)}</dd>
+              <dd className="num mt-1 text-2xl font-bold text-stamp">{formatMoney(quote.totalAmount)}</dd>
             </div>
             <div className="text-xs text-ink-3">
-              Проценты: {formatMoneyShort(calculation.interestAmount)} · Льготный период: {calculation.gracePeriodDays} дн. · Ставка: {calculation.dailyRatePct}%/день
+              Проценты: {formatMoneyShort(quote.interestAmount)} · Надбавка: {formatMoneyShort(quote.modifier)} · Ставка:{' '}
+              {quote.dailyRatePct}% в день
             </div>
           </div>
-        ) : (
-          <div className="grid place-items-center py-8 text-money"><Spinner className="h-6 w-6" /></div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <Card>
         <PageTitle title="Ваши данные" />
         <form onSubmit={handleSubmit} className="space-y-5">
-          <Field label="ФИО" htmlFor="ml-fullname">
-            <TextInput
-              id="ml-fullname"
-              value={profile.fullName}
-              onChange={(e) => setProfile({ ...profile, fullName: e.target.value })}
-              placeholder="Иванов Иван Иванович"
-              autoComplete="name"
-            />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Фамилия" htmlFor="ml-last">
+              <TextInput
+                id="ml-last"
+                value={profile.lastName}
+                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                autoComplete="family-name"
+              />
+            </Field>
+            <Field label="Имя" htmlFor="ml-first">
+              <TextInput
+                id="ml-first"
+                value={profile.firstName}
+                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                autoComplete="given-name"
+              />
+            </Field>
+            <Field label="Отчество" htmlFor="ml-middle">
+              <TextInput
+                id="ml-middle"
+                value={profile.middleName}
+                onChange={(e) => setProfile({ ...profile, middleName: e.target.value })}
+                autoComplete="additional-name"
+              />
+            </Field>
+          </div>
 
           <Field label="Телефон" htmlFor="ml-phone">
             <TextInput
               id="ml-phone"
               type="tel"
               value={profile.phone}
-              onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-              placeholder="+375 (XX) XXX-XX-XX"
+              onChange={(e) => setProfile({ ...profile, phone: e.target.value.replace(/[^\d+]/g, '') })}
+              placeholder="+375291234567"
               autoComplete="tel"
             />
           </Field>
 
-          <Field label="Email" htmlFor="ml-email">
+          <Field label="Зарплата в месяц" htmlFor="ml-income">
             <TextInput
-              id="ml-email"
-              type="email"
-              value={profile.email}
-              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-              placeholder="ivan@example.com"
-              autoComplete="email"
+              id="ml-income"
+              inputMode="decimal"
+              suffix="BYN"
+              value={profile.monthlyIncome}
+              onChange={(e) => setProfile({ ...profile, monthlyIncome: parseMoneyInput(e.target.value) })}
             />
           </Field>
 
-          <Field label="Файл (обязательно)" htmlFor="ml-file" hint="Демо-шаг: файл не загружается и не сохраняется, показывается только имя">
+          <Field
+            label="Фото паспорта"
+            htmlFor="ml-passport"
+            hint={
+              hasPassport
+                ? `Загружено ${formatDateTime(passport!.uploadedAt)}. Можно заменить.`
+                : 'JPEG или PNG, до 5 МБ'
+            }
+          >
             <FileInput
-              id="ml-file"
-              value={fileName}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setFile(f);
-                  setFileName(f.name);
-                }
-              }}
-              onClear={() => { setFile(null); setFileName(''); }}
-              accept=".pdf,.jpg,.jpeg,.png"
+              id="ml-passport"
+              value={file?.name ?? ''}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onClear={() => setFile(null)}
+              accept="image/jpeg,image/png,.jpg,.jpeg,.png"
             />
           </Field>
 
-          <div className="pt-2 flex gap-2">
+          {submitError && <Alert>{submitError}</Alert>}
+
+          <div className="flex gap-2 pt-2">
             <Button type="submit" size="lg" loading={submitting} disabled={submitting}>
-              {submitting ? 'Отправка...' : 'Отправить заявку'}
+              Отправить заявку
             </Button>
           </div>
-
-          {submitError && <div className="mt-4"><Alert>{submitError}</Alert></div>}
         </form>
       </Card>
-
-      <p className="text-xs text-ink-3 text-center">
-        Данные сохраняются локально в этом браузере (localStorage). Файл и его имя не передаются и не сохраняются.
-      </p>
     </div>
   );
 }

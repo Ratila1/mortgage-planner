@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { api, errorMessage, type AdminUser } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
+import { api, errorMessage, type AdminUser, type LoginProvider } from '../api';
+import { Alert, Badge, Card, EmptyState, PageTitle, Spinner } from '../components/ui';
 import { formatMoneyShort, formatDateTime } from '../lib/format';
 
-const PROVIDER_LABELS: Record<string, string> = {
-  email: 'Email',
-  google: 'Google',
-  github: 'GitHub',
+/** Способ входа хранится в users.provider и приходит с бэка как есть. */
+const PROVIDER_LABELS: Record<LoginProvider, string> = {
+  LOCAL: 'Email',
+  GOOGLE: 'Google',
+  GITHUB: 'GitHub',
 };
 
 const ROLE_TONES: Record<string, 'money' | 'stamp' | 'gold' | 'neutral'> = {
@@ -18,14 +19,14 @@ function RoleBadges({ roles }: { roles: string[] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {roles.map((role) => (
-        <Badge key={role} tone={(ROLE_TONES[role] as any) || 'neutral'}>{role}</Badge>
+        <Badge key={role} tone={ROLE_TONES[role] ?? 'neutral'}>{role}</Badge>
       ))}
     </div>
   );
 }
 
 export function AdminUsersPage() {
-  const [users, setUsers] = useState<import('../api').AdminUser[] | null>(null);
+  const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -76,11 +77,12 @@ export function AdminUsersPage() {
                     <td className="p-4 font-mono text-xs text-ink-3">{user.id}</td>
                     <td className="p-4">
                       <span className="font-semibold">{user.email}</span>
+                      {user.blocked && <span className="mt-1 block"><Badge tone="stamp">заблокирован</Badge></span>}
                     </td>
                     <td className="p-4">{user.fullName || '—'}</td>
                     <td className="num p-4 text-right">{user.salary ? formatMoneyShort(user.salary) : '—'}</td>
                     <td className="p-4">
-                      <Badge tone="gold">{user.provider ? PROVIDER_LABELS[user.provider] : '—'}</Badge>
+                      <Badge tone="gold">{PROVIDER_LABELS[user.provider] ?? user.provider}</Badge>
                     </td>
                     <td className="p-4 text-ink-3 whitespace-nowrap">{formatDateTime(user.createdAt)}</td>
                     <td className="p-4">{user.phone || '—'}</td>
@@ -94,4 +96,4 @@ export function AdminUsersPage() {
       )}
     </div>
   );
-}
+}
