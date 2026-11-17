@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import {
-  api, errorMessage, type AppNotification, type PdfReadyPayload, type Scenario, type ScenarioRecalculatedPayload,
+  api, errorMessage, type AppNotification, type LoanNotificationPayload, type PdfReadyPayload,
+  type Scenario, type ScenarioRecalculatedPayload,
 } from '../api';
 import { Alert, Badge, Button, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, formatRate, toNumber } from '../lib/format';
@@ -52,6 +53,82 @@ function PdfReady({ p, scenarioName }: { p: PdfReadyPayload; scenarioName?: stri
   );
 }
 
+/** Заголовки и тексты loan-уведомлений (LoanNotificationConsumer). */
+const LOAN_NOTIFICATIONS: Record<string, { title: string; text: string }> = {
+  LOAN_SIGNED: { title: 'Договор подписан', text: 'Деньги уже в пути. График погашения — в разделе «Мои заявки».' },
+  LOAN_EXPIRED: { title: 'Срок подписания истёк', text: 'Заявку пришлось закрыть: договор не был подписан за 5 рабочих дней.' },
+  LOAN_REPAID: { title: 'Заём закрыт', text: 'Долг погашен полностью. Спасибо — приходите ещё!' },
+};
+
+function LoanNotification({ n }: { n: AppNotification }) {
+  const p = (n.payload ?? {}) as LoanNotificationPayload;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const downloadContract = async () => {
+    if (!p.contractUrl) return;
+    setBusy(true);
+    setError(null);
+    try {
+      saveBlob(await api.downloadContract(p.contractUrl), `contract-${p.applicationId}.pdf`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (n.type === 'LOAN_APPROVED') {
+    return (
+      <div>
+        <p className="font-semibold">Вашу заявку одобрили 🎉</p>
+        <p className="mt-0.5 text-sm text-ink-2">
+          Договор уже готов — скачайте его, ознакомьтесь с условиями и подпишите кодом из SMS.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {p.contractUrl && (
+            <Button size="sm" variant="secondary" loading={busy} onClick={downloadContract}>
+              Скачать договор (PDF)
+            </Button>
+          )}
+          <Link to="/cabinet/applications" className="text-sm font-semibold text-money">
+            Подписать в личном кабинете →
+          </Link>
+        </div>
+        {error && <p className="mt-2 text-sm text-stamp">{error}</p>}
+      </div>
+    );
+  }
+  if (n.type === 'LOAN_REJECTED') {
+    return (
+      <div>
+        <p className="font-semibold">Заявку отклонили</p>
+        {p.reason && <p className="mt-0.5 text-sm text-ink-2">Причина: {p.reason}</p>}
+        <p className="mt-1 text-sm text-ink-2">
+          Это не приговор: проверьте данные и подайте заявку снова, когда обстоятельства изменятся.
+        </p>
+        <Link to="/cabinet/applications" className="mt-2 inline-block text-sm font-semibold text-money">
+          К моим заявкам →
+        </Link>
+      </div>
+    );
+  }
+  const info = LOAN_NOTIFICATIONS[n.type];
+  if (info) {
+    return (
+      <div>
+        <p className="font-semibold">{info.title}</p>
+        <p className="mt-0.5 text-sm text-ink-2">{info.text}</p>
+        <Link to="/cabinet/applications" className="mt-2 inline-block text-sm font-semibold text-money">
+          К моим заявкам →
+        </Link>
+      </div>
+    );
+  }
+  const message = (n.payload as { message?: string } | null)?.message;
+  return <p>{message ?? 'Новое уведомление.'}</p>;
+}
+
 function Body({ n, scenarios }: { n: AppNotification; scenarios: Map<string, Scenario> }) {
   if (n.type === 'SCENARIO_RECALCULATED' && n.payload) {
     const p = n.payload as ScenarioRecalculatedPayload;
@@ -77,6 +154,9 @@ function Body({ n, scenarios }: { n: AppNotification; scenarios: Map<string, Sce
   if (n.type === 'PDF_READY' && n.payload) {
     const p = n.payload as PdfReadyPayload;
     return <PdfReady p={p} scenarioName={scenarios.get(p.scenarioId)?.name} />;
+  }
+  if (n.type.startsWith('LOAN_')) {
+    return <LoanNotification n={n} />;
   }
   const message = (n.payload as { message?: string } | null)?.message;
   return <p>{message ?? 'Новое уведомление.'}</p>;

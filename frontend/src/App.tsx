@@ -29,6 +29,8 @@ export function AppRoutes() {
         <Route path="microloan" element={<NotForAdmin><MicroloanCalculatorPage /></NotForAdmin>} />
         <Route path="microloan/application" element={<RequireAuth userOnly><MicroloanApplicationPage /></RequireAuth>} />
         <Route path="microloan/applications" element={<Navigate to="/cabinet/applications" replace />} />
+        {/* Ссылка из писем (LoanNotificationConsumer cardUrl): карточка заявки живёт во вкладке «Мои заявки». */}
+        <Route path="loans/:id" element={<Navigate to="/cabinet/applications" replace />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

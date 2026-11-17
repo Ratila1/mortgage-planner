@@ -284,6 +284,13 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.DOCUMENT_NOT_FOUND, ex.getMessage());
     }
 
+    /** Неверный HTTP-метод (например, GET на POST-only /api/auth/refresh) — это 405, а не 500. */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ProblemDetail onMethodNotSupported(org.springframework.web.HttpRequestMethodNotSupportedException ex) {
+        return problem(HttpStatus.METHOD_NOT_ALLOWED, ErrorCode.METHOD_NOT_ALLOWED,
+                ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     ProblemDetail onUnexpected(Exception ex) {
         // Стек нужен, чтобы 500-е было возможно диагностировать по логам (§8).

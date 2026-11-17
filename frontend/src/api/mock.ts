@@ -4,6 +4,7 @@ import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, Me, OfferInput, Scenario,
   MicroloanType, MicroloanTypeInput, MicroloanApplication, MicroloanApplicationStatus,
   MicroloanCalculationResult, AdminUser, CustomerProfile, CustomerProfileInput, PassportStatus,
+  AdminMicroloanApplicationCard,
 } from './types';
 
 /**
@@ -595,13 +596,57 @@ export const mockApi: Api = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(strip);
   },
-  async cancelMicroloanApplication(id) {
+  cancelMicroloanApplication: async (id) => {
     await delay();
     requireUser();
     const app = findApplication(id);
     if (app.status !== 'SUBMITTED' && app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
     app.status = 'CANCELLED';
     persistMicroloan();
+  },
+  async getMicroloanApplication(id) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    return { ...strip(app), documents: [] };
+  },
+  // В моках договора нет — отдаём минимальный PDF, чтобы кнопка работала.
+  async downloadContract() {
+    await delay();
+    requireUser();
+    return new Blob(['%PDF-1.4\n% mock contract\n%%EOF'], { type: 'application/pdf' });
+  },
+  async requestSignatureCode(id) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    if (app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (!state.profile?.phoneVerified) throw fail(403, 'PHONE_NOT_VERIFIED');
+  },
+  async confirmSignature(id, code) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    if (app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (!state.profile?.phoneVerified) throw fail(403, 'PHONE_NOT_VERIFIED');
+    if (code !== '1234') throw fail(400, 'OTP_INVALID');
+    app.status = 'ACTIVE';
+    persistMicroloan();
+    return strip(app);
+  },
+  async requestPhoneVerification() {
+    await delay();
+    requireUser();
+    if (!state.profile) throw fail(409, 'PROFILE_INCOMPLETE');
+  },
+  async confirmPhoneVerification(code) {
+    await delay();
+    requireUser();
+    if (code !== '1234') throw fail(400, 'OTP_INVALID');
+    if (state.profile) {
+      state.profile = { ...state.profile, phoneVerified: true };
+      persistMicroloan();
+    }
   },
 
   async adminListMicroloanApplications(status) {
@@ -622,6 +667,61 @@ export const mockApi: Api = {
         status: a.status,
         createdAt: a.createdAt,
       }));
+  },
+  async adminGetMicroloanApplication(id) {
+    await delay();
+    requireAdmin();
+    const a = findApplication(id);
+    return {
+      id: a.id,
+      userId: a.userId,
+      status: a.status,
+      version: 0,
+      createdAt: a.createdAt,
+      loanTypeId: a.typeId,
+      loanTypeName: a.typeName,
+      amount: a.amount,
+      termDays: a.termDays,
+      dailyRate: '0',
+      interest: a.interest,
+      modifier: a.modifier,
+      total: a.totalAmount,
+      lastName: a.fullName.split(' ')[0] ?? '',
+      firstName: a.fullName.split(' ')[1] ?? '',
+      middleName: a.fullName.split(' ')[2] ?? '',
+      phone: '',
+      monthlyIncome: a.monthlyIncome,
+      debtLoadPercent: a.debtLoadPercent,
+      debtLoadWarning: Number(a.debtLoadPercent) > 50,
+      decidedBy: null,
+      decidedAt: null,
+      decisionComment: a.rejectionReason,
+      offerExpiresAt: a.offerExpiresAt,
+      closedAt: null,
+      passportUrl: `/api/admin/loan-applications/${a.id}/passport`,
+      documents: [],
+      // В моках кредитной истории нет: показываем честный «прочерк».
+      creditHistory: {
+        summary: {
+          totalLoans: 0,
+          byStatus: {},
+          hasActiveLoan: false,
+          lastMonthlyIncome: null,
+          lastDebtLoadPercent: null,
+          minDebtLoadPercent: null,
+          maxDebtLoadPercent: null,
+          incidentsByType: {},
+          firstSubmittedAt: null,
+        },
+        loans: [],
+      },
+    };
+  },
+  async adminViewPassport() {
+    await delay();
+    requireAdmin();
+    // В мок-режиме фото не хранится — имитируем «фото не найдено».
+    throw fail(404, 'KYC_NOT_FOUND', 'Фотография паспорта не найдена');
   },
   async adminApproveMicroloanApplication(id) {
     await delay();

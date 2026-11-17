@@ -14,7 +14,8 @@ spring:
       ddl-auto: validate
   mongodb:
     uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
-    uuid-representation: standard
+    representation:
+      uuid: standard   # Boot 4.1: было spring.mongodb.uuid-representation / spring.data.mongodb.uuid-representation (deprecated level=error) — оба игнорируются
   data:
     mongodb:
       representation:

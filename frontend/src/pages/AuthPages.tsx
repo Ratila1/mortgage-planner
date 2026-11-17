@@ -49,6 +49,8 @@ const OAUTH_ICONS: Record<OAuthProvider, ReactNode> = {
 /** Коды из редиректа бэкенда /login?oauthError=… (OAuth2AuthenticationSuccessHandler, SecurityConfig). */
 const OAUTH_ERRORS: Record<string, string> = {
   no_email: 'Провайдер не отдал адрес почты. Откройте доступ к email в настройках аккаунта или войдите по почте.',
+  unverified_email: 'Адрес почты у провайдера не подтверждён. Подтвердите его в аккаунте провайдера или войдите по почте.',
+  blocked: 'Этот аккаунт заблокирован администратором. Войдите по почте или обратитесь в поддержку.',
   failed: 'Не получилось войти через соцсеть: вход отменён или провайдер ответил ошибкой. Попробуйте ещё раз.',
 };
 
