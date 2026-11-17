@@ -93,6 +93,10 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             }
 
             UserEntity user = userService.provisionOAuthUser(email, provider, providerId, providerVerified);
+            if (user.isBlocked()) {
+                redirectFailure(response, "blocked");
+                return;
+            }
             var refresh = refreshTokenService.issue(user.getId(), request.getRemoteAddr());
             response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
             response.sendRedirect(appBaseUrl + "/");

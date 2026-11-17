@@ -122,6 +122,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/calc/**", "/api/offers", "/api/auth/**").permitAll()
+                // типы займов и калькулятор публичны (MICROLOANS.md §4.6)
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/loan-types").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/loans/quote").permitAll()
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers("/oauth2/authorization/**", "/login/oauth2/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")

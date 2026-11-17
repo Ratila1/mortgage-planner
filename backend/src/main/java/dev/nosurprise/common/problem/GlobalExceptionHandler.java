@@ -152,6 +152,138 @@ public class GlobalExceptionHandler {
                 ex.getName() + ": invalid value");
     }
 
+    // --- микрозаймы (MICROLOANS.md §4.6) ---
+
+    @ExceptionHandler(dev.nosurprise.user.AccountNotFoundException.class)
+    ProblemDetail onAccountNotFound(RuntimeException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.USER_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.user.UserBlockedException.class)
+    ProblemDetail onUserBlocked(RuntimeException ex) {
+        return problem(HttpStatus.FORBIDDEN, ErrorCode.USER_BLOCKED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.user.SelfBlockForbiddenException.class)
+    ProblemDetail onSelfBlock(RuntimeException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.SELF_BLOCK_FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.ProfileIncompleteException.class)
+    ProblemDetail onProfileIncomplete(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.PROFILE_INCOMPLETE, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.PhoneNotVerifiedException.class)
+    ProblemDetail onPhoneNotVerified(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.PHONE_NOT_VERIFIED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.common.otp.CodeInvalidException.class)
+    ProblemDetail onCodeInvalid(RuntimeException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.OTP_INVALID, ex.getMessage());
+    }
+
+    /** SMS-провайдер не принял сообщение: код уже отозван, клиент может сразу повторить. */
+    @ExceptionHandler(dev.nosurprise.common.sms.SmsDeliveryException.class)
+    ProblemDetail onSmsDelivery(RuntimeException ex) {
+        return problem(HttpStatus.BAD_GATEWAY, ErrorCode.SMS_DELIVERY_FAILED, "SMS could not be sent, try again later");
+    }
+
+    @ExceptionHandler(dev.nosurprise.common.otp.CodeCooldownException.class)
+    ProblemDetail onCodeCooldown(RuntimeException ex) {
+        return problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.kyc.KycRequiredException.class)
+    ProblemDetail onKycRequired(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.KYC_REQUIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.kyc.KycNotFoundException.class)
+    ProblemDetail onKycNotFound(RuntimeException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.KYC_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.kyc.FileTooLargeException.class)
+    ProblemDetail onFileTooLarge(RuntimeException ex) {
+        return problem(HttpStatus.CONTENT_TOO_LARGE, ErrorCode.FILE_TOO_LARGE, ex.getMessage());
+    }
+
+    /** Лимит spring.servlet.multipart срабатывает до контроллера — тот же код ошибки, что и проверка в сервисе. */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ProblemDetail onMaxUploadSize(Exception ex) {
+        return problem(HttpStatus.CONTENT_TOO_LARGE, ErrorCode.FILE_TOO_LARGE, "file is too large");
+    }
+
+    @ExceptionHandler(dev.nosurprise.customer.kyc.UnsupportedFileTypeException.class)
+    ProblemDetail onUnsupportedFile(RuntimeException ex) {
+        return problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCode.UNSUPPORTED_FILE_TYPE, ex.getMessage());
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.support.MissingServletRequestPartException.class)
+    ProblemDetail onMissingPart(Exception ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, "file: part is required");
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.type.LoanTypeNotFoundException.class)
+    ProblemDetail onLoanTypeNotFound(RuntimeException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.LOAN_TYPE_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.type.LoanTypeInactiveException.class)
+    ProblemDetail onLoanTypeInactive(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.LOAN_TYPE_INACTIVE, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.type.InvalidLoanTypeException.class)
+    ProblemDetail onInvalidLoanType(RuntimeException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.calc.LoanParamsOutOfRangeException.class)
+    ProblemDetail onLoanParams(RuntimeException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.LOAN_PARAMS_OUT_OF_RANGE, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.LoanApplicationNotFoundException.class)
+    ProblemDetail onLoanApplicationNotFound(RuntimeException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.LOAN_APPLICATION_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.ActiveApplicationExistsException.class)
+    ProblemDetail onActiveApplicationExists(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.ACTIVE_APPLICATION_EXISTS, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.InvalidStatusTransitionException.class)
+    ProblemDetail onInvalidTransition(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.INVALID_STATUS_TRANSITION, ex.getMessage());
+    }
+
+    /** Явная проверка version и @Version Hibernate дают один и тот же ответ. */
+    @ExceptionHandler({dev.nosurprise.loan.ConcurrentModificationException.class,
+            org.springframework.orm.ObjectOptimisticLockingFailureException.class})
+    ProblemDetail onConcurrentModification(Exception ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.CONCURRENT_MODIFICATION,
+                "record was modified by someone else, reload and try again");
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.OfferExpiredException.class)
+    ProblemDetail onOfferExpired(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.OFFER_EXPIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.SelfDecisionForbiddenException.class)
+    ProblemDetail onSelfDecision(RuntimeException ex) {
+        return problem(HttpStatus.FORBIDDEN, ErrorCode.SELF_DECISION_FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.contract.DocumentNotFoundException.class)
+    ProblemDetail onDocumentNotFound(RuntimeException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.DOCUMENT_NOT_FOUND, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     ProblemDetail onUnexpected(Exception ex) {
         // Стек нужен, чтобы 500-е было возможно диагностировать по логам (§8).
