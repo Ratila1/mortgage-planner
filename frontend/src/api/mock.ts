@@ -74,7 +74,7 @@ const seedMicroloanTypes: MicroloanType[] = [
   },
 ];
 
-const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v1';
+const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v2';
 
 function load(): MockState {
   try {
