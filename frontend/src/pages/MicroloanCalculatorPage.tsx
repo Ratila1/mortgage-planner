@@ -142,7 +142,6 @@ export function MicroloanCalculatorPage() {
                   value={selectedTypeId}
                   options={types.map((t) => ({ value: t.id, label: t.name }))}
                   onChange={setSelectedTypeId}
-                  label="Тип займа"
                 />
                 {selectedType && (
                   <p className="mt-1.5 text-xs text-ink-3">

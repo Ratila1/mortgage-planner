@@ -150,17 +150,17 @@ export function Select<T extends string>({
   value: T;
   options: Array<{ value: T; label: ReactNode }>;
   onChange: (value: T) => void;
-  label: string;
+  label?: string;
   className?: string;
 }) {
   return (
     <div className={cx('w-full', className)}>
-      <label className="block text-sm font-medium text-ink-2 mb-1.5">{label}</label>
+      {label && <label className="block text-sm font-medium text-ink-2 mb-1.5">{label}</label>}
       <div className="relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="appearance-none w-full rounded-xl border border-line bg-white/70 px-3.5 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15"
+          className="appearance-none w-full rounded-xl border border-line bg-white/70 px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
