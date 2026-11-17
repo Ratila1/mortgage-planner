@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
 export { cx };
@@ -139,6 +140,40 @@ export function Segmented<T extends string>({
   );
 }
 
+export function Select<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+  className,
+}: {
+  value: T;
+  options: Array<{ value: T; label: ReactNode }>;
+  onChange: (value: T) => void;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cx('w-full', className)}>
+      {label && <label className="block text-sm font-medium text-ink-2 mb-1.5">{label}</label>}
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as T)}
+          className="appearance-none w-full rounded-xl border border-line bg-white/70 px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export function Badge({
   tone = 'neutral',
   children,
@@ -176,13 +211,13 @@ export function Stamp({ children, tone = 'stamp', className }: { children: React
   );
 }
 
-export function Alert({ tone = 'stamp', children }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode }) {
+export function Alert({ tone = 'stamp', children, className }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode; className?: string }) {
   const tones = {
     stamp: 'border-stamp/30 bg-stamp-soft text-stamp',
     money: 'border-money/30 bg-money-soft text-money-2',
     gold: 'border-gold/40 bg-gold-soft text-[#7a5600]',
   };
-  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone])}>{children}</div>;
+  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone], className)}>{children}</div>;
 }
 
 export function EmptyState({ title, text, action, emoji = '🧾' }: { title: string; text: ReactNode; action?: ReactNode; emoji?: string }) {
@@ -205,5 +240,79 @@ export function PageTitle({ eyebrow, title, children }: { eyebrow?: string; titl
       </div>
       {children}
     </header>
+  );
+}
+
+export function FileInput({
+  value,
+  onChange,
+  onClear,
+  className,
+  accept,
+  ...rest
+}: InputHTMLAttributes<HTMLInputElement> & { value?: string; onClear?: () => void; accept?: string }) {
+  const [fileName, setFileName] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setFileName(value);
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFileName(file.name);
+      onChange?.(e);
+    }
+  };
+
+  const handleClear = () => {
+    setFileName('');
+    if (inputRef.current) inputRef.current.value = '';
+    onClear?.();
+  };
+
+  return (
+    <div className={cx('flex items-center gap-3 rounded-xl border border-line bg-white/70 transition', className)}>
+      <label
+        htmlFor={rest.id}
+        className="flex-1 cursor-pointer px-3.5 py-2.5 text-ink-2"
+      >
+        {fileName ? (
+          <span className="flex items-center gap-2 min-w-0">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 flex-shrink-0 text-ink-3" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <line x1="10" y1="9" x2="10" y2="9.01" />
+            </svg>
+            <span className="truncate">{fileName}</span>
+          </span>
+        ) : (
+          <span className="text-ink-3">Файл не выбран</span>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          id={rest.id}
+          accept={accept}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          aria-label={fileName ? `Выбран файл: ${fileName}` : 'Выбрать файл'}
+          onChange={handleChange}
+          {...rest}
+        />
+      </label>
+      {fileName && onClear && (
+        <button
+          type="button"
+          className="flex-shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-3 hover:bg-paper-2 hover:text-ink transition"
+          onClick={handleClear}
+          aria-label={`Убрать файл ${fileName}`}
+        >
+          Убрать
+        </button>
+      )}
+    </div>
   );
 }

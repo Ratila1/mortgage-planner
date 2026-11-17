@@ -11,4 +11,7 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByEmail(String email);
+
+    @org.springframework.data.jpa.repository.Query("select u.blocked from UserEntity u where u.id = :id")
+    Optional<Boolean> findBlockedById(@org.springframework.data.repository.query.Param("id") UUID id);
 }

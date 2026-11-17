@@ -66,6 +66,9 @@ public class AuthService {
         if (!user.isEmailVerified()) {
             throw new EmailNotVerifiedException();
         }
+        if (user.isBlocked()) {
+            throw new dev.nosurprise.user.UserBlockedException();
+        }
         return issueTokens(user, issuedIp);
     }
 
@@ -77,9 +80,12 @@ public class AuthService {
         // Пользователь проверяется ДО потребления токена: сбой БД после GETDEL
         // разлогинивал пользователя безвозвратно (старый токен уже удалён из Redis).
         UUID userId = refreshTokenService.userIdFrom(refreshCookieValue);
-        java.util.Set<Role> roles = userService.findById(userId)
-                .map(dev.nosurprise.user.UserEntity::getRoles)
-                .orElseThrow(InvalidRefreshTokenException::new);
+        UserEntity user = userService.findById(userId).orElseThrow(InvalidRefreshTokenException::new);
+        // Заблокированный не получает новый access-токен (MICROLOANS.md §3.5).
+        if (user.isBlocked()) {
+            throw new dev.nosurprise.user.UserBlockedException();
+        }
+        java.util.Set<Role> roles = user.getRoles();
         IssuedRefreshToken rotated = refreshTokenService.rotate(refreshCookieValue, issuedIp);
         return new LoginResult(
                 tokenService.generate(rotated.userId(), roles),

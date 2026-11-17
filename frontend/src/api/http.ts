@@ -2,6 +2,8 @@ import { ApiError } from './errors';
 import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OAuthProvider, OfferInput, Problem, Scenario,
   ScenarioSummary, StressRow,
+  MicroloanType, MicroloanTypeInput, ApplicantProfile, MicroloanApplication,
+  MicroloanApplicationStatus, MicroloanCalculationResult, AdminUser, Id, Money,
 } from './types';
 
 /**
@@ -161,6 +163,46 @@ async function login(path: string, body: unknown) {
   accessToken = res.accessToken;
 }
 
+function mapBackendStatus(s: unknown): MicroloanApplicationStatus {
+  const v = String(s ?? '');
+  if (v === 'REJECTED' || v === 'CANCELLED' || v === 'EXPIRED') return 'REJECTED';
+  if (v === 'APPROVED' || v === 'ACTIVE' || v === 'REPAID') return 'APPROVED';
+  return 'NEW';
+}
+
+function mapApplication(raw: Raw): MicroloanApplication {
+  return {
+    id: String(raw.id),
+    userId: raw.userId ? String(raw.userId) : '',
+    typeId: String(raw.loanTypeId ?? raw.typeId ?? ''),
+    typeName: String(raw.loanTypeName ?? raw.typeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays ?? 0),
+    totalAmount: str(raw.total ?? raw.totalAmount ?? raw.amount),
+    status: mapBackendStatus(raw.status),
+    profile: { fullName: '', phone: '', email: '' },
+    createdAt: String(raw.createdAt ?? new Date().toISOString()),
+    updatedAt: String(raw.updatedAt ?? raw.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function mapAdminApplication(raw: Raw): MicroloanApplication {
+  const fullName = [raw.lastName, raw.firstName, raw.middleName].filter(Boolean).join(' ');
+  return {
+    id: String(raw.id),
+    userId: raw.userId ? String(raw.userId) : '',
+    typeId: String(raw.loanTypeId ?? ''),
+    typeName: String(raw.loanTypeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays ?? 0),
+    totalAmount: str(raw.total ?? raw.amount),
+    status: mapBackendStatus(raw.status),
+    profile: { fullName, phone: String(raw.phone ?? ''), email: '' },
+    createdAt: String(raw.createdAt ?? new Date().toISOString()),
+    updatedAt: String(raw.updatedAt ?? raw.createdAt ?? new Date().toISOString()),
+  };
+}
+
 export const httpApi: Api = {
   calculate: (params) => request<CalcResult>('POST', '/api/calc', calcBody(params)),
   getCalculation: (calcId) => request<CalcResult>('GET', `/api/calc/${encodeURIComponent(calcId)}`),
@@ -206,4 +248,217 @@ export const httpApi: Api = {
   adminCreateOffer: (input) => request<BankOffer>('POST', '/api/admin/offers', offerBody(input)),
   adminUpdateOffer: (id, input) => request<BankOffer>('PUT', `/api/admin/offers/${id}`, offerBody(input)),
   adminDeleteOffer: (id) => request<void>('DELETE', `/api/admin/offers/${id}`),
+
+  // Microloan API -> backend loan-types / loans / admin endpoints
+  async listMicroloanTypes() {
+    const raw = await request<Raw[]>('GET', '/api/loan-types');
+    return raw.map((t) => ({
+      id: String(t.id),
+      name: String(t.name),
+      minAmount: str(t.minAmount),
+      maxAmount: str(t.maxAmount),
+      gracePeriodDays: 0,
+      dailyRatePct: str(t.dailyRate),
+      active: Boolean(t.active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })) as MicroloanType[];
+  },
+  async adminListMicroloanTypes() {
+    const raw = await request<Raw[]>('GET', '/api/admin/loan-types');
+    return raw.map((t) => ({
+      id: String(t.id),
+      name: String(t.name),
+      minAmount: str(t.minAmount),
+      maxAmount: str(t.maxAmount),
+      gracePeriodDays: 0,
+      dailyRatePct: str(t.dailyRate),
+      active: Boolean(t.active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })) as MicroloanType[];
+  },
+  async adminCreateMicroloanType(input: MicroloanTypeInput) {
+    const body = {
+      name: input.name,
+      description: input.name,
+      minAmount: input.minAmount,
+      maxAmount: input.maxAmount,
+      minTermDays: 7,
+      maxTermDays: 30,
+      dailyRate: input.dailyRatePct,
+      modifier: '0',
+      active: input.active,
+    };
+    const raw = await request<Raw>('POST', '/api/admin/loan-types', body);
+    return {
+      id: String(raw.id),
+      name: String(raw.name),
+      minAmount: str(raw.minAmount),
+      maxAmount: str(raw.maxAmount),
+      gracePeriodDays: 0,
+      dailyRatePct: str(raw.dailyRate),
+      active: Boolean(raw.active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as MicroloanType;
+  },
+  async adminUpdateMicroloanType(id: Id, input: MicroloanTypeInput) {
+    // fetch current version
+    const list = await request<Raw[]>('GET', '/api/admin/loan-types');
+    const current = list.find((t) => String(t.id) === id);
+    const version = current ? current.version : null;
+    const body = {
+      name: input.name,
+      description: input.name,
+      minAmount: input.minAmount,
+      maxAmount: input.maxAmount,
+      minTermDays: 7,
+      maxTermDays: 30,
+      dailyRate: input.dailyRatePct,
+      modifier: '0',
+      active: input.active,
+      version,
+    };
+    const raw = await request<Raw>('PUT', `/api/admin/loan-types/${id}`, body);
+    return {
+      id: String(raw.id),
+      name: String(raw.name),
+      minAmount: str(raw.minAmount),
+      maxAmount: str(raw.maxAmount),
+      gracePeriodDays: 0,
+      dailyRatePct: str(raw.dailyRate),
+      active: Boolean(raw.active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as MicroloanType;
+  },
+  async adminToggleMicroloanType(id: Id, active: boolean) {
+    const list = await request<Raw[]>('GET', '/api/admin/loan-types');
+    const current = list.find((t) => String(t.id) === id);
+    if (!current) throw new ApiError({ status: 404, code: 'NOT_FOUND', detail: 'type not found' });
+    const body = {
+      name: String(current.name),
+      description: String(current.name),
+      minAmount: str(current.minAmount),
+      maxAmount: str(current.maxAmount),
+      minTermDays: Number(current.minTermDays ?? 7),
+      maxTermDays: Number(current.maxTermDays ?? 30),
+      dailyRate: str(current.dailyRate),
+      modifier: str(current.modifier ?? '0'),
+      active,
+      version: current.version,
+    };
+    const raw = await request<Raw>('PUT', `/api/admin/loan-types/${id}`, body);
+    return {
+      id: String(raw.id),
+      name: String(raw.name),
+      minAmount: str(raw.minAmount),
+      maxAmount: str(raw.maxAmount),
+      gracePeriodDays: 0,
+      dailyRatePct: str(raw.dailyRate),
+      active: Boolean(raw.active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as MicroloanType;
+  },
+  async calculateMicroloan(typeId: Id, amount: Money, termDays: number) {
+    const types = await request<Raw[]>('GET', '/api/loan-types').catch(() => [] as Raw[]);
+    const t = types.find((x) => String(x.id) === typeId);
+    const typeName = t ? String(t.name) : '';
+    const raw = await request<Raw>('POST', '/api/loans/quote', { loanTypeId: typeId, amount, termDays });
+    const principal = str(raw.amount);
+    const interest = str(raw.interest);
+    const total = str(raw.total);
+    return {
+      typeId,
+      typeName,
+      amount: principal,
+      termDays: Number(raw.termDays ?? termDays),
+      dailyRatePct: str(raw.dailyRate),
+      gracePeriodDays: 0,
+      interestAmount: interest,
+      totalAmount: total,
+      paymentSchedule: [{ day: Number(raw.termDays ?? termDays), principal, interest, total }],
+    } as MicroloanCalculationResult;
+  },
+  async createMicroloanApplication(input: { typeId: Id; amount: Money; termDays: number; profile: ApplicantProfile }) {
+    // fetch profile for monthlyIncome
+    let monthlyIncome = '1000';
+    try {
+      const p = await request<Raw>('GET', '/api/me/profile');
+      if (p && p.monthlyIncome) monthlyIncome = str(p.monthlyIncome);
+    } catch {
+      // ignore
+    }
+    const parts = input.profile.fullName.trim().split(/\s+/);
+    const lastName = parts[0] || 'Клиент';
+    const firstName = parts[1] || 'Клиент';
+    const middleName = parts.slice(2).join(' ') || undefined;
+    const phone = input.profile.phone.replace(/[^\d+]/g, '');
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    const body = {
+      loanTypeId: input.typeId,
+      amount: input.amount,
+      termDays: input.termDays,
+      profile: {
+        lastName,
+        firstName,
+        middleName,
+        phone: normalizedPhone,
+        monthlyIncome,
+      },
+    };
+    const raw = await request<Raw>('POST', '/api/loans/applications', body);
+    return mapApplication(raw);
+  },
+  async listMyMicroloanApplications() {
+    const page = await request<Raw>('GET', '/api/loans/applications?page=0&size=100');
+    const items = Array.isArray(page.items) ? page.items : [];
+    return items.map(mapApplication);
+  },
+  async adminListMicroloanApplications() {
+    // fetch several statuses and merge
+    const statuses = ['SUBMITTED', 'APPROVED', 'ACTIVE', 'REJECTED', 'REPAID', 'CANCELLED', 'EXPIRED'];
+    const results = await Promise.allSettled(statuses.map((s) => request<Raw>('GET', `/api/admin/loan-applications?status=${s}&page=0&size=100`)));
+    const merged: Raw[] = [];
+    const seen = new Set<string>();
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const page = r.value as Raw;
+        const items = Array.isArray(page.items) ? page.items : [];
+        for (const it of items) {
+          const id = String(it.id);
+          if (!seen.has(id)) { seen.add(id); merged.push(it); }
+        }
+      }
+    }
+    return merged.map(mapAdminApplication);
+  },
+  async adminUpdateMicroloanApplicationStatus(id: Id, status: MicroloanApplicationStatus) {
+    const card = await request<Raw>('GET', `/api/admin/loan-applications/${id}`);
+    const version = card.version;
+    const backendStatus = status === 'NEW' || status === 'UNDER_REVIEW' ? 'SUBMITTED' : status;
+    if (backendStatus === 'APPROVED') {
+      await request<Raw>('POST', `/api/admin/loan-applications/${id}/approve`, { comment: '', version });
+    } else if (backendStatus === 'REJECTED') {
+      await request<Raw>('POST', `/api/admin/loan-applications/${id}/reject`, { reason: 'Отклонено', version });
+    }
+    const updated = await request<Raw>('GET', `/api/admin/loan-applications/${id}`);
+    return mapAdminApplication(updated);
+  },
+  async adminListUsers() {
+    const page = await request<Raw>('GET', '/api/admin/users?page=0&size=100');
+    const items = Array.isArray(page.items) ? page.items : [];
+    return items.map((u: Raw) => ({
+      id: String(u.id),
+      email: String(u.email),
+      fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || String(u.email),
+      salary: null,
+      provider: 'email' as const,
+      createdAt: String(u.createdAt),
+      phone: u.phone ? String(u.phone) : null,
+      roles: ['USER'],
+    })) as AdminUser[];
+  },
 };
