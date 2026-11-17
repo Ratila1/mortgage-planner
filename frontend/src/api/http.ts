@@ -2,6 +2,8 @@ import { ApiError } from './errors';
 import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OAuthProvider, OfferInput, Problem, Scenario,
   ScenarioSummary, StressRow,
+  MicroloanType, MicroloanTypeInput, ApplicantProfile, MicroloanApplication,
+  MicroloanApplicationStatus, MicroloanCalculationResult,
 } from './types';
 
 /**
@@ -206,4 +208,16 @@ export const httpApi: Api = {
   adminCreateOffer: (input) => request<BankOffer>('POST', '/api/admin/offers', offerBody(input)),
   adminUpdateOffer: (id, input) => request<BankOffer>('PUT', `/api/admin/offers/${id}`, offerBody(input)),
   adminDeleteOffer: (id) => request<void>('DELETE', `/api/admin/offers/${id}`),
+
+  // Microloan API (not implemented in backend - frontend-only demo)
+  listMicroloanTypes: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminListMicroloanTypes: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminCreateMicroloanType: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminUpdateMicroloanType: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminToggleMicroloanType: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  calculateMicroloan: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  createMicroloanApplication: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  listMyMicroloanApplications: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminListMicroloanApplications: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminUpdateMicroloanApplicationStatus: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
 };
