@@ -3,7 +3,7 @@ import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OAuthProvider, OfferInput, Problem, Scenario,
   ScenarioSummary, StressRow,
   MicroloanType, MicroloanTypeInput, ApplicantProfile, MicroloanApplication,
-  MicroloanApplicationStatus, MicroloanCalculationResult,
+  MicroloanApplicationStatus, MicroloanCalculationResult, AdminUser,
 } from './types';
 
 /**
@@ -220,4 +220,5 @@ export const httpApi: Api = {
   listMyMicroloanApplications: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
   adminListMicroloanApplications: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
   adminUpdateMicroloanApplicationStatus: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Microloan API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
+  adminListUsers: () => Promise.reject(new ApiError({ status: 501, code: 'NOT_IMPLEMENTED', detail: 'Admin users API not available in backend. Use VITE_USE_MOCKS=true for demo.' })),
 };

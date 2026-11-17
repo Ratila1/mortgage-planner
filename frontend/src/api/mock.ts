@@ -3,7 +3,7 @@ import { ApiError } from './errors';
 import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, Me, OfferInput, Scenario,
   MicroloanType, MicroloanTypeInput, ApplicantProfile, MicroloanApplication,
-  MicroloanApplicationStatus, MicroloanCalculationResult,
+  MicroloanApplicationStatus, MicroloanCalculationResult, AdminUser, OAuthProvider,
 } from './types';
 
 /**
@@ -26,6 +26,7 @@ interface MockState {
   calculations: Record<string, CalcResult>;
   microloanTypes: MicroloanType[];
   microloanApplications: MicroloanApplication[];
+  users: AdminUser[];
   nextId: number;
 }
 
@@ -74,6 +75,49 @@ const seedMicroloanTypes: MicroloanType[] = [
   },
 ];
 
+const seedUsers: AdminUser[] = [
+  {
+    id: 'user-1',
+    email: 'admin@test.com',
+    fullName: 'Иванов Иван Иванович',
+    salary: '150000',
+    provider: 'email',
+    createdAt: '2025-01-15T10:00:00.000Z',
+    phone: '+375 (29) 123-45-67',
+    roles: ['USER', 'ADMIN'],
+  },
+  {
+    id: 'user-2',
+    email: 'ivan@gmail.com',
+    fullName: 'Петров Петр Петрович',
+    salary: '80000',
+    provider: 'google',
+    createdAt: '2025-02-20T14:30:00.000Z',
+    phone: '+375 (33) 987-65-43',
+    roles: ['USER'],
+  },
+  {
+    id: 'user-3',
+    email: 'maria@github.com',
+    fullName: 'Сидорова Мария Сергеевна',
+    salary: '120000',
+    provider: 'github',
+    createdAt: '2025-03-10T09:15:00.000Z',
+    phone: '+375 (44) 555-12-34',
+    roles: ['USER'],
+  },
+  {
+    id: 'user-4',
+    email: 'test@test.com',
+    fullName: 'Тестовый Пользователь',
+    salary: null,
+    provider: 'email',
+    createdAt: '2025-04-01T12:00:00.000Z',
+    phone: null,
+    roles: ['USER'],
+  },
+];
+
 const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v3';
 
 function load(): MockState {
@@ -83,7 +127,7 @@ function load(): MockState {
   } catch {
     // localStorage недоступен — работаем в памяти
   }
-  return { session: null, scenarios: [], notifications: [], offers: seedOffers, calculations: {}, microloanTypes: seedMicroloanTypes, microloanApplications: [], nextId: 100 };
+  return { session: null, scenarios: [], notifications: [], offers: seedOffers, calculations: {}, microloanTypes: seedMicroloanTypes, microloanApplications: [], users: seedUsers, nextId: 100 };
 }
 
 function loadMicroloan(): { types: MicroloanType[]; applications: MicroloanApplication[] } {
@@ -547,5 +591,10 @@ export const mockApi: Api = {
     const ok = saveMicroloan();
     if (!ok) throw new ApiError({ status: 500, code: 'STORAGE_FAILED', detail: 'Не удалось сохранить статус' });
     return state.microloanApplications[index];
+  },
+  async adminListUsers() {
+    await delay();
+    requireAdmin();
+    return [...state.users].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 };

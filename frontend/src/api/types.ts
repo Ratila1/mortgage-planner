@@ -86,6 +86,18 @@ export interface Me {
   roles: Role[];
 }
 
+/** Admin user list — frontend-only demo. */
+export interface AdminUser {
+  id: Id;
+  email: string;
+  fullName: string;
+  salary: Money | null;
+  provider: OAuthProvider | 'email' | null;
+  createdAt: string;
+  phone: string | null;
+  roles: Role[];
+}
+
 export interface ScenarioSummary {
   monthlyPayment: Money;
   overpayment: Money;
@@ -280,4 +292,7 @@ export interface Api {
   adminListMicroloanApplications(): Promise<MicroloanApplication[]>;
   /** Админ: изменить статус заявки. */
   adminUpdateMicroloanApplicationStatus(id: Id, status: MicroloanApplicationStatus): Promise<MicroloanApplication>;
+
+  /** Админ: получить список пользователей. */
+  adminListUsers(): Promise<AdminUser[]>;
 }

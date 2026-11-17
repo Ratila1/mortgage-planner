@@ -211,13 +211,13 @@ export function Stamp({ children, tone = 'stamp', className }: { children: React
   );
 }
 
-export function Alert({ tone = 'stamp', children }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode }) {
+export function Alert({ tone = 'stamp', children, className }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode; className?: string }) {
   const tones = {
     stamp: 'border-stamp/30 bg-stamp-soft text-stamp',
     money: 'border-money/30 bg-money-soft text-money-2',
     gold: 'border-gold/40 bg-gold-soft text-[#7a5600]',
   };
-  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone])}>{children}</div>;
+  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone], className)}>{children}</div>;
 }
 
 export function EmptyState({ title, text, action, emoji = '🧾' }: { title: string; text: ReactNode; action?: ReactNode; emoji?: string }) {
