@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { api, errorMessage, type MicroloanType, type MicroloanCalculationResult } from '../api';
 import { ScheduleTable } from '../components/calculator/ScheduleTable';
-import { Alert, Badge, Button, Card, EmptyState, Field, PageTitle, Segmented, Spinner, TextInput, cx } from '../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, Field, PageTitle, Select, Spinner, TextInput, cx } from '../components/ui';
 import { formatRate, parseMoneyInput, toNumber, formatMoney, formatMoneyShort } from '../lib/format';
 
 const STATUS_TONES: Record<string, 'money' | 'stamp' | 'gold' | 'neutral'> = {
@@ -25,8 +25,8 @@ export function MicroloanCalculatorPage() {
   const navigate = useNavigate();
   const [types, setTypes] = useState<MicroloanType[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<string>('');
-  const [amount, setAmount] = useState('10000');
-  const [termDays, setTermDays] = useState(10);
+  const [amount, setAmount] = useState('');
+  const [termDays, setTermDays] = useState(15);
   const [result, setResult] = useState<MicroloanCalculationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,12 +36,26 @@ export function MicroloanCalculatorPage() {
     api.listMicroloanTypes().then(setTypes).catch(() => setTypes([]));
   }, []);
 
-  // Auto-select first active type
+  // Auto-select first active type and set defaults
   useEffect(() => {
     if (types.length > 0 && !selectedTypeId) {
-      setSelectedTypeId(types[0].id);
+      const first = types[0];
+      setSelectedTypeId(first.id);
+      setAmount(first.minAmount);
+      setTermDays(15);
     }
   }, [types]);
+
+  // Reset amount/term when type changes
+  useEffect(() => {
+    if (selectedTypeId) {
+      const type = types.find((t) => t.id === selectedTypeId);
+      if (type) {
+        setAmount(type.minAmount);
+        setTermDays(15);
+      }
+    }
+  }, [selectedTypeId]);
 
   const selectedType = types.find((t) => t.id === selectedTypeId) ?? null;
 
@@ -124,11 +138,11 @@ export function MicroloanCalculatorPage() {
             <SectionTitle>Параметры</SectionTitle>
             <form onSubmit={handleSubmit} className="space-y-5">
               <Field label="Тип займа" htmlFor="ml-type">
-                <Segmented
-                  label="Тип займа"
+                <Select
                   value={selectedTypeId}
-                  options={types.map((t) => ({ value: t.id, label: t.name, hint: `${formatMoneyShort(t.minAmount)}–${formatMoneyShort(t.maxAmount)} BYN, ${t.gracePeriodDays} дн. 0%, потом ${formatRate(t.dailyRatePct)}/день` }))}
+                  options={types.map((t) => ({ value: t.id, label: t.name }))}
                   onChange={setSelectedTypeId}
+                  label="Тип займа"
                 />
                 {selectedType && (
                   <p className="mt-1.5 text-xs text-ink-3">
