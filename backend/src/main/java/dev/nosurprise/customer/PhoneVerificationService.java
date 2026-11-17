@@ -18,8 +18,8 @@ import java.util.UUID;
 public class PhoneVerificationService {
 
     static final String CODE_KEY_PREFIX = "phone-otp:";
-    /** Общая пауза на все SMS пользователя (телефон и подпись), §4.4. */
-    public static final String COOLDOWN_KEY_PREFIX = "sms-cooldown:";
+    /** Пауза на отправку кода подтверждения телефона (собственная, не блокирует подпись договора). */
+    public static final String COOLDOWN_KEY_PREFIX = "phone-otp-cooldown:";
     private static final String BOUND_PHONE = "phone";
 
     private final CustomerService customerService;

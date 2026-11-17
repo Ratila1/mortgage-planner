@@ -76,10 +76,6 @@ public class LoanNotificationConsumer {
         String subject;
         String notificationType;
         switch (event.status()) {
-            case "SUBMITTED" -> {
-                subject = "Заявка на микрозайм принята";
-                notificationType = null;
-            }
             case LoanApplicationEvent.CONTRACT_READY -> {
                 // Письмо уходит, когда договор уже сгенерирован: по ссылке клиент сразу может его скачать и подписать.
                 subject = "Ваша заявка на микрозайм одобрена";

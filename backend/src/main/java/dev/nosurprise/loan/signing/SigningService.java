@@ -8,7 +8,6 @@ import dev.nosurprise.common.sms.SmsDeliveryException;
 import dev.nosurprise.common.sms.SmsSender;
 import dev.nosurprise.customer.CustomerService;
 import dev.nosurprise.customer.PhoneNotVerifiedException;
-import dev.nosurprise.customer.PhoneVerificationService;
 import dev.nosurprise.customer.ProfileView;
 import dev.nosurprise.loan.application.InvalidStatusTransitionException;
 import dev.nosurprise.loan.application.LoanApplication;
@@ -92,7 +91,7 @@ public class SigningService {
             throw new PhoneNotVerifiedException();
         }
         String key = CODE_KEY_PREFIX + application.getId();
-        String cooldownKey = PhoneVerificationService.COOLDOWN_KEY_PREFIX + userId;
+        String cooldownKey = CODE_KEY_PREFIX + "cooldown:" + userId;
         String code = codes.issue(key, cooldownKey,
                 Map.of(BOUND_SHA, contract.getSha256(), BOUND_PHONE, profile.phone()));
         try {

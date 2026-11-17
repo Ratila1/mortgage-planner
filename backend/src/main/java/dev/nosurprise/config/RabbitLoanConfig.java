@@ -37,7 +37,7 @@ public class RabbitLoanConfig {
         addQueue(declarables, events, dlx, CREDIT_HISTORY_Q, LoanRoutingKeys.HISTORY_CHANGED,
                 List.of(LoanRoutingKeys.HISTORY_CHANGED));
         addQueue(declarables, events, dlx, NOTIFICATION_Q, NOTIFICATION_DLQ_RK, List.of(
-                LoanRoutingKeys.SUBMITTED, LoanRoutingKeys.CONTRACT_READY, LoanRoutingKeys.REJECTED,
+                LoanRoutingKeys.CONTRACT_READY, LoanRoutingKeys.REJECTED,
                 LoanRoutingKeys.SIGNED, LoanRoutingKeys.EXPIRED, LoanRoutingKeys.REPAID));
         return new Declarables(declarables);
     }

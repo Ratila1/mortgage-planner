@@ -23,6 +23,7 @@ public class OneTimeCodeStore {
 
     public static final int MAX_ATTEMPTS = 3;
     static final Duration CODE_TTL = Duration.ofMinutes(5);
+    /** Общая пауза на все SMS пользователя — защита от SMS-бомбардировки. */
     static final Duration COOLDOWN = Duration.ofSeconds(60);
 
     private static final String FIELD_HASH = "hash";
@@ -38,7 +39,8 @@ public class OneTimeCodeStore {
     /**
      * Выпускает новый код и возвращает его открытым текстом (для отправки по SMS).
      * binding — то, к чему привязан код (телефон, хэш договора): при проверке его сверяет вызывающий.
-     * Пауза хранится отдельно по пользователю: иначе можно было бы бомбить SMS, меняя ключ.
+     * cooldownKey — ключ паузы, по которому ограничиваетсяrepeat отправка. Кулдаун общего назначения
+     * хранится отдельно по пользователю, иначе можно было бы бомбить SMS, меняя ключ кода.
      */
     public String issue(String key, String cooldownKey, Map<String, String> binding) {
         Boolean allowed = redis.opsForValue().setIfAbsent(cooldownKey, "1", COOLDOWN);

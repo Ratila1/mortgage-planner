@@ -70,9 +70,11 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
                 .getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
     }
 
-    /** Пауза 60 с между SMS — бизнес-правило; в тестах её снимаем, чтобы не ждать. */
+    /** Пауза 60 с между SMS — бизнес-правило §4.4; в тестах её снимаем, чтобы не ждать.
+     * Теперь два независимых ключа: на подтверждение телефона и на код подписи договора. */
     protected void clearSmsCooldown(Client client) {
-        redis.delete("sms-cooldown:" + client.id());
+        redis.delete("phone-otp-cooldown:" + client.id());
+        redis.delete("sign-otp:cooldown:" + client.id());
     }
 
     protected String adminToken() {
