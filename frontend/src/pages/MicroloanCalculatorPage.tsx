@@ -264,12 +264,13 @@ function ResultSummary({ result, type }: { result: MicroloanCalculationResult; t
 }
 
 function MicroloanScheduleTable({ schedule }: { schedule: MicroloanCalculationResult['paymentSchedule'] }) {
+  const termDays = schedule[schedule.length - 1]?.day ?? 0;
   return (
     <div className="overflow-x-auto rounded-xl border border-line">
       <table className="w-full min-w-[520px] text-sm">
         <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
           <tr>
-            <th className="px-3 py-2.5 font-semibold">День</th>
+            <th className="px-3 py-2.5 font-semibold">Срок</th>
             <th className="px-3 py-2.5 text-right font-semibold">Основной долг</th>
             <th className="px-3 py-2.5 text-right font-semibold">Проценты</th>
             <th className="px-3 py-2.5 text-right font-semibold">Итого к оплате</th>
@@ -278,7 +279,11 @@ function MicroloanScheduleTable({ schedule }: { schedule: MicroloanCalculationRe
         <tbody>
           {schedule.map((row) => (
             <tr key={row.day} className="border-t border-line/60 bg-white/40">
-              <td className="px-3 py-2 font-semibold">{row.day}-й день (платёж)</td>
+              <td className="px-3 py-2 font-semibold">
+                {row.day === termDays
+                  ? `Конец срока (${row.day}-й день)`
+                  : `${row.day}-й день`}
+              </td>
               <td className="num px-3 py-2 text-right text-money">{formatMoney(row.principal, false)}</td>
               <td className="num px-3 py-2 text-right text-stamp">{formatMoney(row.interest, false)}</td>
               <td className="num px-3 py-2 text-right text-ink">{formatMoney(row.total, false)}</td>

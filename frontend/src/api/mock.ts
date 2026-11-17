@@ -52,7 +52,7 @@ const seedMicroloanTypes: MicroloanType[] = [
   },
   {
     id: 'ml-type-2',
-    name: 'На айфон',
+    name: 'На авто',
     minAmount: '50000',
     maxAmount: '200000',
     gracePeriodDays: 14,
@@ -63,7 +63,7 @@ const seedMicroloanTypes: MicroloanType[] = [
   },
   {
     id: 'ml-type-3',
-    name: 'На собаку',
+    name: 'На образование',
     minAmount: '10000',
     maxAmount: '150000',
     gracePeriodDays: 30,
@@ -74,7 +74,7 @@ const seedMicroloanTypes: MicroloanType[] = [
   },
 ];
 
-const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v2';
+const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v3';
 
 function load(): MockState {
   try {
