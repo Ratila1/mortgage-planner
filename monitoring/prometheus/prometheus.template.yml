@@ -3,12 +3,22 @@ global:
   evaluation_interval: 15s
 
 # Шаблон: docker-compose при старте подставляет METRICS_USER / METRICS_PASSWORD из .env
-# (sed-замена в entrypoint), т.к. Prometheus не умеет env-подстановку в конфиге.
+# (sed в command сервиса prometheus), т.к. Prometheus не умеет env-подстановку в конфиге.
+# В репозиторий попадает только этот файл: сгенерированный prometheus.yml содержит пароль и в .gitignore.
+# Разделитель sed — «|», поэтому пароль не должен содержать «|» (сгенерированный hex безопасен).
 scrape_configs:
   - job_name: nosurprise-backend
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ['backend:8080']
+    basic_auth:
+      username: METRICS_USER
+      password: METRICS_PASSWORD
+
+  - job_name: nosurprise-sms-verification
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['sms-verification-service:8091']
     basic_auth:
       username: METRICS_USER
       password: METRICS_PASSWORD
