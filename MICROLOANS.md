@@ -166,6 +166,12 @@ total    = amount + interest + modifier
 
 - Остальные переходы запрещены → `409 INVALID_STATUS_TRANSITION`.
 - Конечные статусы: `CANCELLED`, `REJECTED`, `EXPIRED`, `REPAID`.
+- Реализация переходов инкапсулирована в паттерне State: интерфейс `dev.nosurprise.loan.application.state.LoanState` и
+  по одному классу на статус (`SubmittedState`, `ApprovedState`, `ActiveState`, `RejectedState`, `CancelledState`,
+  `ExpiredState`, `RepaidState`) в пакете `dev.nosurprise.loan.application.state`. Каждое состояние знает
+  допустимые переходы (`allowedTransitions`), валидирует переход (`validateTransition`) и выполняет действия
+  при входе/выходе (`onEnter` / `onExit`). `LoanStatus` остаётся только идентификатором для JPA, CHECK constraint
+  и OUTBOX-событий.
 - **У пользователя не больше одного активного микрозайма.** Активными считаются статусы `SUBMITTED`, `APPROVED` и `ACTIVE`.
   Пока такой есть, новую заявку подать нельзя → `409 ACTIVE_APPLICATION_EXISTS`.
 - После `REPAID` активного займа нет, клиент может подать новую заявку.
