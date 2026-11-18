@@ -2,13 +2,16 @@ package dev.nosurprise.loan.application;
 
 import dev.nosurprise.customer.ProfileView;
 import dev.nosurprise.loan.calc.LoanQuote;
+import dev.nosurprise.loan.application.state.LoanState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
@@ -18,7 +21,10 @@ import java.util.UUID;
 /**
  * Заявка на микрозайм и сам заём после подписи (MICROLOANS.md §3.8).
  * Публичного setStatus нет: статус меняется только методами approve/reject/cancel/activate/expire/markRepaid,
- * каждый проверяет переход через {@link LoanStatus#canTransitionTo}.
+ * каждый проверяет переход через {@link LoanState#canTransitionTo} и {@link LoanState#validateTransition}.
+ * <p>
+ * Состояние инкапсулировано в {@link LoanState}; {@link LoanStatus} используется только как идентификатор
+ * для JPA, CHECK constraint в БД и OUTBOX-событий.
  */
 @Entity
 @Table(name = "loan_applications")
@@ -48,6 +54,9 @@ public class LoanApplication {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private LoanStatus status;
+
+    @Transient
+    private LoanState state;
 
     @Column(name = "decided_by")
     private UUID decidedBy;
@@ -85,6 +94,11 @@ public class LoanApplication {
     protected LoanApplication() {
     }
 
+    @PostLoad
+    void initState() {
+        this.state = LoanState.of(this.status);
+    }
+
     static LoanApplication submit(UUID userId, UUID loanTypeId, LoanQuote quote, ProfileView profile,
                                   UUID kycDocumentId, Instant now) {
         LoanApplication application = new LoanApplication();
@@ -96,59 +110,74 @@ public class LoanApplication {
         application.terms = LoanTerms.from(quote);
         application.applicant = ApplicantSnapshot.from(profile, kycDocumentId);
         application.status = LoanStatus.SUBMITTED;
+        application.state = LoanState.of(LoanStatus.SUBMITTED);
         application.createdAt = now;
         application.updatedAt = now;
         return application;
     }
 
     public void approve(UUID adminId, String comment, Instant now, Instant offerExpiresAt) {
-        moveTo(LoanStatus.APPROVED, now);
+        changeTo(LoanStatus.APPROVED, adminId, now);
         this.decidedBy = adminId;
         this.decidedAt = now;
-        this.decisionComment = comment;
+        this.decisionComment = blankToNull(comment);
         this.offerExpiresAt = offerExpiresAt;
+        this.state.onEnter(this, adminId, now);
     }
 
     public void reject(UUID adminId, String reason, Instant now) {
-        moveTo(LoanStatus.REJECTED, now);
+        changeTo(LoanStatus.REJECTED, adminId, now);
         this.decidedBy = adminId;
         this.decidedAt = now;
-        this.decisionComment = reason;
-        this.closedAt = now;
+        this.decisionComment = reason.trim();
+        this.state.onEnter(this, adminId, now);
     }
 
     public void cancel(Instant now) {
-        moveTo(LoanStatus.CANCELLED, now);
-        this.closedAt = now;
+        changeTo(LoanStatus.CANCELLED, null, now);
+        this.state.onEnter(this, null, now);
     }
 
     public void activate(Instant now) {
         if (isOfferExpired(now)) {
             throw new OfferExpiredException();
         }
-        moveTo(LoanStatus.ACTIVE, now);
+        changeTo(LoanStatus.ACTIVE, null, now);
+        this.state.onEnter(this, null, now);
     }
 
     public void expire(Instant now) {
-        moveTo(LoanStatus.EXPIRED, now);
-        this.closedAt = now;
+        changeTo(LoanStatus.EXPIRED, null, now);
+        this.state.onEnter(this, null, now);
     }
 
     public void markRepaid(Instant now) {
-        moveTo(LoanStatus.REPAID, now);
-        this.closedAt = now;
+        changeTo(LoanStatus.REPAID, null, now);
+        this.state.onEnter(this, null, now);
+    }
+
+    /**
+     * Общая смена состояния: проверка допустимости перехода, валидация бизнес-правил,
+     * выход из текущего состояния, смена статуса и вход в новое.
+     */
+    private void changeTo(LoanStatus target, UUID actorId, Instant now) {
+        LoanState current = LoanState.of(this.status);
+        if (!current.canTransitionTo(target)) {
+            throw new InvalidStatusTransitionException(this.status, target);
+        }
+        current.validateTransition(this, target, now);
+        current.onExit(this);
+        this.status = target;
+        this.state = LoanState.of(target);
+        this.updatedAt = now;
     }
 
     public boolean isOfferExpired(Instant now) {
         return offerExpiresAt != null && !now.isBefore(offerExpiresAt);
     }
 
-    private void moveTo(LoanStatus target, Instant now) {
-        if (!status.canTransitionTo(target)) {
-            throw new InvalidStatusTransitionException(status, target);
-        }
-        this.status = target;
-        this.updatedAt = now;
+    public void setClosedAt(Instant closedAt) {
+        this.closedAt = closedAt;
     }
 
     public UUID getId() {
@@ -213,5 +242,9 @@ public class LoanApplication {
 
     public Long getVersion() {
         return version;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }
