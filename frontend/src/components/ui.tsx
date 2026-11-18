@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
@@ -25,6 +25,7 @@ export function Button({
   variant?: ButtonVariant;
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button
@@ -197,7 +198,7 @@ export function Select<T extends string>({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="appearance-none w-full rounded-xl border border-line bg-field px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
+          className="ui-select w-full rounded-xl border border-line bg-field px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -401,4 +402,77 @@ export function AnimatedNumber({
   }, [value]);
 
   return <span className={cx('num tabular-nums', className)}>{format(display)}</span>;
+}
+
+/**
+ * Модальное подтверждение вместо нативного confirm(): карточка на токенах темы,
+ * оверлей, Esc/клик мимо — отмена. Автофокус на «Отмене»: опасное действие
+ * не должно срабатывать по случайному Enter. Скролл страницы блокируется.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel = 'Подтвердить',
+  cancelLabel = 'Отмена',
+  danger = false,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.documentElement.style.overflow = prevOverflow;
+    };
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="overlay-in fixed inset-0 z-50 grid place-items-center bg-ink/55 p-4 backdrop-blur-[2px]"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        className="dialog-in card w-full max-w-sm p-6"
+      >
+        <h2 id="confirm-dialog-title" className="font-display text-lg font-bold">{title}</h2>
+        <div className="mt-2 text-sm text-ink-2">{children}</div>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <Button ref={cancelRef} type="button" variant="secondary" disabled={busy} onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button type="button" variant={danger ? 'danger' : 'primary'} loading={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }

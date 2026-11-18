@@ -755,4 +755,23 @@ export const mockApi: Api = {
     requireAdmin();
     return state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
+  async adminBlockUser(id) {
+    await delay();
+    requireAdmin();
+    if (state.session?.id === id) {
+      throw new ApiError({ status: 400, code: 'SELF_BLOCK_FORBIDDEN', detail: 'Нельзя заблокировать собственный аккаунт' });
+    }
+    const user = state.users.find((u) => u.id === id);
+    if (!user) throw new ApiError({ status: 404, code: 'USER_NOT_FOUND' });
+    user.blocked = true;
+    save();
+  },
+  async adminUnblockUser(id) {
+    await delay();
+    requireAdmin();
+    const user = state.users.find((u) => u.id === id);
+    if (!user) throw new ApiError({ status: 404, code: 'USER_NOT_FOUND' });
+    user.blocked = false;
+    save();
+  },
 };

@@ -499,4 +499,7 @@ export const httpApi: Api = {
       }),
     );
   },
+
+  adminBlockUser: (id) => request<void>('POST', `/api/admin/users/${id}/block`),
+  adminUnblockUser: (id) => request<void>('POST', `/api/admin/users/${id}/unblock`),
 };

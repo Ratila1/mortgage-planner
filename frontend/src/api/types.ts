@@ -450,4 +450,7 @@ export interface Api {
   adminMarkMicroloanRepaid(id: Id): Promise<void>;
 
   adminListUsers(): Promise<AdminUser[]>;
+  /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */
+  adminBlockUser(id: Id): Promise<void>;
+  adminUnblockUser(id: Id): Promise<void>;
 }
