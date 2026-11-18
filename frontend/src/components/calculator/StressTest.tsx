@@ -28,7 +28,7 @@ export function StressTest({ params, basePayment, baseOverpayment }: { params: C
       setRows(await api.stress(params, DELTAS));
       setRowsFor(params);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, 'calc'));
     } finally {
       setBusy(false);
     }

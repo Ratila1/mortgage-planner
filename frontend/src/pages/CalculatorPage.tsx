@@ -86,7 +86,7 @@ export function CalculatorPage() {
         setResult(r);
         setError(null);
       })
-      .catch((err) => !cancelled && setError(errorMessage(err)))
+      .catch((err) => !cancelled && setError(errorMessage(err, 'calc')))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
