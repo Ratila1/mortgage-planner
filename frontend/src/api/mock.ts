@@ -156,11 +156,6 @@ const state: MockState = {
 let pendingVerificationEmail: string | null = null;
 let lastLoginLinkEmail: string | null = null;
 
-// Адрес, на который была «отправлена» демо-ссылка (подтверждение / вход по ссылке).
-
-// Адрес, на который была «отправлена» демо-ссылка (подтверждение / вход по ссылке).
-let pendingVerificationEmail: string | null = null;
-let lastLoginLinkEmail: string | null = null;
 
 function save() {
   try {
