@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
   api, errorMessage, type AppNotification, type LoanNotificationPayload, type PdfReadyPayload,
   type Scenario, type ScenarioRecalculatedPayload,
 } from '../api';
 import { ContractSigning } from '../components/ContractSigning';
-import { Alert, Badge, Button, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
+import { Alert, Badge, Button, EmptyState, PageTitle, Skeleton, cx } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, formatRate, toNumber } from '../lib/format';
 
 function Delta({ before, after, short = false }: { before: string; after: string; short?: boolean }) {
@@ -173,13 +173,20 @@ export function NotificationsPage() {
       </PageTitle>
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {items === null && !error ? (
-        <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+        <div className="space-y-3" aria-hidden="true">
+          <Skeleton className="h-36" />
+          <Skeleton className="h-36" />
+        </div>
       ) : items && items.length === 0 ? (
         <EmptyState emoji="🔕" title="Тишина" text="Когда банк поменяет ставку в одном из ваших сценариев или будет готов PDF, мы сразу напишем сюда." />
       ) : (
         <ul className="space-y-3">
-          {items?.map((n) => (
-            <li key={n.id} className={cx('card flex gap-4 p-5', !n.read && 'border-l-4 border-l-stamp')}>
+          {items?.map((n, i) => (
+            <li
+              key={n.id}
+              style={{ '--reveal-index': Math.min(i, 5) } as CSSProperties}
+              className={cx('card reveal flex gap-4 p-5', !n.read && 'border-l-4 border-l-stamp-solid')}
+            >
               <div className="flex-1">
                 <div className="mb-2 flex items-center gap-2 text-xs text-ink-3">
                   {!n.read && <Badge tone="stamp">новое</Badge>}

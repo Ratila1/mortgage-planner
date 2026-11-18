@@ -39,7 +39,7 @@ export function UserCabinetPage() {
       <Segmented
         value={activeTab}
         options={TABS.map((t) => ({ value: t.value, label: t.label }))}
-        onChange={(tab) => navigate(TAB_PATHS[tab])}
+        onChange={(tab) => navigate(TAB_PATHS[tab], { viewTransition: true })}
         label="Разделы"
       />
 

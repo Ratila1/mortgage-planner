@@ -31,8 +31,8 @@ export function AdminPanelPage() {
               onClick={() => setActiveTab(tab.value)}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
                 activeTab === tab.value
-                  ? 'bg-money text-white shadow-sm'
-                  : 'bg-paper-2 text-ink-2 hover:bg-paper-3 hover:text-ink'
+                  ? 'bg-money-solid text-white shadow-sm'
+                  : 'bg-paper-2 text-ink-2 hover:bg-ink/10 hover:text-ink'
               }`}
             >
               {tab.label}

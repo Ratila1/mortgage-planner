@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, errorMessage, type AdminUser, type LoginProvider } from '../api';
-import { Alert, Badge, Card, EmptyState, PageTitle, Spinner } from '../components/ui';
+import { Alert, Badge, Card, EmptyState, PageTitle, Skeleton } from '../components/ui';
 import { formatMoneyShort, formatDateTime } from '../lib/format';
 
 /** Способ входа хранится в users.provider и приходит с бэка как есть. */
@@ -46,7 +46,10 @@ export function AdminUsersPage() {
       {error && <Alert className="mb-4">{error}</Alert>}
 
       {loading ? (
-        <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+        <div className="space-y-3" aria-hidden="true">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-64" />
+        </div>
       ) : users && users.length === 0 ? (
         <Card>
           <EmptyState

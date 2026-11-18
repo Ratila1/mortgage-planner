@@ -148,7 +148,7 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
       {contract && !profile?.phoneVerified && <PhoneVerifyPanel phone={profile?.phone ?? ''} onVerified={load} />}
 
       {contract && profile?.phoneVerified && (
-        <div className="rounded-xl border border-line bg-white/60 p-4">
+        <div className="rounded-xl border border-line bg-field p-4">
           <p className="text-sm text-ink-2">
             Чтобы подписать договор, нажмите кнопку ниже — на номер{' '}
             <span className="num font-semibold">{profile.phone}</span> придёт код. Введите его и нажмите «Подписать».

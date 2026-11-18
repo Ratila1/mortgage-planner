@@ -6,7 +6,7 @@ import {
   type MicroloanApplication,
   type MicroloanApplicationStatus,
 } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Spinner } from '../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, PageTitle, Skeleton } from '../components/ui';
 import { ContractSigning } from '../components/ContractSigning';
 import { formatDateTime, formatMoney } from '../lib/format';
 
@@ -86,9 +86,7 @@ export function MicroloanApplicationsPage() {
 
       {applications === null ? (
         !error && (
-          <div className="grid place-items-center py-24 text-money">
-            <Spinner className="h-8 w-8" />
-          </div>
+          <div className="card p-5 sm:p-6" aria-hidden="true"><Skeleton className="h-48" /></div>
         )
       ) : applications.length === 0 ? (
         <EmptyState

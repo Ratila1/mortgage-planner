@@ -1,14 +1,14 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError, errorMessage } from '../api';
 import type { OAuthProvider } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { Alert, Button, Field, Segmented, Spinner, Stamp, TextInput } from '../components/ui';
+import { Alert, Button, Field, Segmented, Skeleton, Stamp, TextInput } from '../components/ui';
 
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-2">
-      <div className="hidden md:block">
+      <div className="reveal hidden md:block">
         <Stamp tone="money" className="mb-6">Без мелкого шрифта</Stamp>
         <h1 className="font-display text-4xl font-extrabold leading-tight tracking-tight">{title}</h1>
         <p className="mt-4 text-lg text-ink-2">{subtitle}</p>
@@ -18,7 +18,7 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
           <li>✓ Пароль храним хэшем, токен — только в памяти браузера</li>
         </ul>
       </div>
-      <div className="card p-6 sm:p-8">
+      <div className="card reveal p-6 sm:p-8" style={{ '--reveal-index': 1 } as CSSProperties}>
         <h2 className="font-display text-2xl font-bold md:hidden">{title}</h2>
         <div className="mt-4 md:mt-0">{children}</div>
         {footer && <div className="mt-6 border-t border-line pt-5 text-center text-sm text-ink-2">{footer}</div>}
@@ -73,7 +73,7 @@ function OAuthButtons() {
         <a
           key={provider}
           href={api.oauthUrl(provider)}
-          className="flex items-center justify-center gap-2 rounded-xl border border-line bg-white/70 px-3 py-2.5 text-sm font-semibold transition hover:border-ink-3"
+          className="flex items-center justify-center gap-2 rounded-xl border border-line bg-field px-3 py-2.5 text-sm font-semibold transition hover:border-ink-3"
         >
           {OAUTH_ICONS[provider]}
           {OAUTH_LABELS[provider]}
@@ -213,8 +213,10 @@ export function LoginPage() {
   if (tokenState === 'consuming') {
     return (
       <AuthShell title="Вход по ссылке" subtitle="Меняем ссылку из письма на сессию.">
-        <div className="py-8 text-center text-money">
-          <Spinner className="h-8 w-8" />
+        <div className="space-y-3" aria-hidden="true">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-11 w-full" />
         </div>
       </AuthShell>
     );
@@ -243,7 +245,7 @@ export function LoginPage() {
       />
       <form onSubmit={submit} className="mt-5 space-y-4">
         {mode === 'link' && linkSent ? (
-          <div className="rounded-xl border border-line bg-white/60 px-4 py-3 text-sm">
+          <div className="rounded-xl border border-line bg-field px-4 py-3 text-sm">
             <p>
               Мы отправили ссылку для входа на <b>{email}</b>. Откройте письмо и перейдите
               по ней — вы сразу окажетесь в аккаунте, ничего вводить не нужно.
@@ -369,8 +371,9 @@ export function VerifyEmailPage() {
     <div className="mx-auto max-w-md">
       <div className="card p-8 text-center">
         {state === 'loading' && (
-          <div className="py-8 text-money">
-            <Spinner className="h-8 w-8" />
+          <div className="space-y-3" aria-hidden="true">
+            <Skeleton className="mx-auto h-8 w-8 rounded-full" />
+            <Skeleton className="h-5 w-48 mx-auto" />
           </div>
         )}
         {state === 'ok' && (
@@ -378,7 +381,7 @@ export function VerifyEmailPage() {
             <Stamp tone="money" className="mb-5">Подтверждено</Stamp>
             <h1 className="font-display text-2xl font-bold">Почта подтверждена</h1>
             <p className="mt-2 text-sm text-ink-2">Вы уже вошли в аккаунт — отдельно вводить данные не нужно.</p>
-            <Link to="/scenarios" className="mt-6 inline-block rounded-xl bg-money px-5 py-3 text-sm font-semibold text-white hover:bg-money-2">К моим сценариям</Link>
+            <Link to="/scenarios" viewTransition className="mt-6 inline-block rounded-xl bg-money-solid px-5 py-3 text-sm font-semibold text-white hover:bg-money-solid-2 transition-colors">К моим сценариям</Link>
           </>
         )}
         {state === 'error' && (

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, errorMessage, type BankOffer, type OfferInput } from '../api';
-import { Alert, Badge, Button, Card, Field, PageTitle, Spinner, TextInput, cx } from '../components/ui';
+import { Alert, Badge, Button, Card, Field, PageTitle, Skeleton, TextInput, cx } from '../components/ui';
 import { formatDateTime, formatRate, formatTerm, parseMoneyInput } from '../lib/format';
 
 const EMPTY: OfferInput = { bankName: '', rate: '', minDownPaymentPercent: '20', maxTermMonths: 300, active: true };
@@ -130,7 +130,10 @@ export function AdminOffersPage() {
       <div className="grid gap-6 lg:grid-cols-12">
         <div className={cx(editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
           {offers === null && !error ? (
-            <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+            <div className="space-y-3" aria-hidden="true">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-64" />
+            </div>
           ) : (
             <div className="card overflow-x-auto p-0">
               <table className="w-full min-w-[640px] text-sm">

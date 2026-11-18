@@ -8,7 +8,7 @@ import {
   type MicroloanType,
   type PassportStatus,
 } from '../api';
-import { Alert, Button, Card, Field, FileInput, PageTitle, Spinner, TextInput } from '../components/ui';
+import { Alert, Button, Card, Field, FileInput, PageTitle, Skeleton, TextInput } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, parseMoneyInput, toNumber } from '../lib/format';
 
 /** Параметры займа приходят из калькулятора через state навигации. */
@@ -118,8 +118,9 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
 
   if (loading) {
     return (
-      <div className="grid place-items-center py-24 text-money">
-        <Spinner className="h-8 w-8" />
+      <div className="space-y-4" aria-hidden="true">
+        <Skeleton className="h-10 w-64 max-w-full" />
+        <Skeleton className="h-64" />
       </div>
     );
   }

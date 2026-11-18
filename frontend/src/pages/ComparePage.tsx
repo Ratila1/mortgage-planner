@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, errorMessage, type Scenario } from '../api';
-import { Alert, Badge, EmptyState, PageTitle, Spinner, Stamp } from '../components/ui';
+import { Alert, Badge, EmptyState, PageTitle, Skeleton, Stamp } from '../components/ui';
 import { formatCompact, formatMoney, formatMoneyShort, formatRate, formatTerm, toNumber } from '../lib/format';
 
 type Row = {
@@ -42,7 +42,14 @@ export function ComparePage() {
   }, [ids]);
 
   if (error) return <Alert>{error}</Alert>;
-  if (scenarios === null) return <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>;
+  if (scenarios === null)
+    return (
+      <div className="space-y-4" aria-hidden="true">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-64" />
+        <Skeleton className="h-72" />
+      </div>
+    );
   if (scenarios.length < 2) {
     return (
       <>
@@ -51,7 +58,7 @@ export function ComparePage() {
           emoji="⚖️"
           title="Нужно хотя бы два сценария"
           text="Отметьте 2–3 сохранённых сценария в кабинете — и мы честно покажем, какой из них меньше радует банк."
-          action={<Link to="/scenarios" className="rounded-xl bg-money px-4 py-2.5 text-sm font-semibold text-white">К сценариям</Link>}
+          action={<Link to="/scenarios" viewTransition className="rounded-xl bg-money-solid px-4 py-2.5 text-sm font-semibold text-white">К сценариям</Link>}
         />
       </>
     );
@@ -68,7 +75,7 @@ export function ComparePage() {
     <div className="space-y-6">
       <PageTitle eyebrow="Сравнение" title="Кто переплатит меньше" />
 
-      <div className="card overflow-x-auto p-0">
+      <div className="card reveal-scroll overflow-x-auto p-0">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b border-line">
@@ -102,7 +109,7 @@ export function ComparePage() {
         </table>
       </div>
 
-      <div className="card p-5 sm:p-6">
+      <div className="card reveal-scroll p-5 sm:p-6">
         <h2 className="mb-4 font-display text-lg font-bold">Тело кредита и проценты</h2>
         <div className="h-72" role="img" aria-label="Сравнение суммы кредита и переплаты по сценариям">
           <ResponsiveContainer width="100%" height="100%">
@@ -111,7 +118,7 @@ export function ComparePage() {
               <XAxis type="number" tickFormatter={formatCompact} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: 'var(--color-ink-3)' }} />
               <YAxis type="category" dataKey="name" width={130} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: 'var(--color-ink-2)' }} />
               <Tooltip
-                cursor={{ fill: 'rgb(22 33 27 / 0.05)' }}
+                cursor={{ fill: 'color-mix(in oklab, var(--color-ink) 6%, transparent)' }}
                 contentStyle={{ borderRadius: 12, border: '1px solid var(--color-line)', background: 'var(--color-card)', fontSize: 13 }}
                 formatter={(value, name) => [formatMoneyShort(Number(value)), name === 'principal' ? 'Кредит' : 'Переплата']}
               />

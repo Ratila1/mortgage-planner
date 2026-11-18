@@ -330,7 +330,7 @@ export const mockApi: Api = {
   async listScenarios() {
     await delay();
     requireUser();
-    return [...state.scenarios].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state.scenarios.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
   async createScenario(name, params, offerId) {
     await delay();
@@ -404,7 +404,7 @@ export const mockApi: Api = {
   async listNotifications() {
     await delay();
     requireUser();
-    return [...state.notifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state.notifications.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
   async markNotificationRead(id) {
     await delay(80);
@@ -753,6 +753,6 @@ export const mockApi: Api = {
   async adminListUsers() {
     await delay();
     requireAdmin();
-    return [...state.users].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 };

@@ -7,7 +7,7 @@ import {
   type AdminMicroloanApplicationCard,
   type MicroloanApplicationStatus,
 } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Select, Spinner, TextInput } from '../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, PageTitle, Select, Skeleton, Spinner, TextInput } from '../components/ui';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { MICROLOAN_STATUS_LABELS, MICROLOAN_STATUS_TONES } from './MicroloanApplicationsPage';
 
@@ -89,7 +89,10 @@ export function AdminMicroloanApplicationsPage() {
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
       {applications === null ? (
-        <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+        <div className="space-y-3" aria-hidden="true">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-64" />
+        </div>
       ) : applications.length === 0 ? (
         <Card>
           <EmptyState title="Заявок нет" text={`Нет заявок в статусе «${MICROLOAN_STATUS_LABELS[status]}».`} emoji="📋" />
@@ -235,7 +238,7 @@ function FragmentRow({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-white/60 p-4">
+    <section className="rounded-xl border border-line bg-field p-4">
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-3">{title}</h4>
       {children}
     </section>

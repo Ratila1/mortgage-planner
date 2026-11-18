@@ -3,51 +3,159 @@
 /*
  * Дизайн-токены. Идея: «бумажная» бухгалтерия с печатями —
  * тёплый фон, тёмно-зелёные «деньги», красная печать для переплаты.
+ * Днём — светлая бумага, ночью — «ночная бухгалтерия»: тёмный мох,
+ * светлые чернила, те же печати, но светящиеся.
  */
+
+/*
+ * Сырые пары «светлая/тёмная» + каскад выбора:
+ *   1. базово — светлая,
+ *   2. prefers-color-scheme — системная тёмная (фолбэк для старых браузеров),
+ *   3. light-dark() — следует color-scheme, а им управляет <meta name="color-scheme">
+ *      (переключатель темы в шапке пишет именно в мета, см. src/theme.ts).
+ * Без JS мета остаётся «light dark» — сайт следует системе, ничего не ломается.
+ */
+:root {
+  color-scheme: light dark;
+  /* Переключатель темы работает через мета — возвращаем её выбор в каскад. */
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
+}
+
+:root {
+  /* Светлая тема — базовые значения (порядок важен: их переопределяют блоки ниже). */
+  --p-paper: #f5f1e6;
+  --p-paper-2: #ece6d6;
+  --p-card: #fffdf7;
+  --p-field: rgb(255 255 255 / 0.7);
+  --p-line: #ddd5c1;
+  --p-grid: rgb(22 33 27 / 0.035);
+  --p-ink: #16211b;
+  --p-ink-2: #4a5a50;
+  --p-ink-3: #7d8a81;
+  --p-money: #13603f;
+  --p-money-2: #0c4a30;
+  --p-stamp: #c2361f;
+  --p-gold: #e2a40c;
+  --p-gold-ink: #7a5600;
+  --p-money-solid: #13603f;
+  --p-money-solid-2: #0c4a30;
+  --p-stamp-solid: #c2361f;
+  --p-money-soft: #dcefe3;
+  --p-stamp-soft: #f8e1da;
+  --p-gold-soft: #fbefc9;
+  --p-shadow-card: 0 1px 0 rgb(22 33 27 / 0.06), 0 12px 32px -18px rgb(22 33 27 / 0.35);
+
+  @media (prefers-color-scheme: dark) {
+    --p-paper: #141812;
+    --p-paper-2: #232b20;
+    --p-card: #1d231b;
+    --p-field: rgb(255 255 255 / 0.07);
+    --p-line: #3a4234;
+    --p-grid: rgb(236 231 214 / 0.045);
+    --p-ink: #ece7d6;
+    --p-ink-2: #b6b19e;
+    --p-ink-3: #8b8674;
+    --p-money: #4ecb8f;
+    --p-money-2: #86e2b1;
+    --p-stamp: #ff8a70;
+    --p-gold: #f0b429;
+    --p-gold-ink: #f2c14e;
+    --p-money-solid: #187a4b;
+    --p-money-solid-2: #125c39;
+    --p-stamp-solid: #b8321d;
+    --p-money-soft: #14321f;
+    --p-stamp-soft: #3d241b;
+    --p-gold-soft: #37290e;
+    --p-shadow-card: 0 1px 0 rgb(0 0 0 / 0.2), 0 12px 32px -18px rgb(0 0 0 / 0.6);
+  }
+
+  /* Современные браузеры: значения следуют за color-scheme (и за переключателем темы). */
+  @supports (color: light-dark(#fff, #000)) {
+    --p-paper: light-dark(#f5f1e6, #141812);
+    --p-paper-2: light-dark(#ece6d6, #232b20);
+    --p-card: light-dark(#fffdf7, #1d231b);
+    --p-field: light-dark(rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.07));
+    --p-line: light-dark(#ddd5c1, #3a4234);
+    --p-grid: light-dark(rgb(22 33 27 / 0.035), rgb(236 231 214 / 0.045));
+    --p-ink: light-dark(#16211b, #ece7d6);
+    --p-ink-2: light-dark(#4a5a50, #b6b19e);
+    --p-ink-3: light-dark(#7d8a81, #8b8674);
+    --p-money: light-dark(#13603f, #4ecb8f);
+    --p-money-2: light-dark(#0c4a30, #86e2b1);
+    --p-stamp: light-dark(#c2361f, #ff8a70);
+    --p-gold: light-dark(#e2a40c, #f0b429);
+    --p-gold-ink: light-dark(#7a5600, #f2c14e);
+    --p-money-solid: light-dark(#13603f, #187a4b);
+    --p-money-solid-2: light-dark(#0c4a30, #125c39);
+    --p-stamp-solid: light-dark(#c2361f, #b8321d);
+    --p-money-soft: light-dark(#dcefe3, #14321f);
+    --p-stamp-soft: light-dark(#f8e1da, #3d241b);
+    --p-gold-soft: light-dark(#fbefc9, #37290e);
+    --p-shadow-card: light-dark(
+      0 1px 0 rgb(22 33 27 / 0.06),
+      0 12px 32px -18px rgb(22 33 27 / 0.35),
+      0 1px 0 rgb(0 0 0 / 0.2),
+      0 12px 32px -18px rgb(0 0 0 / 0.6)
+    );
+  }
+}
+
+/* Tailwind-токены ссылаются на --p-* значения, утилиты не меняются. */
 @theme {
   --font-display: "Unbounded", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-paper: #f5f1e6;
-  --color-paper-2: #ece6d6;
-  --color-card: #fffdf7;
-  --color-ink: #16211b;
-  --color-ink-2: #4a5a50;
-  --color-ink-3: #7d8a81;
-  --color-line: #ddd5c1;
+  --color-paper: var(--p-paper);
+  --color-paper-2: var(--p-paper-2);
+  --color-card: var(--p-card);
+  --color-field: var(--p-field);
+  --color-line: var(--p-line);
+  --color-ink: var(--p-ink);
+  --color-ink-2: var(--p-ink-2);
+  --color-ink-3: var(--p-ink-3);
 
-  --color-money: #13603f;
-  --color-money-2: #0c4a30;
-  --color-money-soft: #dcefe3;
+  --color-money: var(--p-money);
+  --color-money-2: var(--p-money-2);
+  --color-money-soft: var(--p-money-soft);
+  --color-money-solid: var(--p-money-solid);
+  --color-money-solid-2: var(--p-money-solid-2);
 
-  --color-stamp: #c2361f;
-  --color-stamp-soft: #f8e1da;
+  --color-stamp: var(--p-stamp);
+  --color-stamp-solid: var(--p-stamp-solid);
+  --color-stamp-soft: var(--p-stamp-soft);
 
-  --color-gold: #e2a40c;
-  --color-gold-soft: #fbefc9;
+  --color-gold: var(--p-gold);
+  --color-gold-soft: var(--p-gold-soft);
+  --color-gold-ink: var(--p-gold-ink);
 
   --radius-card: 1.25rem;
-  --shadow-card: 0 1px 0 rgb(22 33 27 / 0.06), 0 12px 32px -18px rgb(22 33 27 / 0.35);
+  --shadow-card: var(--p-shadow-card);
 }
 
 @layer base {
   html {
-    color-scheme: light;
+    accent-color: var(--color-money);
+    scrollbar-color: var(--color-ink-3) transparent;
   }
   body {
     @apply bg-paper font-sans text-ink antialiased;
-    /* лёгкая «бумажная» сетка */
+    /* лёгкая «бумажная» сетка — тоже переключается вместе с темой */
     background-image:
-      linear-gradient(rgb(22 33 27 / 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(22 33 27 / 0.035) 1px, transparent 1px);
+      linear-gradient(var(--p-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--p-grid) 1px, transparent 1px);
     background-size: 28px 28px;
   }
   ::selection {
     background: var(--color-gold-soft);
   }
   :focus-visible {
-    outline: 2px solid var(--color-money);
+    outline: 2px solid var(--color-ink);
     outline-offset: 2px;
   }
   input[type="number"]::-webkit-inner-spin-button,
@@ -92,6 +200,118 @@
   animation: stamp-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
 
+/*
+ * Движение. Всё — только opacity/transform (композитор).
+ * По гайду motion: анимация включается внутри no-preference,
+ * а не отключается глобальным animation: none.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Появление секций при монтировании (смена вкладки/маршрута). */
+  .reveal {
+    animation: rise 0.5s cubic-bezier(0.22, 0.65, 0.3, 1) both;
+    animation-delay: calc(var(--reveal-index, 0) * 70ms);
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      translate: 0 14px;
+    }
+  }
+
+  /* Микроподъём интерактивных карточек. */
+  .card-hover {
+    transition: translate 0.18s ease-out, box-shadow 0.18s ease-out;
+  }
+  .card-hover:hover {
+    translate: 0 -3px;
+  }
+
+  /* «Дышащая» точка непрочитанных. */
+  .badge-live {
+    animation: live-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes live-pulse {
+    0%, 100% { scale: 1; }
+    50% { scale: 1.15; }
+  }
+
+  /* Мобильное меню. */
+  .menu-panel {
+    animation: menu-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      translate: 0 -8px;
+    }
+  }
+}
+
+/* Скелетон загрузки: пульс только у тех, кто не просил меньше движения. */
+.skeleton {
+  @apply rounded-xl bg-paper-2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes skeleton-pulse {
+    50% { opacity: 0.55; }
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .stamp-in { animation: none; }
+  .skeleton {
+    opacity: 0.6;
+  }
+}
+
+/* Тень шапки по мере прокрутки — на scroll-driven анимации, без JS-слушателей. */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .site-header {
+      animation: header-elevate linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 64px;
+    }
+    @keyframes header-elevate {
+      to {
+        box-shadow: 0 8px 24px -16px rgb(0 0 0 / 0.35);
+      }
+    }
+  }
+}
+
+/* Scroll-driven проявление секций ниже первого экрана. */
+@supports ((animation-timeline: view()) and (animation-range: entry)) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal-scroll {
+      animation: reveal-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+    @keyframes reveal-in {
+      from {
+        opacity: 0;
+        translate: 0 22px;
+      }
+    }
+  }
+}
+
+/* Переходы между страницами (View Transitions): короткий кросс-фейд. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp-in {
+    animation: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, errorMessage, type MicroloanType, type MicroloanTypeInput } from '../api';
-import { Alert, Badge, Button, Card, Field, PageTitle, Spinner, TextInput, cx } from '../components/ui';
+import { Alert, Badge, Button, Card, Field, PageTitle, Skeleton, TextInput, cx } from '../components/ui';
 import { formatMoneyShort, formatRate, parseMoneyInput } from '../lib/format';
 
 const EMPTY: MicroloanTypeInput = {
@@ -203,7 +203,10 @@ export function AdminMicroloanTypesPage() {
       <div className="grid gap-6 lg:grid-cols-12">
         <div className={cx(editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
           {types === null && !error ? (
-            <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+            <div className="space-y-3" aria-hidden="true">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-64" />
+            </div>
           ) : (
             <div className="card overflow-x-auto p-0">
               <table className="w-full min-w-[720px] text-sm">

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api, errorMessage, type BankOffer, type Scenario } from '../api';
-import { Alert, Badge, Button, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
+import { Alert, Badge, Button, EmptyState, PageTitle, Skeleton, cx } from '../components/ui';
 import { formatDate, formatMoney, formatMoneyShort, formatRate, formatTerm } from '../lib/format';
 
 const MAX_COMPARE = 3;
@@ -61,7 +61,11 @@ export function ScenariosPage() {
       {notice && <div className="mb-6"><Alert tone="money">{notice} <Link to="/notifications" className="font-semibold underline underline-offset-4">Уведомления →</Link></Alert></div>}
 
       {scenarios === null && !error ? (
-        <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
       ) : scenarios && scenarios.length === 0 ? (
         <EmptyState
           emoji="🏚️"
@@ -72,11 +76,15 @@ export function ScenariosPage() {
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {scenarios?.map((s) => {
+            {scenarios?.map((s, i) => {
               const offer = offers.find((o) => o.id === s.offerId);
               const isSelected = selected.includes(s.id);
               return (
-                <article key={s.id} className={cx('card flex flex-col p-5 transition', isSelected && 'ring-2 ring-money')}>
+                <article
+                  key={s.id}
+                  style={{ '--reveal-index': Math.min(i, 5) } as CSSProperties}
+                  className={cx('card reveal card-hover flex flex-col p-5 transition', isSelected && 'ring-2 ring-money')}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="truncate font-display text-base font-bold" title={s.name}>{s.name}</h2>
@@ -123,7 +131,7 @@ export function ScenariosPage() {
 
                   {/* createdAt и updatedAt ставятся двумя Instant.now() — сравниваем с запасом в минуту */}
                   {Date.parse(s.updatedAt) - Date.parse(s.createdAt) > 60_000 && (
-                    <p className="mt-3 text-xs text-[#8a6100]">Пересчитан {formatDate(s.updatedAt)} — банк поменял ставку.</p>
+                    <p className="mt-3 text-xs text-gold-ink">Пересчитан {formatDate(s.updatedAt)} — банк поменял ставку.</p>
                   )}
 
                   <div className="mt-auto flex gap-2 pt-5">
@@ -143,7 +151,7 @@ export function ScenariosPage() {
               <div className="flex items-center gap-3 rounded-2xl border border-line bg-card/95 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur">
                 <span className="text-sm text-ink-2">Выбрано {selected.length} из {MAX_COMPARE}</span>
                 {selected.length >= 2 ? (
-                  <Link to={`/compare?ids=${selected.join(',')}`} className="rounded-xl bg-money px-4 py-2 text-sm font-semibold text-white hover:bg-money-2">
+                  <Link to={`/compare?ids=${selected.join(',')}`} viewTransition className="rounded-xl bg-money-solid px-4 py-2 text-sm font-semibold text-white hover:bg-money-solid-2">
                     Сравнить
                   </Link>
                 ) : (

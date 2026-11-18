@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { api, errorMessage, type MicroloanCalculationResult, type MicroloanType } from '../api';
-import { Alert, Button, Card, EmptyState, Field, Select, Spinner, TextInput } from '../components/ui';
+import { Alert, AnimatedNumber, Button, Card, EmptyState, Field, Select, Skeleton, Spinner, TextInput } from '../components/ui';
 import { formatMoney, formatMoneyShort, formatRate, parseMoneyInput, toNumber } from '../lib/format';
 
 /** Пауза перед запросом к /api/loans/quote: пока ползунок тянут, на бэк не ходим. */
@@ -125,7 +125,7 @@ export function MicroloanCalculatorPage() {
 
   return (
     <div className="space-y-8">
-      <section className="max-w-3xl">
+      <section className="reveal max-w-3xl">
         <p className="eyebrow mb-3">Калькулятор микрозайма</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
           Микрозайм без <span className="relative whitespace-nowrap text-money">сюрпризов<svg aria-hidden="true" viewBox="0 0 300 12" className="absolute -bottom-1 left-0 h-3 w-full text-gold" preserveAspectRatio="none"><path d="M2 9c60-6 140-8 296-3" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" /></svg></span>
@@ -136,8 +136,9 @@ export function MicroloanCalculatorPage() {
       </section>
 
       {types === null && (
-        <div className="grid place-items-center py-16 text-money">
-          <Spinner className="h-8 w-8" />
+        <div className="grid gap-6 lg:grid-cols-12" aria-hidden="true">
+          <Skeleton className="h-96 lg:col-span-5" />
+          <Skeleton className="h-96 lg:col-span-7" />
         </div>
       )}
 
@@ -153,7 +154,7 @@ export function MicroloanCalculatorPage() {
 
       {selectedType && types && (
         <div className="grid gap-6 lg:grid-cols-12">
-          <Card className="lg:col-span-5">
+          <Card className="reveal lg:col-span-5" style={{ '--reveal-index': 1 } as CSSProperties}>
             <SectionTitle>Параметры</SectionTitle>
             <form onSubmit={handleSubmit} className="space-y-5">
               <Field label="Тип займа" htmlFor="ml-type">
@@ -222,7 +223,7 @@ export function MicroloanCalculatorPage() {
           </Card>
 
           <div className="space-y-6 lg:col-span-7">
-            <Card className="lg:sticky lg:top-24">
+            <Card className="reveal lg:sticky lg:top-24" style={{ '--reveal-index': 2 } as CSSProperties}>
               <SectionTitle aside={quoting ? <Spinner className="h-4 w-4 text-money" /> : undefined}>Итог</SectionTitle>
               {shown ? <ResultSummary result={shown} /> : <Alert tone="gold">{validation}</Alert>}
               {quoteError && <Alert className="mt-4">{quoteError}</Alert>}
@@ -244,20 +245,28 @@ function ResultSummary({ result }: { result: MicroloanCalculationResult }) {
   return (
     <div>
       <p className="eyebrow">К возврату (один платёж в конце срока)</p>
-      <p className="num mt-1 text-4xl font-bold tracking-tight sm:text-5xl">{formatMoney(result.totalAmount)}</p>
+      <p className="mt-1 text-4xl font-bold tracking-tight sm:text-5xl">
+        <AnimatedNumber value={total} format={(n) => formatMoney(n)} />
+      </p>
 
       <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Сумма займа</dt>
-          <dd className="num mt-1 text-lg font-bold">{formatMoneyShort(loan)}</dd>
+          <dd className="mt-1 text-lg font-bold">
+            <AnimatedNumber value={loan} format={(n) => formatMoneyShort(n)} />
+          </dd>
         </div>
         <div className="rounded-xl bg-stamp-soft/70 p-3.5">
           <dt className="text-xs font-medium text-stamp">Проценты</dt>
-          <dd className="num mt-1 text-lg font-bold text-stamp">{formatMoneyShort(interest)}</dd>
+          <dd className="mt-1 text-lg font-bold text-stamp">
+            <AnimatedNumber value={interest} format={(n) => formatMoneyShort(n)} />
+          </dd>
         </div>
         <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Надбавка типа</dt>
-          <dd className="num mt-1 text-lg font-bold">{formatMoneyShort(modifier)}</dd>
+          <dd className="mt-1 text-lg font-bold">
+            <AnimatedNumber value={modifier} format={(n) => formatMoneyShort(n)} />
+          </dd>
         </div>
         <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Срок</dt>
