@@ -63,6 +63,8 @@ backend/src/main/java/dev/nosurprise/
   offer/          банковские предложения + кэш + событие смены ставки
   scenario/       сохранённые сценарии, сравнение, пересчёт
   notification/   уведомления (в БД + письма), consumer-ы очереди
+  customer/       профиль клиента, подтверждение телефона, KYC (фото паспорта), панель пользователей админа
+  loan/           микрозаймы: типы, заявки, договоры, подпись, кредитная история (Mongo) — см. MICROLOANS.md
 backend/src/main/resources/db/migration/   Flyway: V{N}__описание.sql
 frontend/src/                              React-приложение:
   api/          типы контракта (§9), http-клиент, моки (VITE_USE_MOCKS=true; по умолчанию — настоящий API)
@@ -76,6 +78,7 @@ frontend/src/                              React-приложение:
 - JPA-сущности и Mongo-документы не возвращаются из контроллеров, только DTO (`record`).
 - Модули общаются через публичные сервисы или события RabbitMQ, но не через чужие репозитории.
 - Допустимые зависимости: `scenario → calculator, offer`; `calc → calculator`; `auth → user`; `notification` слушает события; `offer` ни от кого.
+- Микрозаймы: `customer → user`; `loan → customer, user`; `notification` читает заявку через `LoanApplicationService`. Правила модулей микрозаймов (outbox вместо `AFTER_COMMIT`, кредитная история) — в `MICROLOANS.md`.
 
 ## 5. Расчётное ядро (`calculator`)
 

@@ -59,7 +59,7 @@ export function PaymentChart({ schedule }: { schedule: ScheduleRow[] }) {
           <YAxis yAxisId="pay" tickFormatter={formatCompact} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 12, fill: 'var(--color-ink-3)' }} />
           <YAxis yAxisId="bal" orientation="right" tickFormatter={formatCompact} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 12, fill: 'var(--color-ink-3)' }} />
           <Tooltip
-            cursor={{ fill: 'rgb(22 33 27 / 0.05)' }}
+            cursor={{ fill: 'color-mix(in oklab, var(--color-ink) 6%, transparent)' }}
             contentStyle={{ borderRadius: 12, border: '1px solid var(--color-line)', background: 'var(--color-card)', fontSize: 13 }}
             labelFormatter={(year) => `${year}-й год`}
             formatter={(value, name) => [formatMoneyShort(Number(value)), LABELS[String(name)] ?? String(name)]}
