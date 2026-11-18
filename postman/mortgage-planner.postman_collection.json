@@ -1,0 +1,848 @@
+{
+  "info": {
+    "_postman_id": "3f0d5c2a-8c8e-4f4e-9d2a-2f6f0a3b7c11",
+    "name": "Mortgage Planner (local)",
+    "description": "End-to-end flow against the local docker compose stack.\n\nAll traffic goes through the frontend nginx on http://localhost:8080 (the backend and the SMS service are not published).\n\nRun the folders in order:\n1. Auth (email) - register, read the confirmation link from Mailpit, verify, get an access token.\n2. Profile - the phone number must be saved here before requesting an SMS code.\n3. Phone verification - request a code, read it from sms.sms_request (the sim provider does not log it), confirm.\n\nThe access token is stored by the test scripts and sent as a Bearer token. The refresh cookie is kept by the Postman cookie jar.\n\nRate limits per IP: register 5/min, login 10/min, refresh/logout 30/min, link consume 10/min, link request 5/min. SMS service: 3 requests/min per phone, 30/min per IP.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Auth (email)",
+      "description": "Registration, email confirmation, session. Every request in this folder is public, so auth is disabled.",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address on every run: an already registered email is not emailed again (anti-enumeration).",
+                  "// Comment the next two lines out to use the email from the environment instead.",
+                  "const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);",
+                  "pm.environment.set(\"email\", \"pm-\" + suffix + \"@example.com\");",
+                  "console.log(\"register email:\", pm.environment.get(\"email\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"202 Accepted\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "// The email is delivered asynchronously via the outbox; wait a second before reading Mailpit."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mailpit: find confirmation email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const email = (pm.environment.get(\"email\") || \"\").toLowerCase();",
+                  "const body = pm.response.json();",
+                  "const messages = body.messages || [];",
+                  "const match = messages.find(function (m) {",
+                  "    const to = (m.To || []).some(function (t) { return (t.Address || \"\").toLowerCase() === email; });",
+                  "    const subject = (m.Subject || \"\").toLowerCase();",
+                  "    return to && subject.indexOf(\"confirm\") !== -1;",
+                  "});",
+                  "pm.test(\"confirmation email found for \" + email, function () {",
+                  "    pm.expect(match, \"no 'Confirm your email' message yet - wait a second and send this request again\").to.be.ok;",
+                  "});",
+                  "if (match) {",
+                  "    pm.environment.set(\"mailId\", match.ID);",
+                  "    console.log(\"mailpit message id:\", match.ID);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/search?query=to:{{email}}&limit=20",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "to:{{email}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mailpit: read email token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const text = body.Text || \"\";",
+                  "const match = text.match(/token=([A-Za-z0-9_\\-]+)/);",
+                  "pm.test(\"verification token found in email body\", function () {",
+                  "    pm.expect(match, \"email body does not contain ?token=...\").to.be.ok;",
+                  "});",
+                  "if (match) {",
+                  "    pm.environment.set(\"emailToken\", match[1]);",
+                  "    console.log(\"email token:\", match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/message/{{mailId}}",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "message",
+                "{{mailId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify email (login)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test(\"access token returned\", function () {",
+                  "    pm.expect(body.accessToken).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "pm.environment.set(\"accessToken\", body.accessToken);",
+                  "// The refresh_token cookie (Path=/api/auth) is stored by the Postman cookie jar."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{emailToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/verify-email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "verify-email"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resend verification email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"202 Accepted\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/verify-email/resend?email={{email}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "verify-email",
+                "resend"
+              ],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "{{email}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.environment.set(\"accessToken\", body.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test(\"access token rotated\", function () {",
+                  "    pm.expect(body.accessToken).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "pm.environment.set(\"accessToken\", body.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "pm.environment.set(\"accessToken\", \"\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Request login link",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"202 Accepted\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login-link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login-link"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mailpit: find login link email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const email = (pm.environment.get(\"email\") || \"\").toLowerCase();",
+                  "const messages = (pm.response.json().messages || []);",
+                  "const match = messages.find(function (m) {",
+                  "    const to = (m.To || []).some(function (t) { return (t.Address || \"\").toLowerCase() === email; });",
+                  "    return to && (m.Subject || \"\").toLowerCase().indexOf(\"вход\") !== -1;",
+                  "});",
+                  "pm.test(\"login link email found for \" + email, function () {",
+                  "    pm.expect(match, \"no login link message yet - wait a second and send this request again\").to.be.ok;",
+                  "});",
+                  "if (match) {",
+                  "    pm.environment.set(\"loginMailId\", match.ID);",
+                  "    console.log(\"login link message id:\", match.ID);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/search?query=to:{{email}}&limit=20",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "to:{{email}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mailpit: read login link token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const text = body.Text || \"\";",
+                  "const match = text.match(/token=([A-Za-z0-9_\\-]+)/);",
+                  "pm.test(\"login link token found in email body\", function () {",
+                  "    pm.expect(match, \"email body does not contain ?token=...\").to.be.ok;",
+                  "});",
+                  "if (match) {",
+                  "    pm.environment.set(\"emailToken\", match[1]);",
+                  "    console.log(\"login link token:\", match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/message/{{loginMailId}}",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "message",
+                "{{loginMailId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consume login link",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.environment.set(\"accessToken\", body.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{emailToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login-link/consume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login-link",
+                "consume"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Profile",
+      "description": "The profile (with an E.164 phone number) is required before requesting an SMS code.",
+      "item": [
+        {
+          "name": "Save profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test(\"phone is stored in E.164\", function () {",
+                  "    pm.expect(body.phone).to.match(/^\\+\\d{10,15}$/);",
+                  "});",
+                  "console.log(\"phoneVerified:\", body.phoneVerified);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastName\": \"Test\",\n  \"firstName\": \"Postman\",\n  \"middleName\": null,\n  \"phone\": \"+375291234567\",\n  \"monthlyIncome\": \"1500.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "profile"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 with profile or 204 when empty\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    console.log(\"phoneVerified:\", body.phoneVerified);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "profile"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload passport",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "JPEG/PNG passport photo, up to 5 MB"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/me/kyc/passport",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "kyc",
+                "passport"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get passport metadata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 with metadata or 204 when not uploaded\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/kyc/passport",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "kyc",
+                "passport"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Phone verification",
+      "description": "SMS is sent by sms-verification-service via the sim provider. The code is NOT logged; read it from the database:\n\ndocker exec nosurprise-postgres-1 psql -U nosurprise -d nosurprise -tAc \"select message from sms.sms_request order by created_at desc limit 1\"\n\nCopy the 6 digits into the otpCode environment variable. The code lives for 5 minutes and is burned after 3 wrong attempts; a repeated request reuses the same SMS request (same idempotency key), so after burning you must delete the rows and the Redis key to get a new code.",
+      "item": [
+        {
+          "name": "Request SMS code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"202 Accepted\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "// Sim provider succeeds in ~70% of attempts; on 'SMS not yet sent' wait 15-30 s.",
+                  "// Read the code from sms.sms_request, then set the otpCode environment variable.",
+                  "console.log(\"Now run: docker exec nosurprise-postgres-1 psql -U nosurprise -d nosurprise -tAc \\\"select message from sms.sms_request order by created_at desc limit 1\\\"\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/phone/verification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "phone",
+                "verification"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm phone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "// Wrong code gives 400 OTP_INVALID; the third wrong attempt burns the code."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{otpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/me/phone/verification/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "phone",
+                "verification",
+                "confirm"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "mailpitUrl",
+      "value": "http://localhost:8025"
+    }
+  ]
+}
