@@ -52,6 +52,7 @@ app:
     bot-username: ${TELEGRAM_BOT_USERNAME:}
     webhook-path: /telegram/webhook
     api-base: https://api.telegram.org
+    polling-enabled: ${TELEGRAM_POLLING_ENABLED:true}
   verification:
     code-ttl: 5m
     max-attempts: 3

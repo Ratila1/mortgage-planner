@@ -161,7 +161,8 @@ Retry: `spring.rabbitmq.listener.simple.retry` — 3 попытки (1s, 2s, 4s)
 
 ## 8. Масштабирование и высокие нагрузки
 
-- **Telegram-бот в кластере:** только Webhook (не Long Polling). nginx балансирует между инстансами.
+- **Локальная разработка:** Long Polling (`TelegramPollingRunner`, включается `app.telegram.polling-enabled=true`, по умолчанию). Бот сам забирает апдейты через `getUpdates`, туннель/webhook не нужен. При старте вызывает `deleteWebhook`.
+- **Продакшен/кластер:** только Webhook (не Long Polling). nginx балансирует между инстансами. Включается `TELEGRAM_POLLING_ENABLED=false`.
 - **Дедуп апдейтов:** `tg:update:{updateId}` SET NX TTL 24 ч.
 - **Распределённые блокировки:** Redis SET NX (`tg:lock:bind:{userId}`) + ShedLock для `@Scheduled`.
 - **Rate limit Telegram API:** `tg:ratelimit:send` (25 msg/с). При превышении — сообщение остаётся в очереди RabbitMQ (не ack'ается).

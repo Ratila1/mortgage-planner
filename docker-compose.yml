@@ -137,6 +137,7 @@ services:
     build: ./frontend
     depends_on:
       backend: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
     ports: ["8080:80"]   # единая точка входа: фронт + /api + /oauth2
 
   cloudflared:   # docker compose --profile tunnel up
