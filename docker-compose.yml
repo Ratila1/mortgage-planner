@@ -149,8 +149,18 @@ services:
     image: prom/prometheus:latest
     depends_on:
       backend: { condition: service_healthy }
+    environment:
+      METRICS_USER: ${METRICS_USER:-prometheus}
+      METRICS_PASSWORD: ${METRICS_PASSWORD:-prometheus}
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # В git лежит только шаблон; конфиг с паролем собирается при старте (в образе нет envsubst).
+      - ./monitoring/prometheus/prometheus.template.yml:/etc/prometheus/prometheus.template.yml:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed -e "s|METRICS_USER|$${METRICS_USER}|g" -e "s|METRICS_PASSWORD|$${METRICS_PASSWORD}|g" \
+          /etc/prometheus/prometheus.template.yml > /tmp/prometheus.yml
+        exec /bin/prometheus --config.file=/tmp/prometheus.yml --storage.tsdb.path=/prometheus
     ports: ["9090:9090"]
 
   grafana:

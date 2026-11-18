@@ -10,3 +10,5 @@ node_modules/
 .vscode/
 # env
 .env
+# generated at container start from prometheus.template.yml (contains METRICS_PASSWORD)
+monitoring/prometheus/prometheus.yml
