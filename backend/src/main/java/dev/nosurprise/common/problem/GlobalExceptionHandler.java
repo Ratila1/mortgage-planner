@@ -184,8 +184,15 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.OTP_INVALID, ex.getMessage());
     }
 
-    /** SMS-провайдер не принял сообщение: код уже отозван, клиент может сразу повторить. */
-    @ExceptionHandler(dev.nosurprise.common.sms.SmsDeliveryException.class)
+    /** SMS-сервис отказал по своему лимиту (например, номер уже получал SMS в эту минуту). */
+    @ExceptionHandler(dev.nosurprise.smsclient.SmsClientRateLimitedException.class)
+    ProblemDetail onSmsClientRateLimited(RuntimeException ex) {
+        return problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED,
+                "SMS was requested too recently, try again in a minute");
+    }
+
+    /** SMS отправить не удалось (sms-сервис недоступен или ответил ошибкой): код не выдан, можно повторить. */
+    @ExceptionHandler(dev.nosurprise.smsclient.SmsClientException.class)
     ProblemDetail onSmsDelivery(RuntimeException ex) {
         return problem(HttpStatus.BAD_GATEWAY, ErrorCode.SMS_DELIVERY_FAILED, "SMS could not be sent, try again later");
     }

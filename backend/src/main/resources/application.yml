@@ -29,7 +29,7 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
-    publisher-confirms: correlated   # К4: издатель дожидается подтверждения доставки брокером
+    publisher-confirm-type: correlated   # К4: издатель дожидается подтверждения доставки брокером
     publisher-returns: true          # К4: неразместимое сообщение возвращается (ReturnedMessage)
     template:
       mandatory: true                # К4: mandatory — без соответствующей очереди → return
@@ -54,6 +54,10 @@ spring:
 
 server:
   forward-headers-strategy: framework   # https-ссылки за nginx/Cloudflare
+  tomcat:
+    # При 413 (файл > max-file-size) Tomcat дочитывает остаток тела, чтобы клиент получил
+    # ответ, а не обрыв соединения. Дефолт 2MB меньше нашего лимита запроса (6MB).
+    max-swallow-size: 8MB
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
@@ -87,25 +91,23 @@ app:
     business-zone: Europe/Minsk
     debt-load-warning-percent: 50
     credit-history-reconcile-delay: 15m
-  sms:
-    provider: ${SMS_PROVIDER:log}   # log — код пишется в лог бэкенда; vonage или twilio — реальные SMS
-    vonage:
-      api-key: ${VONAGE_API_KEY:}
-      api-secret: ${VONAGE_API_SECRET:}
-      from: ${VONAGE_FROM:Vonage APIs}             # имя отправителя или номер без «+»
-    twilio:
-      account-sid: ${TWILIO_ACCOUNT_SID:}
-      api-key-sid: ${TWILIO_API_KEY_SID:}            # пусто — вход по Account SID + Auth Token
-      auth-secret: ${TWILIO_AUTH_SECRET:}            # Auth Token или секрет API-ключа
-      from: ${TWILIO_FROM:}                          # номер Twilio в E.164, например +15017122661
-      messaging-service-sid: ${TWILIO_MESSAGING_SERVICE_SID:}   # вместо from, если используете Messaging Service
-      timeout: 10s
   kyc:
     max-file-size: 5MB
     retention: 7d               # хранение фото после отказа, отмены или истечения
   metrics:
     user: ${METRICS_USER:}         # пусто = /actuator/prometheus закрыт совсем (§7)
     password: ${METRICS_PASSWORD:} # задать, если Prometheus скрейпит с basic-авторизацией
+  sms-client:
+    base-url: ${SMS_CLIENT_BASE_URL:http://localhost:8091}
+    service-jwt-secret: ${SMS_CLIENT_SERVICE_JWT_SECRET:${JWT_SECRET:}}
+    connect-timeout: 5s
+    read-timeout: 10s
+    circuit-breaker:
+      enabled: true
+      failure-rate-threshold: 50
+      sliding-window-size: 100
+      wait-duration-in-open-state: 30s
+      permitted-number-of-calls-in-half-open-state: 3
 
 management:
   endpoints:

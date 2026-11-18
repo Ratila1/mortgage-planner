@@ -86,6 +86,8 @@ public abstract class AbstractIntegrationTest {
 
         registry.add("app.base-url", () -> "http://localhost:8080");
         registry.add("app.jwt.secret", () -> JWT_SECRET);
+        // Service-to-service JWT для SMS-сервиса подписывается тем же секретом, что и access-токены.
+        registry.add("app.sms-client.service-jwt-secret", () -> JWT_SECRET);
 
         // Первый ADMIN (§6.1): нужен для PUT /api/admin/offers в RabbitMQ-сценарии.
         registry.add("APP_ADMIN_EMAIL", () -> ADMIN_EMAIL);
@@ -96,5 +98,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.ratelimit.calc.authenticated-per-minute", () -> 1000);
         registry.add("app.ratelimit.auth.login-per-minute", () -> 1000);
         registry.add("app.ratelimit.auth.link-consume-per-minute", () -> 1000);
+        registry.add("app.ratelimit.auth.register-per-minute", () -> 1000);
+        registry.add("app.ratelimit.auth.link-request-per-minute", () -> 1000);
+        registry.add("app.ratelimit.auth.refresh-per-minute", () -> 1000);
+        registry.add("app.ratelimit.auth.logout-per-minute", () -> 1000);
     }
 }

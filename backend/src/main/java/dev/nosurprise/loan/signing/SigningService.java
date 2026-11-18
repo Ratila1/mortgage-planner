@@ -1,11 +1,8 @@
 package dev.nosurprise.loan.signing;
 
 import dev.nosurprise.common.otp.CodeInvalidException;
-import dev.nosurprise.common.otp.OneTimeCodeStore;
-import dev.nosurprise.common.otp.OneTimeCodeStore.CodeCheck;
+import dev.nosurprise.common.otp.OtpCooldown;
 import dev.nosurprise.common.outbox.OutboxPublisher;
-import dev.nosurprise.common.sms.SmsDeliveryException;
-import dev.nosurprise.common.sms.SmsSender;
 import dev.nosurprise.customer.CustomerService;
 import dev.nosurprise.customer.PhoneNotVerifiedException;
 import dev.nosurprise.customer.ProfileView;
@@ -23,29 +20,31 @@ import dev.nosurprise.loan.application.OfferExpiredException;
 import dev.nosurprise.loan.contract.DocumentNotFoundException;
 import dev.nosurprise.loan.contract.LoanDocument;
 import dev.nosurprise.loan.contract.LoanDocumentRepository;
+import dev.nosurprise.loan.signing.LoanSignatureRepository;
+import dev.nosurprise.smsclient.SmsClient;
+import dev.nosurprise.smsclient.SmsClientException;
+import dev.nosurprise.smsclient.dto.SmsResponse;
+import dev.nosurprise.smsclient.dto.VerifyResponse;
 import dev.nosurprise.user.UserService;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Подпись договора кодом из SMS (MICROLOANS.md §3.10). Код привязан к заявке и SHA-256 договора:
- * если договор поменялся после отправки кода, код недействителен.
- * Методы сервиса не держат транзакцию открытой во время SMS и Redis: каждое изменение — короткая транзакция.
- * Проколы (неверный код, подпись без телефона) пишутся в отдельной транзакции: клиенту уходит ошибка,
- * а прокол остаётся в журнале.
- */
 @Service
 public class SigningService {
 
-    static final String CODE_KEY_PREFIX = "sign-otp:";
-    private static final String BOUND_SHA = "documentSha256";
-    private static final String BOUND_PHONE = "phone";
+    static final String SMS_ID_PREFIX = "sign-sms-id:";
+    static final String SMS_SHA_PREFIX = "sign-sms-sha:";
+    static final String COOLDOWN_KEY_PREFIX = "sign-otp:cooldown:";
+    /** TTL привязки совпадает с TTL OTP в sms-verification-service (5 минут). */
+    private static final Duration BINDING_TTL = Duration.ofMinutes(5);
 
     private final LoanApplicationService applications;
     private final LoanApplicationRepository repository;
@@ -53,32 +52,35 @@ public class SigningService {
     private final LoanSignatureRepository signatures;
     private final CustomerService customers;
     private final UserService users;
-    private final OneTimeCodeStore codes;
-    private final SmsSender sms;
+    private final SmsClient smsClient;
+    private final OtpCooldown cooldown;
     private final LoanEventRecorder recorder;
     private final LoanIncidentRecorder incidents;
     private final OutboxPublisher outbox;
     private final TransactionTemplate tx;
     private final Clock clock;
+    private final StringRedisTemplate redisTemplate;
 
     public SigningService(LoanApplicationService applications, LoanApplicationRepository repository,
                           LoanDocumentRepository documents, LoanSignatureRepository signatures,
-                          CustomerService customers, UserService users, OneTimeCodeStore codes, SmsSender sms,
+                          CustomerService customers, UserService users, SmsClient smsClient, OtpCooldown cooldown,
                           LoanEventRecorder recorder, LoanIncidentRecorder incidents, OutboxPublisher outbox,
-                          PlatformTransactionManager transactionManager, Clock clock) {
+                          PlatformTransactionManager transactionManager, Clock clock,
+                          StringRedisTemplate redisTemplate) {
         this.applications = applications;
         this.repository = repository;
         this.documents = documents;
         this.signatures = signatures;
         this.customers = customers;
         this.users = users;
-        this.codes = codes;
-        this.sms = sms;
+        this.smsClient = smsClient;
+        this.cooldown = cooldown;
         this.recorder = recorder;
         this.incidents = incidents;
         this.outbox = outbox;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
+        this.redisTemplate = redisTemplate;
     }
 
     public void requestCode(UUID userId, UUID applicationId) {
@@ -90,48 +92,76 @@ public class SigningService {
             incidents.record(applicationId, LoanEventType.SIGN_BLOCKED_PHONE_NOT_VERIFIED, userId, null);
             throw new PhoneNotVerifiedException();
         }
-        String key = CODE_KEY_PREFIX + application.getId();
-        String cooldownKey = CODE_KEY_PREFIX + "cooldown:" + userId;
-        String code = codes.issue(key, cooldownKey,
-                Map.of(BOUND_SHA, contract.getSha256(), BOUND_PHONE, profile.phone()));
+        
+        String cooldownKey = COOLDOWN_KEY_PREFIX + userId;
+        cooldown.tryAcquire(cooldownKey);
+
+        String idempotencyKey = "signing:" + applicationId + ":" + UUID.randomUUID();
         try {
-            sms.send(profile.phone(), "Код подписи договора микрозайма: " + code);
-        } catch (SmsDeliveryException ex) {
-            codes.revoke(key, cooldownKey);
-            throw ex;
+            SmsResponse response = smsClient.createSms(idempotencyKey, profile.phone());
+
+            // Код привязан к заявке: запоминаем smsId и SHA-256 договора, отправленного на подпись.
+            redisTemplate.opsForValue().set(SMS_ID_PREFIX + applicationId, response.getId().toString(), BINDING_TTL);
+            redisTemplate.opsForValue().set(SMS_SHA_PREFIX + applicationId, contract.getSha256(), BINDING_TTL);
+
+            incidents.record(applicationId, LoanEventType.SIGN_CODE_SENT, userId, null);
+        } catch (RuntimeException e) {
+            // SMS не ушла (или её отверг sms-сервис): пауза не нужна, можно повторить сразу.
+            cooldown.release(cooldownKey);
+            incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
+            throw e;
         }
-        incidents.record(applicationId, LoanEventType.SIGN_CODE_SENT, userId, null);
     }
 
     public LoanApplication confirm(UUID userId, UUID applicationId, String code, String ip, String userAgent) {
         users.assertNotBlocked(userId);
         signable(userId, applicationId);
-        String key = CODE_KEY_PREFIX + applicationId;
-        CodeCheck check = codes.verify(key, code);
-        switch (check.result()) {
-            case INVALID -> {
-                incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
-                throw new CodeInvalidException("invalid code");
-            }
-            case BURNED -> {
-                incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
-                incidents.record(applicationId, LoanEventType.SIGN_CODE_BURNED, userId,
-                        Map.of("attempts", OneTimeCodeStore.MAX_ATTEMPTS));
-                throw new CodeInvalidException("code burned after too many attempts, request a new one");
-            }
-            case MISSING -> throw new CodeInvalidException("code expired or not requested");
-            default -> {
-                // OK — проверки ниже
+
+        String smsIdValue = redisTemplate.opsForValue().get(SMS_ID_PREFIX + applicationId);
+        UUID smsId = smsIdValue != null ? UUID.fromString(smsIdValue) : null;
+
+        if (smsId == null) {
+            incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
+            throw new CodeInvalidException("code expired or not requested");
+        }
+
+        VerifyResponse response;
+        try {
+            response = smsClient.verify(smsId, code);
+        } catch (SmsClientException e) {
+            incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
+            throw e;
+        }
+
+        if (!response.isVerified()) {
+            switch (response.getReason()) {
+                case "INVALID_CODE" -> {
+                    incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
+                    throw new CodeInvalidException("invalid code");
+                }
+                case "EXPIRED" -> {
+                    clearBinding(applicationId);
+                    throw new CodeInvalidException("code expired or not requested");
+                }
+                case "TOO_MANY_ATTEMPTS" -> {
+                    clearBinding(applicationId);
+                    incidents.record(applicationId, LoanEventType.SIGN_CODE_BURNED, userId,
+                            Map.of("reason", "TOO_MANY_ATTEMPTS"));
+                    throw new CodeInvalidException("code burned after too many attempts, request a new one");
+                }
+                case "NOT_READY" -> throw new CodeInvalidException("SMS not yet sent, please wait");
+                default -> throw new CodeInvalidException("invalid code");
             }
         }
+
         LoanDocument contract = contractOf(applicationId);
-        if (!contract.getSha256().equals(check.bound(BOUND_SHA).orElse(""))) {
-            codes.delete(key);
+        if (!contract.getSha256().equals(redisTemplate.opsForValue().get(SMS_SHA_PREFIX + applicationId))) {
+            clearBinding(applicationId);
             throw new CodeInvalidException("contract has changed since the code was sent, request a new code");
         }
-        String phone = check.bound(BOUND_PHONE).orElse("");
+
         ProfileView profile = customers.findProfile(userId).orElse(null);
-        if (profile == null || !profile.phoneVerified() || !phone.equals(profile.phone())) {
+        if (profile == null || !profile.phoneVerified()) {
             throw new PhoneNotVerifiedException();
         }
 
@@ -140,7 +170,7 @@ public class SigningService {
             LoanApplication application = repository.findById(applicationId).orElseThrow();
             application.activate(now);
             repository.save(application);
-            signatures.save(new LoanSignature(applicationId, contract.getId(), contract.getSha256(), phone, ip,
+            signatures.save(new LoanSignature(applicationId, contract.getId(), contract.getSha256(), profile.phone(), ip,
                     userAgent, now));
             recorder.statusChanged(applicationId, LoanStatus.APPROVED, LoanStatus.ACTIVE, userId);
             outbox.publish(LoanRoutingKeys.SIGNED, LoanRoutingKeys.AGGREGATE, applicationId,
@@ -148,9 +178,13 @@ public class SigningService {
                             LoanStatus.ACTIVE.name()));
             return application;
         });
-        // Код удаляем после коммита: если транзакция упала, клиент может ввести тот же код ещё раз.
-        codes.delete(key);
+
+        clearBinding(applicationId);
         return signed;
+    }
+
+    private void clearBinding(UUID applicationId) {
+        redisTemplate.delete(java.util.List.of(SMS_ID_PREFIX + applicationId, SMS_SHA_PREFIX + applicationId));
     }
 
     private LoanApplication signable(UUID userId, UUID applicationId) {
