@@ -1,6 +1,6 @@
 import type { CalcResult, PaymentType } from '../../api';
 import { formatMoney, formatMoneyShort, formatTerm, pluralMonths, toNumber } from '../../lib/format';
-import { Badge, Stamp } from '../ui';
+import { AnimatedNumber, Badge, Stamp } from '../ui';
 
 /** Ироничный, но честный комментарий к переплате. */
 function verdict(overpayment: number, loan: number): { stamp: string; text: string } {
@@ -26,7 +26,10 @@ export function ResultSummary({ result, type }: { result: CalcResult; type: Paym
       <Stamp className="absolute right-0 top-0 sm:right-2">{stamp}</Stamp>
 
       <p className="eyebrow">{type === 'ANNUITY' ? 'Ежемесячный платёж' : 'Первый платёж'}</p>
-      <p className="num mt-1 text-4xl font-bold tracking-tight sm:text-5xl">{formatMoney(result.monthlyPayment)}</p>
+      {/* на узких экранах резерврируем место под печать, чтобы цифры не уходили под неё */}
+      <p className="mt-1 pr-24 text-4xl font-bold tracking-tight sm:pr-0 sm:text-5xl">
+        <AnimatedNumber value={toNumber(result.monthlyPayment)} format={(n) => formatMoney(n)} />
+      </p>
       {type === 'DIFFERENTIATED' && last && first && (
         <p className="mt-1 text-sm text-ink-3">
           и дальше снижается до <span className="num text-ink-2">{formatMoney(last.payment)}</span> в последнем месяце
@@ -36,11 +39,15 @@ export function ResultSummary({ result, type }: { result: CalcResult; type: Paym
       <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <div className="rounded-xl bg-stamp-soft/70 p-3.5">
           <dt className="text-xs font-medium text-stamp">Переплата банку</dt>
-          <dd className="num mt-1 text-lg font-bold text-stamp">{formatMoneyShort(over)}</dd>
+          <dd className="mt-1 text-lg font-bold text-stamp">
+            <AnimatedNumber value={over} format={(n) => formatMoneyShort(n)} />
+          </dd>
         </div>
         <div className="rounded-xl bg-paper-2/70 p-3.5">
           <dt className="text-xs font-medium text-ink-3">Всего заплатите</dt>
-          <dd className="num mt-1 text-lg font-bold">{formatMoneyShort(total)}</dd>
+          <dd className="mt-1 text-lg font-bold">
+            <AnimatedNumber value={total} format={(n) => formatMoneyShort(n)} />
+          </dd>
         </div>
         <div className="col-span-2 rounded-xl bg-paper-2/70 p-3.5 sm:col-span-1">
           <dt className="text-xs font-medium text-ink-3">Срок</dt>

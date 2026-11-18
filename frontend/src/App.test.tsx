@@ -3,9 +3,9 @@ import { calculateLocally } from './lib/calc';
 import App from './App';
 
 describe('App', () => {
-  it('renders the title', () => {
+  it('renders the title', async () => {
     render(<App />);
-    expect(screen.getByRole('heading', { level: 1, name: /ипотека без сюрпризов/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: /ипотека без сюрпризов/i })).toBeInTheDocument();
   });
 });
 

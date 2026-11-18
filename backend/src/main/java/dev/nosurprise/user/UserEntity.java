@@ -47,6 +47,10 @@ public class UserEntity {
 
     private Instant createdAt;
 
+    /** Заблокированный админом не может войти, обновить токен и работать с займами (MICROLOANS.md §3.5). */
+    @Column(nullable = false)
+    private boolean blocked;
+
     @ElementCollection(fetch = jakarta.persistence.FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
     @Enumerated(EnumType.STRING)
@@ -112,6 +116,14 @@ public class UserEntity {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isBlocked() {
+        return blocked;
+    }
+
+    public void setBlocked(boolean blocked) {
+        this.blocked = blocked;
     }
 
     public Set<Role> getRoles() {

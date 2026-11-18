@@ -2,6 +2,10 @@ import { ApiError } from './errors';
 import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, EarlyRepayment, Me, OAuthProvider, OfferInput, Problem, Scenario,
   ScenarioSummary, StressRow,
+  MicroloanType, MicroloanTypeInput, MicroloanApplication, AdminMicroloanApplication,
+  AdminMicroloanApplicationCard, AdminLoanDocument, AdminCreditHistory, AdminCreditHistoryLoan,
+  MicroloanApplicationStatus, MicroloanCalculationResult, AdminUser, Id, Money,
+  CustomerProfile, CustomerProfileInput, PassportStatus, LoginProvider, Role,
 } from './types';
 
 /**
@@ -161,6 +165,192 @@ async function login(path: string, body: unknown) {
   accessToken = res.accessToken;
 }
 
+// ---------- микрозаймы: ответы бэкенда → типы фронта ----------
+
+function mapLoanType(raw: Raw): MicroloanType {
+  return {
+    id: String(raw.id),
+    name: String(raw.name),
+    description: str(raw.description, ''),
+    minAmount: str(raw.minAmount),
+    maxAmount: str(raw.maxAmount),
+    minTermDays: Number(raw.minTermDays),
+    maxTermDays: Number(raw.maxTermDays),
+    dailyRatePct: str(raw.dailyRate),
+    modifier: str(raw.modifier),
+    active: Boolean(raw.active),
+    version: Number(raw.version ?? 0),
+  };
+}
+
+function loanTypeBody(input: MicroloanTypeInput, version?: number) {
+  return {
+    name: input.name,
+    description: input.description,
+    minAmount: input.minAmount,
+    maxAmount: input.maxAmount,
+    minTermDays: input.minTermDays,
+    maxTermDays: input.maxTermDays,
+    dailyRate: input.dailyRatePct,
+    modifier: input.modifier,
+    active: input.active,
+    version,
+  };
+}
+
+function mapApplication(raw: Raw): MicroloanApplication {
+  return {
+    id: String(raw.id),
+    typeId: String(raw.loanTypeId),
+    typeName: String(raw.loanTypeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays),
+    interest: str(raw.interest),
+    modifier: str(raw.modifier),
+    totalAmount: str(raw.total),
+    monthlyIncome: str(raw.monthlyIncome),
+    debtLoadPercent: str(raw.debtLoadPercent),
+    status: raw.status as MicroloanApplicationStatus,
+    rejectionReason: raw.rejectionReason ? String(raw.rejectionReason) : null,
+    offerExpiresAt: raw.offerExpiresAt ? String(raw.offerExpiresAt) : null,
+    createdAt: String(raw.createdAt),
+    documents: Array.isArray(raw.documents) ? (raw.documents as Raw[]).map(mapLoanDocument) : [],
+  };
+}
+
+function mapAdminApplication(raw: Raw): AdminMicroloanApplication {
+  return {
+    id: String(raw.id),
+    fullName: [raw.lastName, raw.firstName, raw.middleName].filter(Boolean).join(' '),
+    typeName: String(raw.loanTypeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays),
+    monthlyIncome: str(raw.monthlyIncome),
+    debtLoadPercent: str(raw.debtLoadPercent),
+    debtLoadWarning: Boolean(raw.debtLoadWarning),
+    status: raw.status as MicroloanApplicationStatus,
+    createdAt: String(raw.createdAt),
+  };
+}
+
+function mapLoanDocument(raw: Raw): AdminLoanDocument {
+  return {
+    id: String(raw.id),
+    type: String(raw.type ?? ''),
+    downloadUrl: String(raw.downloadUrl ?? ''),
+    createdAt: String(raw.createdAt),
+  };
+}
+
+function mapCreditHistory(raw: Raw): AdminCreditHistory {
+  const summary = (raw.summary ?? {}) as Raw;
+  const loans = Array.isArray(raw.loans) ? (raw.loans as Raw[]).map(mapCreditHistoryLoan) : [];
+  return {
+    summary: {
+      totalLoans: Number(summary.totalLoans ?? 0),
+      byStatus: (summary.byStatus ?? {}) as Record<string, number>,
+      hasActiveLoan: Boolean(summary.hasActiveLoan),
+      lastMonthlyIncome: summary.lastMonthlyIncome ? String(summary.lastMonthlyIncome) : null,
+      lastDebtLoadPercent: summary.lastDebtLoadPercent ? String(summary.lastDebtLoadPercent) : null,
+      minDebtLoadPercent: summary.minDebtLoadPercent ? String(summary.minDebtLoadPercent) : null,
+      maxDebtLoadPercent: summary.maxDebtLoadPercent ? String(summary.maxDebtLoadPercent) : null,
+      incidentsByType: (summary.incidentsByType ?? {}) as Record<string, number>,
+      firstSubmittedAt: summary.firstSubmittedAt ? String(summary.firstSubmittedAt) : null,
+    },
+    loans,
+  };
+}
+
+function mapCreditHistoryLoan(raw: Raw): AdminCreditHistoryLoan {
+  return {
+    applicationId: String(raw.applicationId),
+    status: raw.status as MicroloanApplicationStatus,
+    loanTypeName: String(raw.loanTypeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays ?? 0),
+    dailyRate: str(raw.dailyRate),
+    modifier: str(raw.modifier),
+    interest: str(raw.interest),
+    total: str(raw.total),
+    monthlyIncome: raw.monthlyIncome ? String(raw.monthlyIncome) : null,
+    debtLoadPercent: raw.debtLoadPercent ? String(raw.debtLoadPercent) : null,
+    submittedAt: raw.submittedAt ? String(raw.submittedAt) : null,
+    decidedAt: raw.decidedAt ? String(raw.decidedAt) : null,
+    decisionComment: raw.decisionComment ? String(raw.decisionComment) : null,
+    closedAt: raw.closedAt ? String(raw.closedAt) : null,
+    syncedAt: String(raw.syncedAt ?? ''),
+  };
+}
+
+/** Карточка заявки админа: заявка из Postgres + документы + кредитная история из Mongo. */
+function mapAdminApplicationCard(raw: Raw): AdminMicroloanApplicationCard {
+  return {
+    id: String(raw.id),
+    userId: String(raw.userId),
+    status: raw.status as MicroloanApplicationStatus,
+    version: Number(raw.version ?? 0),
+    createdAt: String(raw.createdAt),
+    loanTypeId: String(raw.loanTypeId),
+    loanTypeName: String(raw.loanTypeName ?? ''),
+    amount: str(raw.amount),
+    termDays: Number(raw.termDays ?? 0),
+    dailyRate: str(raw.dailyRate),
+    interest: str(raw.interest),
+    modifier: str(raw.modifier),
+    total: str(raw.total),
+    lastName: String(raw.lastName ?? ''),
+    firstName: String(raw.firstName ?? ''),
+    middleName: String(raw.middleName ?? ''),
+    phone: String(raw.phone ?? ''),
+    monthlyIncome: str(raw.monthlyIncome),
+    debtLoadPercent: str(raw.debtLoadPercent),
+    debtLoadWarning: Boolean(raw.debtLoadWarning),
+    decidedBy: raw.decidedBy ? String(raw.decidedBy) : null,
+    decidedAt: raw.decidedAt ? String(raw.decidedAt) : null,
+    decisionComment: raw.decisionComment ? String(raw.decisionComment) : null,
+    offerExpiresAt: raw.offerExpiresAt ? String(raw.offerExpiresAt) : null,
+    closedAt: raw.closedAt ? String(raw.closedAt) : null,
+    passportUrl: String(raw.passportUrl ?? ''),
+    documents: Array.isArray(raw.documents) ? (raw.documents as Raw[]).map(mapLoanDocument) : [],
+    creditHistory: mapCreditHistory((raw.creditHistory ?? {}) as Raw),
+  };
+}
+
+function mapProfile(raw: Raw): CustomerProfile {
+  return {
+    lastName: str(raw.lastName, ''),
+    firstName: str(raw.firstName, ''),
+    middleName: str(raw.middleName, ''),
+    phone: str(raw.phone, ''),
+    monthlyIncome: str(raw.monthlyIncome),
+    phoneVerified: Boolean(raw.phoneVerified),
+  };
+}
+
+/** Пустое отчество на бэке хранится как null, а не ''. */
+function profileBody(p: CustomerProfileInput) {
+  return {
+    lastName: p.lastName.trim(),
+    firstName: p.firstName.trim(),
+    middleName: p.middleName.trim() || null,
+    phone: p.phone.trim(),
+    monthlyIncome: p.monthlyIncome,
+  };
+}
+
+function mapPassport(raw: Raw | undefined): PassportStatus | null {
+  return raw ? { uploadedAt: String(raw.uploadedAt), deleted: Boolean(raw.deleted) } : null;
+}
+
+/**
+ * Решение по заявке требует version (оптимистичная блокировка), а в строке списка его нет —
+ * берём свежую карточку прямо перед действием.
+ */
+async function adminDecision(id: Id, action: 'approve' | 'reject' | 'repaid', extra: Raw = {}) {
+  const card = await request<Raw>('GET', `/api/admin/loan-applications/${id}`);
+  await request<Raw>('POST', `/api/admin/loan-applications/${id}/${action}`, { ...extra, version: card.version });
+}
+
 export const httpApi: Api = {
   calculate: (params) => request<CalcResult>('POST', '/api/calc', calcBody(params)),
   getCalculation: (calcId) => request<CalcResult>('GET', `/api/calc/${encodeURIComponent(calcId)}`),
@@ -206,4 +396,119 @@ export const httpApi: Api = {
   adminCreateOffer: (input) => request<BankOffer>('POST', '/api/admin/offers', offerBody(input)),
   adminUpdateOffer: (id, input) => request<BankOffer>('PUT', `/api/admin/offers/${id}`, offerBody(input)),
   adminDeleteOffer: (id) => request<void>('DELETE', `/api/admin/offers/${id}`),
+
+  // ---------- микрозаймы ----------
+  listMicroloanTypes: async () => (await request<Raw[]>('GET', '/api/loan-types')).map(mapLoanType),
+  adminListMicroloanTypes: async () => (await request<Raw[]>('GET', '/api/admin/loan-types')).map(mapLoanType),
+  adminCreateMicroloanType: async (input) =>
+    mapLoanType(await request<Raw>('POST', '/api/admin/loan-types', loanTypeBody(input))),
+  adminUpdateMicroloanType: async (id, input, version) =>
+    mapLoanType(await request<Raw>('PUT', `/api/admin/loan-types/${id}`, loanTypeBody(input, version))),
+  adminDeactivateMicroloanType: async (id) =>
+    mapLoanType(await request<Raw>('POST', `/api/admin/loan-types/${id}/deactivate`)),
+  async calculateMicroloan(typeId: Id, amount: Money, termDays: number) {
+    const raw = await request<Raw>('POST', '/api/loans/quote', { loanTypeId: typeId, amount, termDays });
+    return {
+      amount: str(raw.amount),
+      termDays: Number(raw.termDays),
+      dailyRatePct: str(raw.dailyRate),
+      interestAmount: str(raw.interest),
+      modifier: str(raw.modifier),
+      totalAmount: str(raw.total),
+    } satisfies MicroloanCalculationResult;
+  },
+
+  // 204 (профиль ещё не заполнен) приходит как undefined.
+  getProfile: async () => {
+    const raw = await request<Raw | undefined>('GET', '/api/me/profile');
+    return raw ? mapProfile(raw) : null;
+  },
+  saveProfile: async (input) => mapProfile(await request<Raw>('PUT', '/api/me/profile', profileBody(input))),
+  getPassport: async () => mapPassport(await request<Raw | undefined>('GET', '/api/me/kyc/passport')),
+  async uploadPassport(file: File) {
+    // multipart: Content-Type с boundary проставляет браузер, поэтому не через send().
+    const form = new FormData();
+    form.append('file', file);
+    const post = () =>
+      fetch('/api/me/kyc/passport', {
+        method: 'POST',
+        credentials: 'include',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: form,
+      });
+    let res = await post();
+    if (res.status === 401 && (await refreshAccess())) res = await post();
+    if (!res.ok) throw await parseProblem(res);
+    return mapPassport((await res.json()) as Raw)!;
+  },
+
+  async createMicroloanApplication(input) {
+    const raw = await request<Raw>('POST', '/api/loans/applications', {
+      loanTypeId: input.typeId,
+      amount: input.amount,
+      termDays: input.termDays,
+      profile: profileBody(input.profile),
+    });
+    return mapApplication(raw);
+  },
+  async listMyMicroloanApplications() {
+    const page = await request<Raw>('GET', '/api/loans/applications?page=0&size=100');
+    return ((page.items as Raw[] | undefined) ?? []).map(mapApplication);
+  },
+  cancelMicroloanApplication: (id) => request<void>('POST', `/api/loans/applications/${id}/cancel`),
+  // Карточка своей заявки: условия, статус и документы (договор появляется после одобрения).
+  getMicroloanApplication: async (id) =>
+    mapApplication(await request<Raw>('GET', `/api/loans/applications/${id}`)),
+  // Договор отдаётся с Bearer — качаем fetch'ем, а не ссылкой.
+  downloadContract: async (downloadUrl) => (await send('GET', downloadUrl)).blob(),
+  // Подпись договора (§3.10): 202 — код отправлен SMS; cooldown 60 c на все SMS пользователя.
+  requestSignatureCode: (id) => request<void>('POST', `/api/loans/applications/${id}/signature`),
+  confirmSignature: async (id, code) =>
+    mapApplication(await request<Raw>('POST', `/api/loans/applications/${id}/signature/confirm`, { code })),
+  // Подтверждение телефона (условие подписи): 202 — код отправлен; 204 — подтверждено.
+  requestPhoneVerification: () => request<void>('POST', '/api/me/phone/verification'),
+  confirmPhoneVerification: (code) =>
+    request<void>('POST', '/api/me/phone/verification/confirm', { code }),
+
+  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string) {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') params.set('status', status);
+    if (query && query.trim()) params.set('query', query.trim());
+    params.set('page', '0');
+    params.set('size', '100');
+    const page = await request<Raw>('GET', `/api/admin/loan-applications?${params.toString()}`);
+    return ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication);
+  },
+  adminGetMicroloanApplication: async (id) =>
+    mapAdminApplicationCard(await request<Raw>('GET', `/api/admin/loan-applications/${id}`)),
+  // Фото паспорта: no-store на бэке, поэтому тоже не кэшируем и не сохраняем на диск.
+  adminViewPassport: async (id) => (await send('GET', `/api/admin/loan-applications/${id}/passport`)).blob(),
+  adminApproveMicroloanApplication: (id) => adminDecision(id, 'approve'),
+  adminRejectMicroloanApplication: (id, reason) => adminDecision(id, 'reject', { reason }),
+  adminMarkMicroloanRepaid: (id) => adminDecision(id, 'repaid'),
+
+  async adminListUsers(query?: string) {
+    const params = new URLSearchParams();
+    if (query && query.trim()) params.set('query', query.trim());
+    params.set('page', '0');
+    params.set('size', '100');
+    const page = await request<Raw>('GET', `/api/admin/users?${params.toString()}`);
+    return ((page.items as Raw[] | undefined) ?? []).map(
+      (u): AdminUser => ({
+        id: String(u.id),
+        email: String(u.email),
+        fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || null,
+        salary: u.monthlyIncome ? String(u.monthlyIncome) : null,
+        provider: String(u.provider) as LoginProvider,
+        createdAt: String(u.createdAt),
+        phone: u.phone ? String(u.phone) : null,
+        roles: (Array.isArray(u.roles) ? u.roles : []) as Role[],
+        emailVerified: Boolean(u.emailVerified),
+        blocked: Boolean(u.blocked),
+      }),
+    );
+  },
+
+  adminBlockUser: (id) => request<void>('POST', `/api/admin/users/${id}/block`),
+  adminUnblockUser: (id) => request<void>('POST', `/api/admin/users/${id}/unblock`),
 };

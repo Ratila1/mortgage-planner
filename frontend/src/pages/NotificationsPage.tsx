@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
-  api, errorMessage, type AppNotification, type PdfReadyPayload, type Scenario, type ScenarioRecalculatedPayload,
+  api, errorMessage, type AppNotification, type LoanNotificationPayload, type PdfReadyPayload,
+  type Scenario, type ScenarioRecalculatedPayload,
 } from '../api';
-import { Alert, Badge, Button, EmptyState, PageTitle, Spinner, cx } from '../components/ui';
+import { ContractSigning } from '../components/ContractSigning';
+import { Alert, Badge, Button, EmptyState, PageTitle, Skeleton, cx } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, formatRate, toNumber } from '../lib/format';
 
 function Delta({ before, after, short = false }: { before: string; after: string; short?: boolean }) {
@@ -52,6 +54,58 @@ function PdfReady({ p, scenarioName }: { p: PdfReadyPayload; scenarioName?: stri
   );
 }
 
+/** Заголовки и тексты loan-уведомлений (LoanNotificationConsumer). */
+const LOAN_NOTIFICATIONS: Record<string, { title: string; text: string }> = {
+  LOAN_SIGNED: { title: 'Договор подписан', text: 'Деньги уже в пути. График погашения — в разделе «Мои заявки».' },
+  LOAN_EXPIRED: { title: 'Срок подписания истёк', text: 'Заявку пришлось закрыть: договор не был подписан за 5 рабочих дней.' },
+  LOAN_REPAID: { title: 'Заём закрыт', text: 'Долг погашен полностью. Спасибо — приходите ещё!' },
+};
+
+function LoanNotification({ n }: { n: AppNotification }) {
+  const p = (n.payload ?? {}) as LoanNotificationPayload;
+
+  if (n.type === 'LOAN_APPROVED') {
+    // Подпись прямо в уведомлении: скачать договор → код по SMS → ввести код (MICROLOANS.md §3.10).
+    return (
+      <div>
+        <p className="font-semibold">Вашу заявку на микрозайм одобрили</p>
+        <p className="mt-0.5 text-sm text-ink-2">Скачайте договор и ознакомьтесь с условиями.</p>
+        <div className="mt-3">
+          <ContractSigning id={p.applicationId} />
+        </div>
+      </div>
+    );
+  }
+  if (n.type === 'LOAN_REJECTED') {
+    return (
+      <div>
+        <p className="font-semibold">Заявку отклонили</p>
+        {p.reason && <p className="mt-0.5 text-sm text-ink-2">Причина: {p.reason}</p>}
+        <p className="mt-1 text-sm text-ink-2">
+          Это не приговор: проверьте данные и подайте заявку снова, когда обстоятельства изменятся.
+        </p>
+        <Link to="/cabinet/applications" className="mt-2 inline-block text-sm font-semibold text-money">
+          К моим заявкам →
+        </Link>
+      </div>
+    );
+  }
+  const info = LOAN_NOTIFICATIONS[n.type];
+  if (info) {
+    return (
+      <div>
+        <p className="font-semibold">{info.title}</p>
+        <p className="mt-0.5 text-sm text-ink-2">{info.text}</p>
+        <Link to="/cabinet/applications" className="mt-2 inline-block text-sm font-semibold text-money">
+          К моим заявкам →
+        </Link>
+      </div>
+    );
+  }
+  const message = (n.payload as { message?: string } | null)?.message;
+  return <p>{message ?? 'Новое уведомление.'}</p>;
+}
+
 function Body({ n, scenarios }: { n: AppNotification; scenarios: Map<string, Scenario> }) {
   if (n.type === 'SCENARIO_RECALCULATED' && n.payload) {
     const p = n.payload as ScenarioRecalculatedPayload;
@@ -77,6 +131,9 @@ function Body({ n, scenarios }: { n: AppNotification; scenarios: Map<string, Sce
   if (n.type === 'PDF_READY' && n.payload) {
     const p = n.payload as PdfReadyPayload;
     return <PdfReady p={p} scenarioName={scenarios.get(p.scenarioId)?.name} />;
+  }
+  if (n.type.startsWith('LOAN_')) {
+    return <LoanNotification n={n} />;
   }
   const message = (n.payload as { message?: string } | null)?.message;
   return <p>{message ?? 'Новое уведомление.'}</p>;
@@ -116,13 +173,20 @@ export function NotificationsPage() {
       </PageTitle>
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {items === null && !error ? (
-        <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+        <div className="space-y-3" aria-hidden="true">
+          <Skeleton className="h-36" />
+          <Skeleton className="h-36" />
+        </div>
       ) : items && items.length === 0 ? (
         <EmptyState emoji="🔕" title="Тишина" text="Когда банк поменяет ставку в одном из ваших сценариев или будет готов PDF, мы сразу напишем сюда." />
       ) : (
         <ul className="space-y-3">
-          {items?.map((n) => (
-            <li key={n.id} className={cx('card flex gap-4 p-5', !n.read && 'border-l-4 border-l-stamp')}>
+          {items?.map((n, i) => (
+            <li
+              key={n.id}
+              style={{ '--reveal-index': Math.min(i, 5) } as CSSProperties}
+              className={cx('card reveal flex gap-4 p-5', !n.read && 'border-l-4 border-l-stamp-solid')}
+            >
               <div className="flex-1">
                 <div className="mb-2 flex items-center gap-2 text-xs text-ink-3">
                   {!n.read && <Badge tone="stamp">новое</Badge>}

@@ -93,6 +93,10 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             }
 
             UserEntity user = userService.provisionOAuthUser(email, provider, providerId, providerVerified);
+            if (user.isBlocked()) {
+                redirectFailure(response, "blocked");
+                return;
+            }
             var refresh = refreshTokenService.issue(user.getId(), request.getRemoteAddr());
             response.setHeader("Set-Cookie", AuthController.refreshCookie(refresh.cookieValue(), request));
             response.sendRedirect(appBaseUrl + "/");
@@ -110,10 +114,14 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         OAuth2User principal = (authentication instanceof OAuth2AuthenticationToken o) ? o.getPrincipal() : null;
         try {
             OAuth2AuthorizedClient client = null;
+            // getAttribute — generic <A> A: в String.valueOf(...) javac выберет valueOf(char[]) и в рантайме
+            // упадёт ClassCastException "String cannot be cast to [C". Кастуем к Object явно (§ фикс GH email).
+            Object login = principal == null ? null : principal.getAttribute("login");
+            Object id = principal == null ? null : principal.getAttribute("id");
             for (String candidate : new String[] { authentication.getName(),
-                    (principal == null ? null : String.valueOf(principal.getAttribute("login"))),
-                    (principal == null ? null : String.valueOf(principal.getAttribute("id"))) }) {
-                if (candidate == null || "null".equals(candidate)) continue;
+                    login == null ? null : String.valueOf(login),
+                    id == null ? null : String.valueOf(id) }) {
+                if (candidate == null || "null".equals(candidate) || candidate.isBlank()) continue;
                 client = authorizedClientService.loadAuthorizedClient(registrationId, candidate);
                 if (client != null && client.getAccessToken() != null) break;
             }

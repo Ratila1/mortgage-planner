@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, errorMessage, type BankOffer, type OfferInput } from '../api';
-import { Alert, Badge, Button, Card, Field, PageTitle, Spinner, TextInput, cx } from '../components/ui';
+import { Alert, Badge, Button, Card, ConfirmDialog, Field, PageTitle, Skeleton, TextInput, cx } from '../components/ui';
 import { formatDateTime, formatRate, formatTerm, parseMoneyInput } from '../lib/format';
 
 const EMPTY: OfferInput = { bankName: '', rate: '', minDownPaymentPercent: '20', maxTermMonths: 300, active: true };
@@ -89,6 +89,8 @@ export function AdminOffersPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<BankOffer | 'new' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BankOffer | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => api.adminListOffers().then(setOffers).catch((err) => setError(errorMessage(err)));
   useEffect(() => {
@@ -109,13 +111,16 @@ export function AdminOffersPage() {
   };
 
   const remove = async (offer: BankOffer) => {
-    if (!confirm(`Удалить «${offer.bankName}»? Сценарии с ним останутся, но без привязки к банку.`)) return;
+    setDeleting(true);
     try {
       await api.adminDeleteOffer(offer.id);
       setNotice(`Удалили «${offer.bankName}».`);
+      setDeleteTarget(null);
       await reload();
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -130,7 +135,10 @@ export function AdminOffersPage() {
       <div className="grid gap-6 lg:grid-cols-12">
         <div className={cx(editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
           {offers === null && !error ? (
-            <div className="grid place-items-center py-24 text-money"><Spinner className="h-8 w-8" /></div>
+            <div className="space-y-3" aria-hidden="true">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-64" />
+            </div>
           ) : (
             <div className="card overflow-x-auto p-0">
               <table className="w-full min-w-[640px] text-sm">
@@ -157,7 +165,7 @@ export function AdminOffersPage() {
                       <td className="p-4">{o.active ? <Badge tone="money">активно</Badge> : <Badge>скрыто</Badge>}</td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <Button size="sm" variant="ghost" onClick={() => setEditing(o)}>Изменить</Button>
-                        <Button size="sm" variant="ghost" onClick={() => remove(o)}>Удалить</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(o)}>Удалить</Button>
                       </td>
                     </tr>
                   ))}
@@ -177,6 +185,23 @@ export function AdminOffersPage() {
           </Card>
         )}
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Удалить предложение?"
+        danger
+        busy={deleting}
+        confirmLabel="Удалить"
+        onConfirm={() => deleteTarget && remove(deleteTarget)}
+        onCancel={() => !deleting && setDeleteTarget(null)}
+      >
+        {deleteTarget && (
+          <p>
+            Банк <span className="font-semibold">{deleteTarget.bankName}</span> исчезнет из списка. Сценарии с ним
+            останутся, но без привязки к банку.
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

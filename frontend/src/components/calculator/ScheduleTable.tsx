@@ -67,10 +67,10 @@ export function ScheduleTable({ schedule }: { schedule: ScheduleRow[] }) {
             const isOpen = open.has(index);
             return (
               <tbody key={index} className="border-t border-line">
-                <tr className="cursor-pointer bg-card hover:bg-paper/70" onClick={() => toggle(index)}>
+                <tr className="group cursor-pointer bg-card transition-colors hover:bg-paper-2/60" onClick={() => toggle(index)}>
                   <td className="px-3 py-2.5 font-semibold">
                     <button type="button" aria-expanded={isOpen} className="flex items-center gap-2">
-                      <span className={cx('inline-block transition', isOpen && 'rotate-90')} aria-hidden="true">▸</span>
+                      <span className={cx('inline-block transition-transform duration-200', isOpen && 'rotate-90')} aria-hidden="true">▸</span>
                       {index + 1}-й год
                     </button>
                   </td>
@@ -80,8 +80,8 @@ export function ScheduleTable({ schedule }: { schedule: ScheduleRow[] }) {
                   <td className="num px-3 py-2.5 text-right text-ink-2">{formatMoney(rows[rows.length - 1].balance)}</td>
                 </tr>
                 {isOpen &&
-                  rows.map((r) => (
-                    <tr key={r.month} className="border-t border-line/60 bg-white/40">
+                  rows.map((r, rowIndex) => (
+                    <tr key={r.month} className={cx('border-t border-line/60 bg-field transition-colors hover:bg-paper-2/50', rowIndex % 2 === 1 && 'bg-paper-2/25')}>
                       <td className="px-3 py-2 text-ink-2">
                         <span className="num mr-2 text-ink">{r.month}</span>
                         <span className="text-xs text-ink-3">{monthName(r.date)}</span>
@@ -89,7 +89,7 @@ export function ScheduleTable({ schedule }: { schedule: ScheduleRow[] }) {
                       <td className="num px-3 py-2 text-right">{formatMoney(r.payment, false)}</td>
                       <td className="num px-3 py-2 text-right text-money">{formatMoney(r.principal, false)}</td>
                       <td className="num px-3 py-2 text-right text-stamp">{formatMoney(r.interest, false)}</td>
-                      <td className="num px-3 py-2 text-right text-[#8a6100]">
+                      <td className="num px-3 py-2 text-right text-gold-ink">
                         {toNumber(r.earlyRepayment) > 0 ? formatMoney(r.earlyRepayment, false) : '—'}
                       </td>
                       <td className="num px-3 py-2 text-right text-ink-2">{formatMoney(r.balance, false)}</td>

@@ -61,6 +61,22 @@ public class RefreshTokenStore {
         redis.delete(key(userId, token));
     }
 
+    /**
+     * Удаляет все refresh-токены пользователя («выйти везде», блокировка — MICROLOANS.md §3.5).
+     * SCAN, а не KEYS: KEYS блокирует Redis на всём пространстве ключей.
+     */
+    public void deleteAll(UUID userId) {
+        org.springframework.data.redis.core.ScanOptions options = org.springframework.data.redis.core.ScanOptions
+                .scanOptions().match(KEY_PREFIX + userId + ":*").count(100).build();
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        try (org.springframework.data.redis.core.Cursor<String> cursor = redis.scan(options)) {
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) {
+            redis.delete(keys);
+        }
+    }
+
     static String key(UUID userId, String token) {
         return KEY_PREFIX + userId + ":" + TokenService.sha256Hex(token);
     }

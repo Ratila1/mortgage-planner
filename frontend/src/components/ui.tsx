@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, Ref } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
 export { cx };
@@ -6,10 +7,10 @@ export { cx };
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 const buttonStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-money text-white hover:bg-money-2 shadow-sm',
+  primary: 'bg-money-solid text-white hover:bg-money-solid-2 shadow-sm',
   secondary: 'bg-card text-ink border border-line hover:border-ink-3',
   ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink',
-  danger: 'bg-stamp text-white hover:brightness-95',
+  danger: 'bg-stamp-solid text-white hover:brightness-95',
 };
 
 export function Button({
@@ -24,6 +25,7 @@ export function Button({
   variant?: ButtonVariant;
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button
@@ -55,8 +57,8 @@ export function Spinner({ className = 'h-5 w-5' }: { className?: string }) {
   );
 }
 
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <section className={cx('card p-5 sm:p-6', className)}>{children}</section>;
+export function Card({ className, children, style }: { className?: string; children: ReactNode; style?: CSSProperties }) {
+  return <section className={cx('card p-5 sm:p-6', className)} style={style}>{children}</section>;
 }
 
 export function Field({
@@ -92,7 +94,7 @@ export function TextInput({
   return (
     <div
       className={cx(
-        'flex items-center rounded-xl border border-line bg-white/70 transition',
+        'flex items-center rounded-xl border border-line bg-field transition',
         'focus-within:border-money focus-within:ring-2 focus-within:ring-money/15',
         className,
       )}
@@ -117,24 +119,95 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const activeIndex = options.findIndex((o) => o.value === value);
+
+  // Индикатор скользит к активной кнопке; размеры меряем по DOM, а не на глаз.
+  // Обе оси: на узких экранах трек складывается в колонку.
+  const measure = useCallback(() => {
+    const button = trackRef.current?.querySelectorAll<HTMLElement>('[role="radio"]')[activeIndex];
+    if (button) {
+      setPill({ left: button.offsetLeft, top: button.offsetTop, width: button.offsetWidth, height: button.offsetHeight });
+    }
+  }, [activeIndex]);
+
+  useLayoutEffect(measure, [measure]);
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, [measure]);
+
   return (
-    <div role="radiogroup" aria-label={label} className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-paper-2 p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={value === option.value}
-          title={option.hint}
-          onClick={() => onChange(option.value)}
-          className={cx(
-            'rounded-lg px-3 py-2 text-sm font-medium transition',
-            value === option.value ? 'bg-card text-ink shadow-sm' : 'text-ink-2 hover:text-ink',
-          )}
+    <div
+      ref={trackRef}
+      role="radiogroup"
+      aria-label={label}
+      className="relative flex flex-col items-stretch gap-1 rounded-xl bg-paper-2 p-1 sm:grid sm:auto-cols-fr sm:grid-flow-col"
+    >
+      {pill && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-0 rounded-lg bg-card shadow-sm transition-[translate,width,height] duration-200 ease-out"
+          style={{ width: pill.width, height: pill.height, translate: `${pill.left}px ${pill.top}px` }}
+        />
+      )}
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            title={option.hint}
+            onClick={() => onChange(option.value)}
+            className={cx(
+              'relative z-10 min-w-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              selected ? 'text-ink font-semibold' : 'text-ink-2 hover:text-ink',
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Select<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+  className,
+}: {
+  value: T;
+  options: Array<{ value: T; label: ReactNode }>;
+  onChange: (value: T) => void;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cx('w-full', className)}>
+      {label && <label className="block text-sm font-medium text-ink-2 mb-1.5">{label}</label>}
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as T)}
+          className="ui-select w-full rounded-xl border border-line bg-field px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
         >
-          {option.label}
-        </button>
-      ))}
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
     </div>
   );
 }
@@ -150,7 +223,7 @@ export function Badge({
     neutral: 'bg-paper-2 text-ink-2',
     money: 'bg-money-soft text-money-2',
     stamp: 'bg-stamp-soft text-stamp',
-    gold: 'bg-gold-soft text-[#8a6100]',
+    gold: 'bg-gold-soft text-gold-ink',
   };
   return (
     <span className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold', tones[tone])}>
@@ -176,13 +249,13 @@ export function Stamp({ children, tone = 'stamp', className }: { children: React
   );
 }
 
-export function Alert({ tone = 'stamp', children }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode }) {
+export function Alert({ tone = 'stamp', children, className }: { tone?: 'stamp' | 'money' | 'gold'; children: ReactNode; className?: string }) {
   const tones = {
     stamp: 'border-stamp/30 bg-stamp-soft text-stamp',
     money: 'border-money/30 bg-money-soft text-money-2',
-    gold: 'border-gold/40 bg-gold-soft text-[#7a5600]',
+    gold: 'border-gold/40 bg-gold-soft text-gold-ink',
   };
-  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone])}>{children}</div>;
+  return <div role="alert" className={cx('rounded-xl border px-4 py-3 text-sm', tones[tone], className)}>{children}</div>;
 }
 
 export function EmptyState({ title, text, action, emoji = '🧾' }: { title: string; text: ReactNode; action?: ReactNode; emoji?: string }) {
@@ -205,5 +278,201 @@ export function PageTitle({ eyebrow, title, children }: { eyebrow?: string; titl
       </div>
       {children}
     </header>
+  );
+}
+
+export function FileInput({
+  value,
+  onChange,
+  onClear,
+  className,
+  accept,
+  ...rest
+}: InputHTMLAttributes<HTMLInputElement> & { value?: string; onClear?: () => void; accept?: string }) {
+  const [fileName, setFileName] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setFileName(value);
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFileName(file.name);
+      onChange?.(e);
+    }
+  };
+
+  const handleClear = () => {
+    setFileName('');
+    if (inputRef.current) inputRef.current.value = '';
+    onClear?.();
+  };
+
+  return (
+    <div className={cx('flex items-center gap-3 rounded-xl border border-line bg-field transition', className)}>
+      <label
+        htmlFor={rest.id}
+        className="flex-1 cursor-pointer px-3.5 py-2.5 text-ink-2"
+      >
+        {fileName ? (
+          <span className="flex items-center gap-2 min-w-0">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 flex-shrink-0 text-ink-3" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <line x1="10" y1="9" x2="10" y2="9.01" />
+            </svg>
+            <span className="truncate">{fileName}</span>
+          </span>
+        ) : (
+          <span className="text-ink-3">Файл не выбран</span>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          id={rest.id}
+          accept={accept}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          aria-label={fileName ? `Выбран файл: ${fileName}` : 'Выбрать файл'}
+          onChange={handleChange}
+          {...rest}
+        />
+      </label>
+      {fileName && onClear && (
+        <button
+          type="button"
+          className="flex-shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-3 hover:bg-paper-2 hover:text-ink transition"
+          onClick={handleClear}
+          aria-label={`Убрать файл ${fileName}`}
+        >
+          Убрать
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Скелетон загрузки: блоки «страницы под грузом» вместо вечных спиннеров. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cx('skeleton', className)} />;
+}
+
+/**
+ * Число, докручивающееся от предыдущего значения к новому (rAF, ~0.5 c).
+ * При prefers-reduced-motion значение ставится сразу, без анимации.
+ */
+export function AnimatedNumber({
+  value,
+  format,
+  className,
+}: {
+  value: number;
+  format: (n: number) => string;
+  className?: string;
+}) {
+  const [display, setDisplay] = useState(value);
+  const shownRef = useRef(value); // что реально видно сейчас — старт следующей анимации
+
+  useEffect(() => {
+    const from = shownRef.current;
+    const to = value;
+    if (from === to) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      shownRef.current = to;
+      setDisplay(to);
+      return;
+    }
+    let raf = 0;
+    const startedAt = performance.now();
+    const duration = 500;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const next = from + (to - from) * eased;
+      shownRef.current = next;
+      setDisplay(next);
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else shownRef.current = to;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf); // прервано — next from останется на видимом значении
+  }, [value]);
+
+  return <span className={cx('num tabular-nums', className)}>{format(display)}</span>;
+}
+
+/**
+ * Модальное подтверждение вместо нативного confirm(): карточка на токенах темы,
+ * оверлей, Esc/клик мимо — отмена. Автофокус на «Отмене»: опасное действие
+ * не должно срабатывать по случайному Enter. Скролл страницы блокируется.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel = 'Подтвердить',
+  cancelLabel = 'Отмена',
+  danger = false,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.documentElement.style.overflow = prevOverflow;
+    };
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="overlay-in fixed inset-0 z-50 grid place-items-center bg-ink/55 p-4 backdrop-blur-[2px]"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        className="dialog-in card w-full max-w-sm p-6"
+      >
+        <h2 id="confirm-dialog-title" className="font-display text-lg font-bold">{title}</h2>
+        <div className="mt-2 text-sm text-ink-2">{children}</div>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <Button ref={cancelRef} type="button" variant="secondary" disabled={busy} onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button type="button" variant={danger ? 'danger' : 'primary'} loading={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

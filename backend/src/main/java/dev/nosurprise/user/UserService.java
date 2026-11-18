@@ -20,15 +20,22 @@ public class UserService {
 
     private final UserRepository repository;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public UserService(UserRepository repository) {
-        this(repository, Clock.systemUTC());
+        this(repository, Clock.systemUTC(), null);
+    }
+
+    public UserService(UserRepository repository, Clock clock) {
+        this(repository, clock, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public UserService(UserRepository repository, Clock clock) {
+    public UserService(UserRepository repository, Clock clock,
+                       org.springframework.context.ApplicationEventPublisher events) {
         this.repository = repository;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional
@@ -164,6 +171,54 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<UserEntity> findAllVerifiedUsers() {
         return findAllActiveVerified();
+    }
+
+    /** Заблокирован ли пользователь. Неизвестный пользователь считается заблокированным: действовать от его имени нельзя. */
+    @Transactional(readOnly = true)
+    public boolean isBlocked(UUID userId) {
+        return repository.findBlockedById(userId).orElse(true);
+    }
+
+    /** Бросает UserBlockedException, если пользователь заблокирован (403 USER_BLOCKED). */
+    @Transactional(readOnly = true)
+    public void assertNotBlocked(UUID userId) {
+        if (isBlocked(userId)) {
+            throw new UserBlockedException();
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserEntity> findAllByIds(java.util.Collection<UUID> ids) {
+        return repository.findAllById(ids);
+    }
+
+    /**
+     * Блокировка админом (MICROLOANS.md §3.5). Себя заблокировать нельзя: админ остался бы без доступа.
+     * После коммита auth-модуль удаляет все refresh-токены пользователя (событие UserBlocked):
+     * user не зависит от auth, поэтому связь через событие.
+     */
+    @Transactional
+    public void block(UUID userId, UUID adminId) {
+        if (userId.equals(adminId)) {
+            throw new SelfBlockForbiddenException();
+        }
+        UserEntity user = repository.findById(userId).orElseThrow(AccountNotFoundException::new);
+        if (!user.isBlocked()) {
+            user.setBlocked(true);
+            repository.save(user);
+        }
+        if (events != null) {
+            events.publishEvent(new UserBlocked(userId));
+        }
+    }
+
+    @Transactional
+    public void unblock(UUID userId) {
+        UserEntity user = repository.findById(userId).orElseThrow(AccountNotFoundException::new);
+        if (user.isBlocked()) {
+            user.setBlocked(false);
+            repository.save(user);
+        }
     }
 
     private static String normalize(String email) {
