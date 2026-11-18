@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   api,
   errorMessage,
@@ -26,7 +26,10 @@ const DOCUMENT_LABELS: Record<string, string> = {
  * Клик «Подробнее» раскрывает карточку: ФИО/телефон, фото паспорта, документы и кредитная история (§3.4).
  */
 export function AdminMicroloanApplicationsPage() {
-  const [status, setStatus] = useState<MicroloanApplicationStatus>('SUBMITTED');
+  const [status, setStatus] = useState<'ALL' | MicroloanApplicationStatus>('SUBMITTED');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'name'>('date_desc');
   const [applications, setApplications] = useState<AdminMicroloanApplication[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,17 +39,22 @@ export function AdminMicroloanApplicationsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
 
   // «Обновить» перечитывает только список заявок — страница и вкладка админки остаются на месте.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setApplications(await api.adminListMicroloanApplications(status));
+      setApplications(await api.adminListMicroloanApplications(status === 'ALL' ? null : status, debouncedSearch));
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, debouncedSearch]);
 
   useEffect(() => {
     setApplications(null);
@@ -69,15 +77,46 @@ export function AdminMicroloanApplicationsPage() {
     }
   };
 
+  const sortedApplications = useMemo(() => {
+    if (!applications) return null;
+    const list = [...applications];
+    switch (sort) {
+      case 'date_asc': list.sort((a, b) => a.createdAt.localeCompare(b.createdAt)); break;
+      case 'amount_desc': list.sort((a, b) => Number(b.amount) - Number(a.amount)); break;
+      case 'amount_asc': list.sort((a, b) => Number(a.amount) - Number(b.amount)); break;
+      case 'name': list.sort((a, b) => a.fullName.localeCompare(b.fullName)); break;
+      default: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); break;
+    }
+    return list;
+  }, [applications, sort]);
+
   return (
     <div>
       <PageTitle eyebrow="Админка" title="Заявки на микрозаймы">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <Select
             value={status}
-            options={STATUSES.map((s) => ({ value: s, label: MICROLOAN_STATUS_LABELS[s] }))}
-            onChange={setStatus}
-            className="w-56"
+            options={[{ value: 'ALL', label: 'Все статусы' }, ...STATUSES.map((s) => ({ value: s, label: MICROLOAN_STATUS_LABELS[s] }))]}
+            onChange={(v) => setStatus(v as 'ALL' | MicroloanApplicationStatus)}
+            className="w-44"
+          />
+          <TextInput
+            placeholder="Поиск по ФИО, телефону, типу..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-64"
+          />
+          <Select
+            value={sort}
+            options={[
+              { value: 'date_desc', label: 'Дата (новые)' },
+              { value: 'date_asc', label: 'Дата (старые)' },
+              { value: 'amount_desc', label: 'Сумма (убыв.)' },
+              { value: 'amount_asc', label: 'Сумма (возр.)' },
+              { value: 'name', label: 'Имя' },
+            ]}
+            onChange={(v) => setSort(v as typeof sort)}
+            className="w-40"
           />
           <Button variant="secondary" size="sm" onClick={reload} loading={loading} disabled={loading}>
             Обновить
@@ -93,9 +132,9 @@ export function AdminMicroloanApplicationsPage() {
           <Skeleton className="h-12" />
           <Skeleton className="h-64" />
         </div>
-      ) : applications.length === 0 ? (
+      ) : !sortedApplications || sortedApplications.length === 0 ? (
         <Card>
-          <EmptyState title="Заявок нет" text={`Нет заявок в статусе «${MICROLOAN_STATUS_LABELS[status]}».`} emoji="📋" />
+          <EmptyState title="Нет заявок" text={status === 'ALL' ? 'Заявок пока нет.' : `Нет заявок в статусе <${MICROLOAN_STATUS_LABELS[status]}>.`} emoji="??" />
         </Card>
       ) : (
         <Card>
@@ -115,7 +154,7 @@ export function AdminMicroloanApplicationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {applications.map((app) => (
+                {sortedApplications?.map((app) => (
                   <FragmentRow
                     key={app.id}
                     app={app}

@@ -470,8 +470,13 @@ export const httpApi: Api = {
   confirmPhoneVerification: (code) =>
     request<void>('POST', '/api/me/phone/verification/confirm', { code }),
 
-  async adminListMicroloanApplications(status: MicroloanApplicationStatus) {
-    const page = await request<Raw>('GET', `/api/admin/loan-applications?status=${status}&page=0&size=100`);
+  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string) {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') params.set('status', status);
+    if (query && query.trim()) params.set('query', query.trim());
+    params.set('page', '0');
+    params.set('size', '100');
+    const page = await request<Raw>('GET', `/api/admin/loan-applications?${params.toString()}`);
     return ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication);
   },
   adminGetMicroloanApplication: async (id) =>
@@ -482,8 +487,12 @@ export const httpApi: Api = {
   adminRejectMicroloanApplication: (id, reason) => adminDecision(id, 'reject', { reason }),
   adminMarkMicroloanRepaid: (id) => adminDecision(id, 'repaid'),
 
-  async adminListUsers() {
-    const page = await request<Raw>('GET', '/api/admin/users?page=0&size=100');
+  async adminListUsers(query?: string) {
+    const params = new URLSearchParams();
+    if (query && query.trim()) params.set('query', query.trim());
+    params.set('page', '0');
+    params.set('size', '100');
+    const page = await request<Raw>('GET', `/api/admin/users?${params.toString()}`);
     return ((page.items as Raw[] | undefined) ?? []).map(
       (u): AdminUser => ({
         id: String(u.id),

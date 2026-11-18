@@ -62,10 +62,15 @@ public class AdminLoanApplicationController {
 
     /** Один запрос к loan_applications плюс один за названиями типов — без N+1 (§4.7). */
     @GetMapping
-    PageResponse<AdminApplicationRow> list(@RequestParam(defaultValue = "SUBMITTED") LoanStatus status,
+    PageResponse<AdminApplicationRow> list(@RequestParam(required = false) String status,
+                                           @RequestParam(required = false) String query,
                                            @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "20") int size) {
-        Page<LoanApplication> result = admin.list(status, Paging.page(page), Paging.size(size));
+        LoanStatus parsed = null;
+        if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+            parsed = LoanStatus.valueOf(status.toUpperCase());
+        }
+        Page<LoanApplication> result = admin.list(parsed, query, Paging.page(page), Paging.size(size));
         Map<UUID, LoanType> types = loanTypes.getAll(result.map(LoanApplication::getLoanTypeId).toSet());
         return PageResponse.of(result, a -> AdminApplicationRow.from(a,
                 types.containsKey(a.getLoanTypeId()) ? types.get(a.getLoanTypeId()).getName() : null,

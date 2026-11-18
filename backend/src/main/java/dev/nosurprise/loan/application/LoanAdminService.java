@@ -8,6 +8,8 @@ import dev.nosurprise.loan.LoanProperties;
 import dev.nosurprise.loan.calc.BusinessDays;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,8 +43,12 @@ public class LoanAdminService {
 
     /** Список строится только из loan_applications: данные заявителя берутся из снимка (§4.7). */
     @Transactional(readOnly = true)
-    public Page<LoanApplication> list(LoanStatus status, int page, int size) {
-        return repository.findByStatusOrderByCreatedAtDesc(status, PageRequest.of(page, size));
+    public Page<LoanApplication> list(LoanStatus status, String query, int page, int size) {
+        String q = (query == null || query.isBlank())
+                ? null
+                : "%" + query.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return repository.search(status, q, pageable);
     }
 
     @Transactional(readOnly = true)

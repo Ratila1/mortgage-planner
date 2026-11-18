@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import dev.nosurprise.loan.type.LoanType;
 import java.util.UUID;
 
 public interface LoanApplicationRepository extends JpaRepository<LoanApplication, UUID> {
@@ -18,7 +19,16 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
 
     Page<LoanApplication> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
-    Page<LoanApplication> findByStatusOrderByCreatedAtDesc(LoanStatus status, Pageable pageable);
+    Page<LoanApplication> findByStatus(LoanStatus status, Pageable pageable);
+
+    @Query("select a from LoanApplication a " +
+            "where (:status is null or a.status = :status) " +
+            "and (:q is null or lower(a.applicant.lastName) like :q " +
+            "or lower(a.applicant.firstName) like :q " +
+            "or lower(coalesce(a.applicant.middleName, '')) like :q " +
+            "or a.applicant.phone like :q " +
+            "or exists (select t from LoanType t where t.id = a.loanTypeId and lower(t.name) like :q))")
+    Page<LoanApplication> search(@Param("status") LoanStatus status, @Param("q") String q, Pageable pageable);
 
     boolean existsByUserIdAndStatusIn(UUID userId, List<LoanStatus> statuses);
 

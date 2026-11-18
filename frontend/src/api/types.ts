@@ -439,7 +439,7 @@ export interface Api {
   confirmPhoneVerification(code: string): Promise<void>;
   cancelMicroloanApplication(id: Id): Promise<void>;
 
-  adminListMicroloanApplications(status: MicroloanApplicationStatus): Promise<AdminMicroloanApplication[]>;
+  adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string): Promise<AdminMicroloanApplication[]>;
   /** Карточка заявки: полные данные клиента, документы, фото паспорта (passportUrl) и кредитная история. */
   adminGetMicroloanApplication(id: Id): Promise<AdminMicroloanApplicationCard>;
   /** Фото паспорта (blob); 404 — фото удалено по сроку хранения. */
@@ -449,7 +449,7 @@ export interface Api {
   /** Отметка «Погашен» для займа в ACTIVE. */
   adminMarkMicroloanRepaid(id: Id): Promise<void>;
 
-  adminListUsers(): Promise<AdminUser[]>;
+  adminListUsers(query?: string): Promise<AdminUser[]>;
   /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */
   adminBlockUser(id: Id): Promise<void>;
   adminUnblockUser(id: Id): Promise<void>;

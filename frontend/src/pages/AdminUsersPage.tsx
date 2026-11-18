@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, errorMessage, type AdminUser, type LoginProvider } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, PageTitle, Skeleton } from '../components/ui';
+import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, PageTitle, Select, Skeleton, TextInput } from '../components/ui';
 import { formatMoneyShort, formatDateTime } from '../lib/format';
 
 /** Способ входа хранится в users.provider и приходит с бэка как есть. */
@@ -35,15 +35,47 @@ export function AdminUsersPage() {
   const [confirmTarget, setConfirmTarget] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const reload = () => {
-    setLoading(true);
-    api.adminListUsers()
-      .then(setUsers)
-      .catch((err) => setError(errorMessage(err)))
-      .finally(() => setLoading(false));
-  };
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'USER'>('ALL');
+  const [providerFilter, setProviderFilter] = useState<'ALL' | LoginProvider>('ALL');
+  const [blockedFilter, setBlockedFilter] = useState<'ALL' | 'BLOCKED' | 'ACTIVE'>('ALL');
+  const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'email' | 'name'>('date_desc');
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      setUsers(await api.adminListUsers(debouncedSearch));
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const filteredUsers = useMemo(() => {
+    if (!users) return null;
+    let list = [...users];
+    if (roleFilter !== 'ALL') list = list.filter((u) => u.roles.includes(roleFilter as 'ADMIN' | 'USER'));
+    if (providerFilter !== 'ALL') list = list.filter((u) => u.provider === (providerFilter as LoginProvider));
+    if (blockedFilter === 'BLOCKED') list = list.filter((u) => u.blocked);
+    if (blockedFilter === 'ACTIVE') list = list.filter((u) => !u.blocked);
+    switch (sort) {
+      case 'date_asc': list.sort((a, b) => a.createdAt.localeCompare(b.createdAt)); break;
+      case 'email': list.sort((a, b) => a.email.localeCompare(b.email)); break;
+      case 'name': list.sort((a, b) => (a.fullName ?? '').localeCompare(b.fullName ?? '')); break;
+      default: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); break;
+    }
+    return list;
+  }, [users, roleFilter, providerFilter, blockedFilter, sort]);
 
   const toggleBlock = async (user: AdminUser) => {
     setBusyId(user.id);
@@ -71,13 +103,20 @@ export function AdminUsersPage() {
       <PageTitle eyebrow="Панель админа" title="Пользователи" />
       {notice && <div className="mb-4"><Alert tone="money">{notice}</Alert></div>}
       {error && <Alert className="mb-4">{error}</Alert>}
+      <div className="mb-4 flex flex-wrap items-end gap-2">
+        <TextInput placeholder="Поиск по email, имени, телефону..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-64" />
+        <Select value={roleFilter} options={[{ value: 'ALL', label: 'Все роли' }, { value: 'ADMIN', label: 'ADMIN' }, { value: 'USER', label: 'USER' }]} onChange={(v) => setRoleFilter(v as typeof roleFilter)} className="w-32" />
+        <Select value={providerFilter} options={[{ value: 'ALL', label: 'Все провайдеры' }, { value: 'LOCAL', label: 'Email' }, { value: 'GOOGLE', label: 'Google' }, { value: 'GITHUB', label: 'GitHub' }]} onChange={(v) => setProviderFilter(v as typeof providerFilter)} className="w-40" />
+        <Select value={blockedFilter} options={[{ value: 'ALL', label: 'Все' }, { value: 'ACTIVE', label: 'Активные' }, { value: 'BLOCKED', label: 'Заблокированные' }]} onChange={(v) => setBlockedFilter(v as typeof blockedFilter)} className="w-40" />
+        <Select value={sort} options={[{ value: 'date_desc', label: 'Дата (новые)' }, { value: 'date_asc', label: 'Дата (старые)' }, { value: 'email', label: 'Email' }, { value: 'name', label: 'Имя' }]} onChange={(v) => setSort(v as typeof sort)} className="w-40" />
+      </div>
 
       {loading ? (
         <div className="space-y-3" aria-hidden="true">
           <Skeleton className="h-12" />
           <Skeleton className="h-64" />
         </div>
-      ) : users && users.length === 0 ? (
+      ) : !filteredUsers || filteredUsers.length === 0 ? (
         <Card>
           <EmptyState
             title="Пользователей пока нет"
@@ -103,7 +142,7 @@ export function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {users?.map((user) => (
+                {filteredUsers?.map((user) => (
                   <tr key={user.id} className="border-t border-line/60 last:border-0">
                     <td className="p-4 font-mono text-xs text-ink-3">{user.id}</td>
                     <td className="p-4">
@@ -160,4 +199,4 @@ export function AdminUsersPage() {
       </ConfirmDialog>
     </div>
   );
-}
+}
