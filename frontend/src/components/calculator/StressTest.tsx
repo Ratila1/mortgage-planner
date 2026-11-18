@@ -60,7 +60,7 @@ export function StressTest({ params, basePayment, baseOverpayment }: { params: C
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-line">
+          <tr className="border-t border-line transition-colors hover:bg-paper-2/50">
             <td className="py-2.5 font-medium">{formatRate(params.annualRate)} <span className="text-xs text-ink-3">сейчас</span></td>
             <td className="num py-2.5 text-right">{formatMoney(base)}</td>
             <td className="py-2.5 text-right text-ink-3">—</td>
@@ -69,7 +69,7 @@ export function StressTest({ params, basePayment, baseOverpayment }: { params: C
           {rows.map((row) => {
             const diff = toNumber(row.monthlyPayment) - base;
             return (
-              <tr key={row.delta} className="border-t border-line">
+              <tr key={row.delta} className="border-t border-line transition-colors hover:bg-paper-2/50">
                 <td className="py-2.5 font-medium">
                   {formatRate(toNumber(params.annualRate) + row.delta)} <span className="text-xs text-stamp">+{row.delta} п.п.</span>
                 </td>

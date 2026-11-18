@@ -1,27 +1,42 @@
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router';
 import { AuthProvider } from './auth/AuthContext';
 import { Layout } from './components/Layout';
-import { RequireAuth } from './components/RequireAuth';
-import { AdminOffersPage } from './pages/AdminOffersPage';
+import { NotForAdmin, RequireAuth } from './components/RequireAuth';
+import { AdminPanelPage } from './pages/AdminPanelPage';
 import { LoginPage, RegisterPage, VerifyEmailPage } from './pages/AuthPages';
 import { CalculatorPage } from './pages/CalculatorPage';
-import { ComparePage } from './pages/ComparePage';
+import { MicroloanCalculatorPage } from './pages/MicroloanCalculatorPage';
+import { MicroloanApplicationPage } from './pages/MicroloanApplicationPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/NotificationsPage';
-import { ScenariosPage } from './pages/ScenariosPage';
+import { UserCabinetPage } from './pages/UserCabinetPage';
+
+function LoanLinkRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/cabinet/applications?open=${encodeURIComponent(id ?? '')}`} replace />;
+}
 
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<CalculatorPage />} />
+        <Route index element={<NotForAdmin><CalculatorPage /></NotForAdmin>} />
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="verify-email" element={<VerifyEmailPage />} />
-        <Route path="scenarios" element={<RequireAuth><ScenariosPage /></RequireAuth>} />
-        <Route path="compare" element={<RequireAuth><ComparePage /></RequireAuth>} />
+        {/* Личный кабинет: вкладка определяется URL (см. UserCabinetPage). */}
+        <Route path="cabinet" element={<Navigate to="/scenarios" replace />} />
+        <Route path="scenarios" element={<RequireAuth userOnly><UserCabinetPage /></RequireAuth>} />
+        <Route path="compare" element={<RequireAuth userOnly><UserCabinetPage /></RequireAuth>} />
+        <Route path="cabinet/applications" element={<RequireAuth userOnly><UserCabinetPage /></RequireAuth>} />
         <Route path="notifications" element={<RequireAuth><NotificationsPage /></RequireAuth>} />
-        <Route path="admin/offers" element={<RequireAuth admin><AdminOffersPage /></RequireAuth>} />
+        <Route path="admin" element={<RequireAuth admin><AdminPanelPage /></RequireAuth>} />
+        <Route path="microloan" element={<NotForAdmin><MicroloanCalculatorPage /></NotForAdmin>} />
+        <Route path="microloan/application" element={<RequireAuth userOnly><MicroloanApplicationPage /></RequireAuth>} />
+        <Route path="microloan/applications" element={<Navigate to="/cabinet/applications" replace />} />
+        {/* Ссылка из писем (LoanNotificationConsumer cardUrl): карточка заявки живёт во вкладке «Мои заявки». */}
+        {/* Ссылка из письма по займу: открываем «Мои заявки» с раскрытой подписью этой заявки. */}
+        <Route path="loans/:id" element={<RequireAuth userOnly><LoanLinkRedirect /></RequireAuth>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

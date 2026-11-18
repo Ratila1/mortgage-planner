@@ -2,6 +2,9 @@ import { calculateLocally, validateParams } from '../lib/calc';
 import { ApiError } from './errors';
 import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, Me, OfferInput, Scenario,
+  MicroloanType, MicroloanTypeInput, MicroloanApplication, MicroloanApplicationStatus,
+  MicroloanCalculationResult, AdminUser, CustomerProfile, CustomerProfileInput, PassportStatus,
+  AdminMicroloanApplicationCard,
 } from './types';
 
 /**
@@ -12,7 +15,7 @@ import type {
  * Почта с «unverified» имитирует неподтверждённую почту.
  */
 
-const STORE_KEY = 'nosurprise.mock.v2';
+const STORE_KEY = 'nosurprise.mock.v3';
 const delay = (ms = 250 + Math.random() * 250) => new Promise((r) => setTimeout(r, ms));
 const now = () => new Date().toISOString();
 
@@ -22,8 +25,16 @@ interface MockState {
   notifications: AppNotification[];
   offers: BankOffer[];
   calculations: Record<string, CalcResult>;
+  microloanTypes: MicroloanType[];
+  microloanApplications: MockApplication[];
+  users: AdminUser[];
+  profile: CustomerProfile | null;
+  passport: PassportStatus | null;
   nextId: number;
 }
+
+/** Заявка в моках хранит владельца и ФИО — их нет в клиентском ответе, но нужны админке. */
+type MockApplication = MicroloanApplication & { userId: string; fullName: string };
 
 const newId = () => `mock-${(state.nextId++).toString(16).padStart(8, '0')}`;
 
@@ -34,6 +45,76 @@ const seedOffers: BankOffer[] = [
   { id: 'offer-4', bankName: 'Банк Вечной Ставки', rate: '13.20', minDownPaymentPercent: '10.00', maxTermMonths: 360, active: false, updatedAt: now() },
 ];
 
+const seedMicroloanTypes: MicroloanType[] = [
+  {
+    id: 'ml-type-1',
+    name: 'До зарплаты',
+    description: 'Небольшая сумма до ближайшей зарплаты',
+    minAmount: '50',
+    maxAmount: '1000',
+    minTermDays: 7,
+    maxTermDays: 30,
+    dailyRatePct: '0.800',
+    modifier: '0.00',
+    active: true,
+    version: 0,
+  },
+  {
+    id: 'ml-type-2',
+    name: 'На iPhone',
+    description: 'Покупка техники с фиксированной надбавкой',
+    minAmount: '1000',
+    maxAmount: '5000',
+    minTermDays: 14,
+    maxTermDays: 30,
+    dailyRatePct: '0.500',
+    modifier: '25.00',
+    active: true,
+    version: 0,
+  },
+];
+
+const seedUsers: AdminUser[] = [
+  {
+    id: 'user-1',
+    email: 'admin@test.com',
+    fullName: null,
+    salary: null,
+    provider: 'LOCAL',
+    createdAt: '2025-01-15T10:00:00.000Z',
+    phone: null,
+    roles: ['ADMIN', 'USER'],
+    emailVerified: true,
+    blocked: false,
+  },
+  {
+    id: 'user-2',
+    email: 'ivan@gmail.com',
+    fullName: 'Петров Петр Петрович',
+    salary: '2500.00',
+    provider: 'GOOGLE',
+    createdAt: '2025-02-20T14:30:00.000Z',
+    phone: '+375339876543',
+    roles: ['USER'],
+    emailVerified: true,
+    blocked: false,
+  },
+  {
+    id: 'user-3',
+    email: 'maria@example.com',
+    fullName: 'Сидорова Мария Сергеевна',
+    salary: '3100.00',
+    provider: 'GITHUB',
+    createdAt: '2025-03-10T09:15:00.000Z',
+    phone: '+375445551234',
+    roles: ['USER'],
+    emailVerified: true,
+    blocked: false,
+  },
+];
+
+const MICROLOAN_STORE_KEY = 'nosurprise.microloan.v4';
+
 function load(): MockState {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -41,10 +122,35 @@ function load(): MockState {
   } catch {
     // localStorage недоступен — работаем в памяти
   }
-  return { session: null, scenarios: [], notifications: [], offers: seedOffers, calculations: {}, nextId: 100 };
+  return { session: null, scenarios: [], notifications: [], offers: seedOffers, calculations: {}, microloanTypes: seedMicroloanTypes, microloanApplications: [], users: seedUsers, profile: null, passport: null, nextId: 100 };
 }
 
-const state: MockState = load();
+function loadMicroloan(): { types: MicroloanType[]; applications: MockApplication[] } {
+  try {
+    const raw = localStorage.getItem(MICROLOAN_STORE_KEY);
+    if (raw) return JSON.parse(raw) as { types: MicroloanType[]; applications: MockApplication[] };
+  } catch {
+    // localStorage недоступен — работаем в памяти
+  }
+  return { types: seedMicroloanTypes, applications: [] };
+}
+
+function saveMicroloan() {
+  try {
+    localStorage.setItem(MICROLOAN_STORE_KEY, JSON.stringify({ types: state.microloanTypes, applications: state.microloanApplications }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const microloanData = loadMicroloan();
+
+const state: MockState = {
+  ...load(),
+  microloanTypes: microloanData.types,
+  microloanApplications: microloanData.applications,
+};
 
 // Адрес, на который была «отправлена» демо-ссылка (подтверждение / вход по ссылке).
 let pendingVerificationEmail: string | null = null;
@@ -57,6 +163,60 @@ function save() {
   } catch {
     // не страшно
   }
+}
+
+const fail = (status: number, code: string, detail?: string) => new ApiError({ status, code, detail });
+
+function persistMicroloan() {
+  if (!saveMicroloan()) throw fail(500, 'STORAGE_FAILED', 'Не удалось сохранить данные');
+  save();
+}
+
+function validateType(input: MicroloanTypeInput) {
+  if (!input.name.trim()) throw fail(400, 'VALIDATION_FAILED', 'Укажите название');
+  if (!input.description.trim()) throw fail(400, 'VALIDATION_FAILED', 'Укажите описание');
+  const min = Number(input.minAmount);
+  const max = Number(input.maxAmount);
+  if (!(min > 0 && max > 0 && min <= max)) throw fail(400, 'LOAN_TYPE_INVALID', 'Проверьте суммы: 0 < мин ≤ макс');
+  const ok = (d: number) => Number.isInteger(d) && d >= 7 && d <= 30;
+  if (!(ok(input.minTermDays) && ok(input.maxTermDays) && input.minTermDays <= input.maxTermDays)) {
+    throw fail(400, 'LOAN_TYPE_INVALID', 'Сроки — целые дни от 7 до 30, мин ≤ макс');
+  }
+  if (!(Number(input.dailyRatePct) >= 0)) throw fail(400, 'VALIDATION_FAILED', 'Ставка — число не меньше 0');
+  if (!(Number(input.modifier) >= 0)) throw fail(400, 'VALIDATION_FAILED', 'Модификатор — число не меньше 0');
+}
+
+/** Та же формула, что на бэке: простые проценты за каждый день + модификатор типа. */
+function quote(type: MicroloanType, amount: number, termDays: number): MicroloanCalculationResult {
+  if (!(amount >= Number(type.minAmount) && amount <= Number(type.maxAmount))) {
+    throw fail(400, 'LOAN_AMOUNT_OUT_OF_RANGE', `Сумма должна быть от ${type.minAmount} до ${type.maxAmount} BYN`);
+  }
+  if (!(termDays >= type.minTermDays && termDays <= type.maxTermDays)) {
+    throw fail(400, 'LOAN_TERM_OUT_OF_RANGE', `Срок — от ${type.minTermDays} до ${type.maxTermDays} дней`);
+  }
+  const interest = Math.round(amount * (Number(type.dailyRatePct) / 100) * termDays * 100) / 100;
+  const total = amount + interest + Number(type.modifier);
+  return {
+    amount: amount.toFixed(2),
+    termDays,
+    dailyRatePct: type.dailyRatePct,
+    interestAmount: interest.toFixed(2),
+    modifier: Number(type.modifier).toFixed(2),
+    totalAmount: total.toFixed(2),
+  };
+}
+
+const ACTIVE_STATUSES: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE'];
+
+function strip(a: MockApplication): MicroloanApplication {
+  const { userId: _userId, fullName: _fullName, ...rest } = a;
+  return rest;
+}
+
+function findApplication(id: string) {
+  const app = state.microloanApplications.find((a) => a.id === id);
+  if (!app) throw fail(404, 'LOAN_APPLICATION_NOT_FOUND');
+  return app;
 }
 
 function requireUser(): Me {
@@ -170,7 +330,7 @@ export const mockApi: Api = {
   async listScenarios() {
     await delay();
     requireUser();
-    return [...state.scenarios].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state.scenarios.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
   async createScenario(name, params, offerId) {
     await delay();
@@ -244,7 +404,7 @@ export const mockApi: Api = {
   async listNotifications() {
     await delay();
     requireUser();
-    return [...state.notifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state.notifications.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
   async markNotificationRead(id) {
     await delay(80);
@@ -316,6 +476,302 @@ export const mockApi: Api = {
     await delay();
     requireAdmin();
     state.offers = state.offers.filter((o) => o.id !== id);
+    save();
+  },
+
+  // ---------- микрозаймы ----------
+  async listMicroloanTypes() {
+    await delay();
+    return state.microloanTypes.filter((t) => t.active);
+  },
+  async adminListMicroloanTypes() {
+    await delay();
+    requireAdmin();
+    return [...state.microloanTypes];
+  },
+  async adminCreateMicroloanType(input) {
+    await delay();
+    requireAdmin();
+    validateType(input);
+    const type: MicroloanType = { ...input, id: newId(), version: 0 };
+    state.microloanTypes.push(type);
+    persistMicroloan();
+    return type;
+  },
+  async adminUpdateMicroloanType(id, input, version) {
+    await delay();
+    requireAdmin();
+    validateType(input);
+    const index = state.microloanTypes.findIndex((t) => t.id === id);
+    if (index < 0) throw fail(404, 'LOAN_TYPE_NOT_FOUND');
+    if (state.microloanTypes[index].version !== version) throw fail(409, 'CONCURRENT_MODIFICATION', 'Тип изменили, обновите страницу');
+    state.microloanTypes[index] = { ...input, id, version: version + 1 };
+    persistMicroloan();
+    return state.microloanTypes[index];
+  },
+  async adminDeactivateMicroloanType(id) {
+    await delay();
+    requireAdmin();
+    const index = state.microloanTypes.findIndex((t) => t.id === id);
+    if (index < 0) throw fail(404, 'LOAN_TYPE_NOT_FOUND');
+    const t = state.microloanTypes[index];
+    state.microloanTypes[index] = { ...t, active: false, version: t.version + 1 };
+    persistMicroloan();
+    return state.microloanTypes[index];
+  },
+  async calculateMicroloan(typeId, amount, termDays) {
+    await delay(80);
+    const type = state.microloanTypes.find((t) => t.id === typeId && t.active);
+    if (!type) throw fail(404, 'LOAN_TYPE_NOT_FOUND', 'Тип займа не найден или выключен');
+    return quote(type, Number(amount), Number(termDays));
+  },
+
+  async getProfile() {
+    await delay();
+    requireUser();
+    return state.profile;
+  },
+  async saveProfile(input: CustomerProfileInput) {
+    await delay();
+    requireUser();
+    const phoneChanged = state.profile?.phone !== input.phone;
+    state.profile = { ...input, phoneVerified: phoneChanged ? false : (state.profile?.phoneVerified ?? false) };
+    save();
+    return state.profile;
+  },
+  async getPassport() {
+    await delay();
+    requireUser();
+    return state.passport;
+  },
+  async uploadPassport(file: File) {
+    await delay();
+    requireUser();
+    if (!['image/jpeg', 'image/png'].includes(file.type)) throw fail(415, 'UNSUPPORTED_FILE_TYPE', 'Только JPEG или PNG');
+    if (file.size > 5 * 1024 * 1024) throw fail(413, 'FILE_TOO_LARGE', 'Файл больше 5 МБ');
+    state.passport = { uploadedAt: now(), deleted: false };
+    save();
+    return state.passport;
+  },
+
+  async createMicroloanApplication(input) {
+    await delay();
+    const me = requireUser();
+    if (!state.passport || state.passport.deleted) throw fail(409, 'KYC_REQUIRED', 'Загрузите фото паспорта');
+    if (state.microloanApplications.some((a) => a.userId === me.id && ACTIVE_STATUSES.includes(a.status))) {
+      throw fail(409, 'ACTIVE_LOAN_EXISTS', 'У вас уже есть активная заявка или заём');
+    }
+    const type = state.microloanTypes.find((t) => t.id === input.typeId && t.active);
+    if (!type) throw fail(404, 'LOAN_TYPE_NOT_FOUND', 'Тип займа не найден или выключен');
+    const q = quote(type, Number(input.amount), input.termDays);
+    await mockApi.saveProfile(input.profile);
+    const p = input.profile;
+    const app: MockApplication = {
+      id: newId(),
+      userId: me.id,
+      fullName: [p.lastName, p.firstName, p.middleName].filter(Boolean).join(' '),
+      typeId: type.id,
+      typeName: type.name,
+      amount: q.amount,
+      termDays: q.termDays,
+      interest: q.interestAmount,
+      modifier: q.modifier,
+      totalAmount: q.totalAmount,
+      monthlyIncome: p.monthlyIncome,
+      debtLoadPercent: ((Number(q.totalAmount) / Number(p.monthlyIncome)) * 100).toFixed(2),
+      status: 'SUBMITTED',
+      rejectionReason: null,
+      offerExpiresAt: null,
+      createdAt: now(),
+      documents: [],
+    };
+    state.microloanApplications.push(app);
+    persistMicroloan();
+    return strip(app);
+  },
+  async listMyMicroloanApplications() {
+    await delay();
+    const me = requireUser();
+    return state.microloanApplications
+      .filter((a) => a.userId === me.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(strip);
+  },
+  cancelMicroloanApplication: async (id) => {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    if (app.status !== 'SUBMITTED' && app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    app.status = 'CANCELLED';
+    persistMicroloan();
+  },
+  async getMicroloanApplication(id) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    return { ...strip(app), documents: [] };
+  },
+  // В моках договора нет — отдаём минимальный PDF, чтобы кнопка работала.
+  async downloadContract() {
+    await delay();
+    requireUser();
+    return new Blob(['%PDF-1.4\n% mock contract\n%%EOF'], { type: 'application/pdf' });
+  },
+  async requestSignatureCode(id) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    if (app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (!state.profile?.phoneVerified) throw fail(403, 'PHONE_NOT_VERIFIED');
+  },
+  async confirmSignature(id, code) {
+    await delay();
+    requireUser();
+    const app = findApplication(id);
+    if (app.status !== 'APPROVED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (!state.profile?.phoneVerified) throw fail(403, 'PHONE_NOT_VERIFIED');
+    if (code !== '1234') throw fail(400, 'OTP_INVALID');
+    app.status = 'ACTIVE';
+    persistMicroloan();
+    return strip(app);
+  },
+  async requestPhoneVerification() {
+    await delay();
+    requireUser();
+    if (!state.profile) throw fail(409, 'PROFILE_INCOMPLETE');
+  },
+  async confirmPhoneVerification(code) {
+    await delay();
+    requireUser();
+    if (code !== '1234') throw fail(400, 'OTP_INVALID');
+    if (state.profile) {
+      state.profile = { ...state.profile, phoneVerified: true };
+      persistMicroloan();
+    }
+  },
+
+  async adminListMicroloanApplications(status) {
+    await delay();
+    requireAdmin();
+    return state.microloanApplications
+      .filter((a) => a.status === status)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((a) => ({
+        id: a.id,
+        fullName: a.fullName,
+        typeName: a.typeName,
+        amount: a.amount,
+        termDays: a.termDays,
+        monthlyIncome: a.monthlyIncome,
+        debtLoadPercent: a.debtLoadPercent,
+        debtLoadWarning: Number(a.debtLoadPercent) > 50,
+        status: a.status,
+        createdAt: a.createdAt,
+      }));
+  },
+  async adminGetMicroloanApplication(id) {
+    await delay();
+    requireAdmin();
+    const a = findApplication(id);
+    return {
+      id: a.id,
+      userId: a.userId,
+      status: a.status,
+      version: 0,
+      createdAt: a.createdAt,
+      loanTypeId: a.typeId,
+      loanTypeName: a.typeName,
+      amount: a.amount,
+      termDays: a.termDays,
+      dailyRate: '0',
+      interest: a.interest,
+      modifier: a.modifier,
+      total: a.totalAmount,
+      lastName: a.fullName.split(' ')[0] ?? '',
+      firstName: a.fullName.split(' ')[1] ?? '',
+      middleName: a.fullName.split(' ')[2] ?? '',
+      phone: '',
+      monthlyIncome: a.monthlyIncome,
+      debtLoadPercent: a.debtLoadPercent,
+      debtLoadWarning: Number(a.debtLoadPercent) > 50,
+      decidedBy: null,
+      decidedAt: null,
+      decisionComment: a.rejectionReason,
+      offerExpiresAt: a.offerExpiresAt,
+      closedAt: null,
+      passportUrl: `/api/admin/loan-applications/${a.id}/passport`,
+      documents: [],
+      // В моках кредитной истории нет: показываем честный «прочерк».
+      creditHistory: {
+        summary: {
+          totalLoans: 0,
+          byStatus: {},
+          hasActiveLoan: false,
+          lastMonthlyIncome: null,
+          lastDebtLoadPercent: null,
+          minDebtLoadPercent: null,
+          maxDebtLoadPercent: null,
+          incidentsByType: {},
+          firstSubmittedAt: null,
+        },
+        loans: [],
+      },
+    };
+  },
+  async adminViewPassport() {
+    await delay();
+    requireAdmin();
+    // В мок-режиме фото не хранится — имитируем «фото не найдено».
+    throw fail(404, 'KYC_NOT_FOUND', 'Фотография паспорта не найдена');
+  },
+  async adminApproveMicroloanApplication(id) {
+    await delay();
+    requireAdmin();
+    const app = findApplication(id);
+    if (app.status !== 'SUBMITTED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    app.status = 'APPROVED';
+    app.offerExpiresAt = new Date(Date.now() + 5 * 864e5).toISOString();
+    persistMicroloan();
+  },
+  async adminRejectMicroloanApplication(id, reason) {
+    await delay();
+    requireAdmin();
+    const app = findApplication(id);
+    if (app.status !== 'SUBMITTED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    app.status = 'REJECTED';
+    app.rejectionReason = reason;
+    persistMicroloan();
+  },
+  async adminMarkMicroloanRepaid(id) {
+    await delay();
+    requireAdmin();
+    const app = findApplication(id);
+    if (app.status !== 'ACTIVE') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    app.status = 'REPAID';
+    persistMicroloan();
+  },
+  async adminListUsers() {
+    await delay();
+    requireAdmin();
+    return state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async adminBlockUser(id) {
+    await delay();
+    requireAdmin();
+    if (state.session?.id === id) {
+      throw new ApiError({ status: 400, code: 'SELF_BLOCK_FORBIDDEN', detail: 'Нельзя заблокировать собственный аккаунт' });
+    }
+    const user = state.users.find((u) => u.id === id);
+    if (!user) throw new ApiError({ status: 404, code: 'USER_NOT_FOUND' });
+    user.blocked = true;
+    save();
+  },
+  async adminUnblockUser(id) {
+    await delay();
+    requireAdmin();
+    const user = state.users.find((u) => u.id === id);
+    if (!user) throw new ApiError({ status: 404, code: 'USER_NOT_FOUND' });
+    user.blocked = false;
     save();
   },
 };

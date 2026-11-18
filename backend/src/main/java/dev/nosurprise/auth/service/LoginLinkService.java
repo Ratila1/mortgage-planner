@@ -115,6 +115,9 @@ public class LoginLinkService {
         if (!user.isEmailVerified()) {
             throw new EmailNotVerifiedException();
         }
+        if (user.isBlocked()) {
+            throw new dev.nosurprise.user.UserBlockedException();
+        }
         IssuedRefreshToken refresh = refreshTokenService.issue(user.getId(), issuedIp);
         return new LoginResult(
                 tokenService.generate(user.getId(), user.getRoles()),

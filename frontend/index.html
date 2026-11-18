@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="ООО «Тмыв денег» — честный калькулятор ипотеки: платёж, переплата, график и досрочные погашения." />
+    <!-- color-scheme: до рендера сообщаем браузеру обе темы (см. dark-mode в modern-web-guidance). -->
+    <meta name="color-scheme" content="light dark" />
+    <!-- Инлайн (не module/defer): применяем сохранённый выбор темы до первой отрисовки, иначе вспышка светлой темы. -->
+    <script>
+      try {
+        document.querySelector('meta[name="color-scheme"]').content =
+          localStorage.getItem('color-scheme') ?? 'light dark';
+      } catch {
+        /* localStorage заблокирован — сайт просто следует системной теме */
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

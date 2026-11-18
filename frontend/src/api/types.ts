@@ -86,6 +86,23 @@ export interface Me {
   roles: Role[];
 }
 
+/** Пользователь в админке (GET /api/admin/users). Способ входа и роли — из БД. */
+export type LoginProvider = 'LOCAL' | 'GOOGLE' | 'GITHUB';
+
+export interface AdminUser {
+  id: Id;
+  email: string;
+  /** ФИО из профиля клиента; null, если профиль ещё не заполнен. */
+  fullName: string | null;
+  salary: Money | null;
+  provider: LoginProvider;
+  createdAt: string;
+  phone: string | null;
+  roles: Role[];
+  emailVerified: boolean;
+  blocked: boolean;
+}
+
 export interface ScenarioSummary {
   monthlyPayment: Money;
   overpayment: Money;
@@ -139,10 +156,23 @@ export interface PdfReadyPayload {
   downloadUrl: string;
 }
 
+/** Payload уведомлений по заявке на микрозайм (LoanNotificationConsumer). */
+export interface LoanNotificationPayload {
+  applicationId: Id;
+  /** Ссылка на карточку заявки (/loans/{id}) — ведёт в личный кабинет. */
+  cardUrl: string;
+  /** Договор: GET по этому адресу отдаёт PDF (нужен Bearer). Есть только у LOAN_APPROVED. */
+  contractUrl?: string;
+  /** Ссылка на подпись — пока совпадает с cardUrl. */
+  signUrl?: string;
+  /** Причина отказа — только у LOAN_REJECTED. */
+  reason?: string;
+}
+
 export interface AppNotification {
   id: Id;
   type: NotificationType;
-  payload: ScenarioRecalculatedPayload | PdfReadyPayload | { message?: string } | null;
+  payload: ScenarioRecalculatedPayload | PdfReadyPayload | LoanNotificationPayload | { message?: string } | null;
   read: boolean;
   createdAt: string;
 }
@@ -158,6 +188,176 @@ export interface Problem {
 
 /** Всё, что умеет фронт. Реализации: api/http.ts (настоящий бэк) и api/mock.ts. */
 export type OAuthProvider = 'google' | 'github';
+
+/** Статусы заявки на микрозайм — как на бэке (MICROLOANS.md §3.8). */
+export type MicroloanApplicationStatus =
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'ACTIVE'
+  | 'EXPIRED'
+  | 'REPAID';
+
+/** Тип микрозайма (GET /api/loan-types, /api/admin/loan-types). */
+export interface MicroloanType {
+  id: Id;
+  name: string;
+  description: string;
+  minAmount: Money;
+  maxAmount: Money;
+  minTermDays: number;
+  maxTermDays: number;
+  dailyRatePct: string;
+  /** Фиксированная надбавка типа в BYN, прибавляется к сумме к возврату. */
+  modifier: Money;
+  active: boolean;
+  version: number;
+}
+
+export type MicroloanTypeInput = Omit<MicroloanType, 'id' | 'version'>;
+
+/** Профиль клиента (GET/PUT /api/me/profile). Email не входит: он берётся из учётной записи. */
+export interface CustomerProfile {
+  lastName: string;
+  firstName: string;
+  middleName: string;
+  phone: string;
+  monthlyIncome: Money;
+  phoneVerified: boolean;
+}
+
+export type CustomerProfileInput = Omit<CustomerProfile, 'phoneVerified'>;
+
+/** Фото паспорта: загружено или удалено по сроку хранения. */
+export interface PassportStatus {
+  uploadedAt: string;
+  deleted: boolean;
+}
+
+/** Заявка клиента на микрозайм (GET /api/loans/applications и /{id}). */
+export interface MicroloanApplication {
+  id: Id;
+  typeId: Id;
+  typeName: string;
+  amount: Money;
+  termDays: number;
+  interest: Money;
+  modifier: Money;
+  totalAmount: Money;
+  monthlyIncome: Money;
+  debtLoadPercent: string;
+  status: MicroloanApplicationStatus;
+  rejectionReason: string | null;
+  offerExpiresAt: string | null;
+  createdAt: string;
+  /** Документы есть только в GET /{id} (в списке бэк отдаёт пустой список). */
+  documents: AdminLoanDocument[];
+}
+
+/** Строка списка заявок в админке. */
+export interface AdminMicroloanApplication {
+  id: Id;
+  fullName: string;
+  typeName: string;
+  amount: Money;
+  termDays: number;
+  monthlyIncome: Money;
+  debtLoadPercent: string;
+  debtLoadWarning: boolean;
+  status: MicroloanApplicationStatus;
+  createdAt: string;
+}
+
+/** Документ заявки (договор и т.п.): скачивается по downloadUrl с Bearer-токеном. */
+export interface AdminLoanDocument {
+  id: Id;
+  type: string;
+  downloadUrl: string;
+  createdAt: string;
+}
+
+/** Сводка кредитной истории клиента (Mongo, §3.12). totalLoans === 0 — истории нет. */
+export interface AdminCreditHistorySummary {
+  totalLoans: number;
+  byStatus: Record<string, number>;
+  hasActiveLoan: boolean;
+  lastMonthlyIncome: string | null;
+  lastDebtLoadPercent: string | null;
+  minDebtLoadPercent: string | null;
+  maxDebtLoadPercent: string | null;
+  incidentsByType: Record<string, number>;
+  firstSubmittedAt: string | null;
+}
+
+/** Займ из кредитной истории клиента. */
+export interface AdminCreditHistoryLoan {
+  applicationId: Id;
+  status: MicroloanApplicationStatus;
+  loanTypeName: string;
+  amount: Money;
+  termDays: number;
+  dailyRate: string;
+  modifier: string;
+  interest: Money;
+  total: Money;
+  monthlyIncome: string | null;
+  debtLoadPercent: string | null;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  decisionComment: string | null;
+  closedAt: string | null;
+  syncedAt: string;
+}
+
+/** Кредитная история клиента: сводка + все займы. */
+export interface AdminCreditHistory {
+  summary: AdminCreditHistorySummary;
+  loans: AdminCreditHistoryLoan[];
+}
+
+/** Карточка заявки для админа (GET /api/admin/loan-applications/{id}): заявка + документы + кредитная история. */
+export interface AdminMicroloanApplicationCard {
+  id: Id;
+  userId: Id;
+  status: MicroloanApplicationStatus;
+  version: number;
+  createdAt: string;
+  loanTypeId: Id;
+  loanTypeName: string;
+  amount: Money;
+  termDays: number;
+  dailyRate: string;
+  interest: Money;
+  modifier: Money;
+  total: Money;
+  lastName: string;
+  firstName: string;
+  middleName: string;
+  phone: string;
+  monthlyIncome: Money;
+  debtLoadPercent: string;
+  debtLoadWarning: boolean;
+  decidedBy: Id | null;
+  decidedAt: string | null;
+  decisionComment: string | null;
+  offerExpiresAt: string | null;
+  closedAt: string | null;
+  /** GET по этому адресу отдаёт фото паспорта (no-store); 404 — фото удалено по сроку. */
+  passportUrl: string;
+  documents: AdminLoanDocument[];
+  creditHistory: AdminCreditHistory;
+}
+
+/** Расчёт микрозайма (POST /api/loans/quote): проценты от суммы + модификатор типа. */
+export interface MicroloanCalculationResult {
+  amount: Money;
+  termDays: number;
+  dailyRatePct: string;
+  interestAmount: Money;
+  modifier: Money;
+  totalAmount: Money;
+}
 
 export interface Api {
   calculate(params: CalcParams): Promise<CalcResult>;
@@ -199,4 +399,58 @@ export interface Api {
   adminCreateOffer(input: OfferInput): Promise<BankOffer>;
   adminUpdateOffer(id: Id, input: OfferInput): Promise<BankOffer>;
   adminDeleteOffer(id: Id): Promise<void>;
+
+  // Микрозаймы (MICROLOANS.md §4.6)
+  /** Активные типы микрозаймов для калькулятора и заявки. */
+  listMicroloanTypes(): Promise<MicroloanType[]>;
+  /** Админ: все типы, включая выключенные. */
+  adminListMicroloanTypes(): Promise<MicroloanType[]>;
+  adminCreateMicroloanType(input: MicroloanTypeInput): Promise<MicroloanType>;
+  adminUpdateMicroloanType(id: Id, input: MicroloanTypeInput, version: number): Promise<MicroloanType>;
+  /** Выключение типа (удаления нет — на тип ссылаются старые заявки). */
+  adminDeactivateMicroloanType(id: Id): Promise<MicroloanType>;
+  /** Расчёт на бэке (публично, ничего не сохраняет). */
+  calculateMicroloan(typeId: Id, amount: Money, termDays: number): Promise<MicroloanCalculationResult>;
+
+  /** Профиль клиента; null — ещё не заполнен. */
+  getProfile(): Promise<CustomerProfile | null>;
+  saveProfile(input: CustomerProfileInput): Promise<CustomerProfile>;
+  /** Фото паспорта; null — ещё не загружено. */
+  getPassport(): Promise<PassportStatus | null>;
+  uploadPassport(file: File): Promise<PassportStatus>;
+
+  /** Подать заявку: данные формы сохраняются в профиль в той же транзакции. */
+  createMicroloanApplication(input: {
+    typeId: Id;
+    amount: Money;
+    termDays: number;
+    profile: CustomerProfileInput;
+  }): Promise<MicroloanApplication>;
+  listMyMicroloanApplications(): Promise<MicroloanApplication[]>;
+  /** Карточка своей заявки: условия, статус и документы (договор). */
+  getMicroloanApplication(id: Id): Promise<MicroloanApplication>;
+  /** Скачивание документа (договора) по downloadUrl из карточки: нужен Bearer, поэтому fetch. */
+  downloadContract(downloadUrl: string): Promise<Blob>;
+  /** Подпись договора (§3.10): код приходит SMS на подтверждённый телефон. */
+  requestSignatureCode(id: Id): Promise<void>;
+  confirmSignature(id: Id, code: string): Promise<MicroloanApplication>;
+  /** Подтверждение телефона (условие подписи): код приходит SMS на телефон профиля. */
+  requestPhoneVerification(): Promise<void>;
+  confirmPhoneVerification(code: string): Promise<void>;
+  cancelMicroloanApplication(id: Id): Promise<void>;
+
+  adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string): Promise<AdminMicroloanApplication[]>;
+  /** Карточка заявки: полные данные клиента, документы, фото паспорта (passportUrl) и кредитная история. */
+  adminGetMicroloanApplication(id: Id): Promise<AdminMicroloanApplicationCard>;
+  /** Фото паспорта (blob); 404 — фото удалено по сроку хранения. */
+  adminViewPassport(id: Id): Promise<Blob>;
+  adminApproveMicroloanApplication(id: Id): Promise<void>;
+  adminRejectMicroloanApplication(id: Id, reason: string): Promise<void>;
+  /** Отметка «Погашен» для займа в ACTIVE. */
+  adminMarkMicroloanRepaid(id: Id): Promise<void>;
+
+  adminListUsers(query?: string): Promise<AdminUser[]>;
+  /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */
+  adminBlockUser(id: Id): Promise<void>;
+  adminUnblockUser(id: Id): Promise<void>;
 }

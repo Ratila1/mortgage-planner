@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { api, errorMessage, type BankOffer, type CalcParams, type CalcResult, type EarlyRepayment, type PaymentType } from '../api';
 import { EarlyRepaymentsEditor } from '../components/calculator/EarlyRepaymentsEditor';
@@ -7,7 +7,7 @@ import { ResultSummary } from '../components/calculator/ResultSummary';
 import { SaveScenario } from '../components/calculator/SaveScenario';
 import { ScheduleTable } from '../components/calculator/ScheduleTable';
 import { StressTest } from '../components/calculator/StressTest';
-import { Alert, Card, Field, Segmented, Spinner, TextInput, cx } from '../components/ui';
+import { Alert, Card, Field, Segmented, Skeleton, Spinner, TextInput, cx } from '../components/ui';
 import { validateParams } from '../lib/calc';
 import { formatMoneyShort, formatRate, formatTerm, parseMoneyInput, toNumber } from '../lib/format';
 
@@ -123,7 +123,7 @@ export function CalculatorPage() {
 
   return (
     <div className="space-y-8">
-      <section className="max-w-3xl">
+      <section className="reveal max-w-3xl">
         <p className="eyebrow mb-3">Калькулятор без регистрации и мелкого шрифта</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
           Ипотека без <span className="relative whitespace-nowrap text-money">сюрпризов<svg aria-hidden="true" viewBox="0 0 300 12" className="absolute -bottom-1 left-0 h-3 w-full text-gold" preserveAspectRatio="none"><path d="M2 9c60-6 140-8 296-3" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" /></svg></span>
@@ -135,7 +135,7 @@ export function CalculatorPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-12">
-        <Card className="lg:col-span-5">
+        <Card className="reveal lg:col-span-5" style={{ '--reveal-index': 1 } as CSSProperties}>
           <SectionTitle>Параметры</SectionTitle>
           <div className="space-y-5">
             <Field label="Стоимость жилья" htmlFor="price" hint={formatMoneyShort(price)}>
@@ -209,7 +209,7 @@ export function CalculatorPage() {
                         onClick={() => pickOffer(offer)}
                         className={cx(
                           'rounded-lg border px-2.5 py-1.5 text-left text-xs transition',
-                          offerId === offer.id ? 'border-money bg-money-soft text-money-2' : 'border-line bg-white/60 text-ink-2 hover:border-ink-3',
+                          offerId === offer.id ? 'border-money bg-money-soft text-money-2' : 'border-line bg-field text-ink-2 hover:border-ink-3',
                         )}
                       >
                         <span className="block font-semibold">{offer.bankName}</span>
@@ -220,7 +220,7 @@ export function CalculatorPage() {
                   </div>
                 </div>
               )}
-              {offerWarnings.length > 0 && <p className="mt-2 text-xs text-[#8a6100]">Внимание: {offerWarnings.join('; ')}.</p>}
+              {offerWarnings.length > 0 && <p className="mt-2 text-xs text-gold-ink">Внимание: {offerWarnings.join('; ')}.</p>}
             </Field>
 
             <Field label="Тип платежа">
@@ -228,7 +228,7 @@ export function CalculatorPage() {
               <p className="mt-1.5 text-xs text-ink-3">{typeOptions.find((o) => o.value === type)?.hint}</p>
             </Field>
 
-            <details className="group rounded-xl border border-line bg-white/40 p-3.5" open={earlyRepayments.length > 0}>
+            <details className="group rounded-xl border border-line bg-field p-3.5" open={earlyRepayments.length > 0}>
               <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
                 <span>Досрочные погашения {earlyRepayments.length > 0 && <span className="text-ink-3">({earlyRepayments.length})</span>}</span>
                 <span className="text-ink-3 transition group-open:rotate-180" aria-hidden="true">▾</span>
@@ -241,7 +241,7 @@ export function CalculatorPage() {
         </Card>
 
         <div className="space-y-6 lg:col-span-7">
-          <Card className="lg:sticky lg:top-24">
+          <Card className="reveal lg:sticky lg:top-24" style={{ '--reveal-index': 2 } as CSSProperties}>
             <SectionTitle aside={loading ? <Spinner className="h-4 w-4 text-money" /> : undefined}>Итог</SectionTitle>
             {validation ? (
               <Alert tone="gold">{validation}</Alert>
@@ -256,8 +256,13 @@ export function CalculatorPage() {
                 </div>
               </div>
             ) : (
-              <div className="grid place-items-center py-16 text-money">
-                <Spinner className="h-8 w-8" />
+              <div className="space-y-3" aria-hidden="true">
+                <Skeleton className="h-12 w-64 max-w-full" />
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <Skeleton className="h-16" />
+                  <Skeleton className="h-16" />
+                  <Skeleton className="h-16" />
+                </div>
               </div>
             )}
           </Card>
@@ -266,17 +271,17 @@ export function CalculatorPage() {
 
       {result && !validation && (
         <>
-          <Card>
+          <Card className="reveal-scroll">
             <SectionTitle aside="зелёное — ваше, красное — банку">Куда уходят деньги</SectionTitle>
             <PaymentChart schedule={result.schedule} />
           </Card>
 
-          <Card>
+          <Card className="reveal-scroll">
             <SectionTitle aside="на случай плавающей ставки">Что если ставка вырастет</SectionTitle>
             <StressTest params={debouncedParams} basePayment={result.monthlyPayment} baseOverpayment={result.overpayment} />
           </Card>
 
-          <Card>
+          <Card className="reveal-scroll">
             <SectionTitle>График платежей</SectionTitle>
             <ScheduleTable schedule={result.schedule} />
           </Card>

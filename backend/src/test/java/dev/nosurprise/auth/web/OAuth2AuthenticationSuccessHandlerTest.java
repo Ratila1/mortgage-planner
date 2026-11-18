@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class OAuth2AuthenticationSuccessHandlerTest {
@@ -62,5 +63,40 @@ class OAuth2AuthenticationSuccessHandlerTest {
         assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:8080/");
         assertThat(response.getHeader("Set-Cookie")).contains("HttpOnly");
         assertThat(response.getHeader("Set-Cookie")).contains("Path=/api/auth");
+    }
+
+    @Test
+    @DisplayName("GitHub OAuth: email скрыт в /user — доходим до загрузки authorized client и берём /user/emails")
+    void githubEmailFallbackResolvesAuthorizedClient() throws Exception {
+        UserService userService = Mockito.mock(UserService.class);
+        dev.nosurprise.auth.service.RefreshTokenService refreshTokenService =
+                Mockito.mock(dev.nosurprise.auth.service.RefreshTokenService.class);
+        ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider = Mockito.mock(ObjectProvider.class);
+        OAuth2AuthorizedClientService authorizedClientService = Mockito.mock(OAuth2AuthorizedClientService.class);
+        when(authorizedClientServiceProvider.getIfAvailable()).thenReturn(authorizedClientService);
+
+        OAuth2AuthenticationSuccessHandler handler = new OAuth2AuthenticationSuccessHandler(
+                userService, refreshTokenService, authorizedClientServiceProvider, "http://localhost:8080");
+
+        OAuth2User principal = Mockito.mock(OAuth2User.class);
+        when(principal.getAttribute("email")).thenReturn(null);
+        when(principal.getAttribute("login")).thenReturn("octocat");
+        when(principal.getAttribute("id")).thenReturn(42);
+
+        OAuth2AuthenticationToken auth = Mockito.mock(OAuth2AuthenticationToken.class);
+        when(auth.getPrincipal()).thenReturn(principal);
+        when(auth.getAuthorizedClientRegistrationId()).thenReturn("github");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setSecure(false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        handler.onAuthenticationSuccess(request, response, auth);
+
+        // Регрессия: раньше javac выбирал String.valueOf(char[]) для generic getAttribute и падал
+        // ClassCastException "String cannot be cast to [C" ещё до построения массива кандидатов,
+        // поэтому loadAuthorizedClient не вызывался ни разу и письмо /user/emails не запрашивалось.
+        verify(authorizedClientService).loadAuthorizedClient("github", "octocat");
+        assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:8080/login?oauthError=no_email");
     }
 }
