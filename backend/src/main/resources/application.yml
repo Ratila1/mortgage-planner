@@ -97,6 +97,9 @@ app:
   metrics:
     user: ${METRICS_USER:}         # пусто = /actuator/prometheus закрыт совсем (§7)
     password: ${METRICS_PASSWORD:} # задать, если Prometheus скрейпит с basic-авторизацией
+  service:
+    # No placeholder: an unset token makes /api/internal/** fail closed.
+    token: ${SERVICE_TOKEN:}
   sms-client:
     base-url: ${SMS_CLIENT_BASE_URL:http://localhost:8091}
     service-jwt-secret: ${SMS_CLIENT_SERVICE_JWT_SECRET:${JWT_SECRET:}}

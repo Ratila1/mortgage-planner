@@ -36,6 +36,20 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 5s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 2
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 4s
   main:
     allow-bean-definition-overriding: true
 
@@ -87,3 +101,19 @@ app:
     account-sid: ${TWILIO_ACCOUNT_SID:}
     auth-secret: ${TWILIO_AUTH_SECRET:}
     from: ${TWILIO_FROM:}
+  telegram:
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    bot-username: ${TELEGRAM_BOT_USERNAME:}
+    webhook-path: /telegram/webhook
+    api-base: https://api.telegram.org
+    polling-enabled: ${TELEGRAM_POLLING_ENABLED:true}
+    # Telegram sends this value in X-Telegram-Bot-Api-Secret-Token; empty = webhook rejected.
+    webhook-secret-token: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:}
+  service:
+    # No placeholder: an unset token makes the internal service token fail closed.
+    token: ${SERVICE_TOKEN:}
+  main-backend:
+    base-url: ${MAIN_BACKEND_URL:http://backend:8080}
+  verification:
+    code-ttl: 5m
+    max-attempts: 3

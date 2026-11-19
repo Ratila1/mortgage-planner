@@ -25,10 +25,15 @@ import dev.nosurprise.smsclient.SmsClient;
 import dev.nosurprise.smsclient.SmsClientException;
 import dev.nosurprise.smsclient.dto.SmsResponse;
 import dev.nosurprise.smsclient.dto.VerifyResponse;
+import dev.nosurprise.telegram.TelegramRoutingKeys;
+import dev.nosurprise.telegram.TelegramVerification;
+import dev.nosurprise.telegram.TelegramVerificationRepository;
+import dev.nosurprise.telegram.VerificationRequested;
 import dev.nosurprise.user.UserService;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
@@ -45,6 +50,7 @@ public class SigningService {
     static final String COOLDOWN_KEY_PREFIX = "sign-otp:cooldown:";
     /** TTL привязки совпадает с TTL OTP в sms-verification-service (5 минут). */
     private static final Duration BINDING_TTL = Duration.ofMinutes(5);
+    private static final int TELEGRAM_TTL_MINUTES = 5;
 
     private final LoanApplicationService applications;
     private final LoanApplicationRepository repository;
@@ -57,6 +63,7 @@ public class SigningService {
     private final LoanEventRecorder recorder;
     private final LoanIncidentRecorder incidents;
     private final OutboxPublisher outbox;
+    private final TelegramVerificationRepository verifications;
     private final TransactionTemplate tx;
     private final Clock clock;
     private final StringRedisTemplate redisTemplate;
@@ -65,6 +72,7 @@ public class SigningService {
                           LoanDocumentRepository documents, LoanSignatureRepository signatures,
                           CustomerService customers, UserService users, SmsClient smsClient, OtpCooldown cooldown,
                           LoanEventRecorder recorder, LoanIncidentRecorder incidents, OutboxPublisher outbox,
+                          TelegramVerificationRepository verifications,
                           PlatformTransactionManager transactionManager, Clock clock,
                           StringRedisTemplate redisTemplate) {
         this.applications = applications;
@@ -78,12 +86,17 @@ public class SigningService {
         this.recorder = recorder;
         this.incidents = incidents;
         this.outbox = outbox;
+        this.verifications = verifications;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
         this.redisTemplate = redisTemplate;
     }
 
-    public void requestCode(UUID userId, UUID applicationId) {
+    /**
+     * Sends the SMS code as before and additionally starts the parallel Telegram 2FA channel.
+     * The returned id is used by the client to poll /api/verify/{id}/status.
+     */
+    public UUID requestCode(UUID userId, UUID applicationId) {
         users.assertNotBlocked(userId);
         LoanApplication application = signable(userId, applicationId);
         LoanDocument contract = contractOf(applicationId);
@@ -92,7 +105,7 @@ public class SigningService {
             incidents.record(applicationId, LoanEventType.SIGN_BLOCKED_PHONE_NOT_VERIFIED, userId, null);
             throw new PhoneNotVerifiedException();
         }
-        
+
         String cooldownKey = COOLDOWN_KEY_PREFIX + userId;
         cooldown.tryAcquire(cooldownKey);
 
@@ -111,6 +124,17 @@ public class SigningService {
             incidents.record(applicationId, LoanEventType.SIGN_CODE_FAILED, userId, null);
             throw e;
         }
+
+        Instant now = clock.instant();
+        UUID verificationId = UUID.randomUUID();
+        return tx.execute(status -> {
+            verifications.save(new TelegramVerification(verificationId, userId, "SIGNING",
+                    applicationId.toString(), now, now.plus(Duration.ofMinutes(TELEGRAM_TTL_MINUTES))));
+            outbox.publish(TelegramRoutingKeys.VERIFICATION_REQUESTED, "telegram-verification", verificationId,
+                    new VerificationRequested(UUID.randomUUID(), now, verificationId, userId, "SIGNING",
+                            applicationId.toString(), TELEGRAM_TTL_MINUTES));
+            return verificationId;
+        });
     }
 
     public LoanApplication confirm(UUID userId, UUID applicationId, String code, String ip, String userAgent) {
@@ -165,7 +189,49 @@ public class SigningService {
             throw new PhoneNotVerifiedException();
         }
 
-        LoanApplication signed = tx.execute(status -> {
+        LoanApplication signed = signApplication(userId, applicationId, contract, profile, ip, userAgent);
+        clearBinding(applicationId);
+        return signed;
+    }
+
+    /** Executes the operation approved by a Telegram code. Idempotent by verification id. */
+    @Transactional
+    public void completeTelegramVerification(UUID verificationId) {
+        TelegramVerification verification = verifications.findById(verificationId)
+                .orElseThrow(() -> new CodeInvalidException("unknown verification"));
+        if ("COMPLETED".equals(verification.getStatus())) return;
+        if (verification.getExpiresAt().isBefore(clock.instant())) {
+            verification.setStatus("EXPIRED");
+            verifications.save(verification);
+            throw new CodeInvalidException("verification expired");
+        }
+
+        UUID userId = verification.getUserId();
+        UUID applicationId = UUID.fromString(verification.getOperationRef());
+        users.assertNotBlocked(userId);
+        signable(userId, applicationId);
+
+        LoanDocument contract = contractOf(applicationId);
+        String sentSha = redisTemplate.opsForValue().get(SMS_SHA_PREFIX + applicationId);
+        if (sentSha != null && !contract.getSha256().equals(sentSha)) {
+            throw new CodeInvalidException("contract has changed since the code was sent, request a new code");
+        }
+
+        ProfileView profile = customers.findProfile(userId).orElse(null);
+        if (profile == null || !profile.phoneVerified()) {
+            throw new PhoneNotVerifiedException();
+        }
+
+        // The conditional update is the idempotency guard: a concurrent caller blocks on this
+        // row and sees zero affected rows after the winner commits. It shares the transaction
+        // with signApplication(), so a failed signing rolls the claim back.
+        if (verifications.claimCompletion(verificationId, clock.instant()) == 0) return;
+        signApplication(userId, applicationId, contract, profile, "telegram", "telegram");
+    }
+
+    private LoanApplication signApplication(UUID userId, UUID applicationId, LoanDocument contract,
+                                            ProfileView profile, String ip, String userAgent) {
+        return tx.execute(status -> {
             Instant now = clock.instant();
             LoanApplication application = repository.findById(applicationId).orElseThrow();
             application.activate(now);
@@ -178,9 +244,6 @@ public class SigningService {
                             LoanStatus.ACTIVE.name()));
             return application;
         });
-
-        clearBinding(applicationId);
-        return signed;
     }
 
     private void clearBinding(UUID applicationId) {

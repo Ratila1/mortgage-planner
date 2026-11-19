@@ -1,7 +1,11 @@
 package dev.nosurprise.customer;
 
+import dev.nosurprise.telegram.event.PhoneChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import java.time.Clock;
 import java.util.Collection;
@@ -17,10 +21,12 @@ public class CustomerService {
 
     private final CustomerProfileRepository repository;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public CustomerService(CustomerProfileRepository repository, Clock clock) {
+    public CustomerService(CustomerProfileRepository repository, Clock clock, ApplicationEventPublisher events) {
         this.repository = repository;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -33,6 +39,15 @@ public class CustomerService {
         return repository.findAllById(userIds).stream().map(ProfileView::from).toList();
     }
 
+    @Transactional(readOnly = true)
+    public Optional<UUID> findUserIdByPhone(String phone) {
+        if (phone == null || phone.isBlank()) return Optional.empty();
+        List<CustomerProfile> profiles = repository.findAllByPhone(phone.trim());
+        // The phone column is not unique. Never bind to an arbitrary account when it is shared.
+        if (profiles.size() > 1) throw new AmbiguousPhoneException(phone.trim());
+        return profiles.stream().findFirst().map(CustomerProfile::getUserId);
+    }
+
     /**
      * Создаёт или обновляет профиль. Вызывается и из ЛК, и из подачи заявки: во втором случае
      * это часть транзакции подачи (§4.8), поэтому REQUIRED, а не отдельная транзакция.
@@ -41,8 +56,13 @@ public class CustomerService {
     public ProfileView saveProfile(UUID userId, ProfileData data) {
         CustomerProfile profile = repository.findById(userId)
                 .orElseGet(() -> new CustomerProfile(userId, clock.instant()));
+        String previousPhone = profile.getPhone();
         profile.apply(data, clock.instant());
-        return ProfileView.from(repository.save(profile));
+        ProfileView saved = ProfileView.from(repository.save(profile));
+        if (!java.util.Objects.equals(previousPhone, data.phone())) {
+            events.publishEvent(new PhoneChangedEvent(userId, previousPhone, data.phone()));
+        }
+        return saved;
     }
 
     /** Профиль заполнен полностью — иначе ProfileIncompleteException. */

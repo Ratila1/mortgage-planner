@@ -10,7 +10,6 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -86,40 +85,10 @@ services:
       SPRING_RABBITMQ_PUBLISHER_CONFIRM_TYPE: correlated
       SMS_CLIENT_BASE_URL: http://sms-verification-service:8091
       SMS_CLIENT_SERVICE_JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
     expose: ["8080"]
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 40s
-
-  notification-service:
-    build: ./notification-service
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      rabbitmq: { condition: service_healthy }
-    environment:
-      POSTGRES_URL: jdbc:postgresql://postgres:5432/nosurprise_notifications
-      POSTGRES_USER: ${POSTGRES_USER:-nosurprise}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      JWT_SECRET: ${JWT_SECRET:?}
-      SERVICE_TOKEN: ${SERVICE_TOKEN:-change-me-service-token}
-      MAIN_BACKEND_URL: http://backend:8080
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
-      SERVER_PORT: 8090
-    expose: ["8090"]
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8090'"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -130,6 +99,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
     environment:
       SPRING_PROFILES_ACTIVE: ${SMS_PROFILE:-sim}
       DB_HOST: postgres
@@ -149,6 +119,16 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_SECRET: ${TWILIO_AUTH_SECRET:-}
       TWILIO_FROM: ${TWILIO_FROM:-}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+      MAIN_BACKEND_URL: http://backend:8080
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_POLLING_ENABLED: ${TELEGRAM_POLLING_ENABLED:-true}
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:-}
     expose: ["8091"]
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8091'"]
@@ -161,7 +141,6 @@ services:
     build: ./frontend
     depends_on:
       backend: { condition: service_healthy }
-      notification-service: { condition: service_healthy }
       sms-verification-service: { condition: service_healthy }
     ports: ["8080:80"]
 

@@ -218,6 +218,9 @@ public class UserService {
         if (user.isBlocked()) {
             user.setBlocked(false);
             repository.save(user);
+            if (events != null) {
+                events.publishEvent(new dev.nosurprise.telegram.event.UserUnblockedEvent(userId));
+            }
         }
     }
 

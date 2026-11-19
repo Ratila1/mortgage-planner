@@ -179,6 +179,12 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, ErrorCode.PHONE_NOT_VERIFIED, ex.getMessage());
     }
 
+    /** Several profiles share the phone; binding must not silently pick one of them. */
+    @ExceptionHandler(dev.nosurprise.customer.AmbiguousPhoneException.class)
+    ProblemDetail onAmbiguousPhone(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.AMBIGUOUS_PHONE, ex.getMessage());
+    }
+
     @ExceptionHandler(dev.nosurprise.common.otp.CodeInvalidException.class)
     ProblemDetail onCodeInvalid(RuntimeException ex) {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.OTP_INVALID, ex.getMessage());

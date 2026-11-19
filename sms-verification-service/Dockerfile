@@ -3,7 +3,7 @@ FROM gradle:9.2.1-jdk25 AS builder
 WORKDIR /app
 COPY settings.gradle build.gradle ./
 COPY src ./src
-RUN gradle build --no-daemon -x test
+RUN gradle bootJar --no-daemon -x test
 
 # Runtime stage
 FROM eclipse-temurin:25-jre

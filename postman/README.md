@@ -11,7 +11,7 @@
 
 1. Postman → **Import** → перетащить оба файла.
 2. Справа сверху выбрать окружение **Mortgage Planner (local)**.
-3. Убедиться, что стек поднят: `docker compose ps` (нужны backend, sms-verification-service, notification-service, frontend, mailpit).
+3. Убедиться, что стек поднят: `docker compose ps` (нужны backend, sms-verification-service, frontend, mailpit).
 
 ## Порядок запуска
 

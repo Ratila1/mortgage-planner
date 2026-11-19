@@ -1,6 +1,7 @@
 package dev.nosurprise.smsverificationservice.integration.support;
 
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -12,7 +13,7 @@ import java.sql.Statement;
 import java.time.Duration;
 
 /**
- * Одноразовая инфраструктура integration-тестов: PostgreSQL и Redis (Testcontainers).
+ * Одноразовая инфраструктура integration-тестов: PostgreSQL, Redis и RabbitMQ (Testcontainers).
  * Контейнеры — статические singleton'ы на JVM; удаляются Ryuk при завершении.
  * Образы совпадают с docker-compose.yml.
  * <p>
@@ -33,9 +34,14 @@ public final class SmsTestEnvironment {
                     .withExposedPorts(6379)
                     .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(1)));
 
+    public static final RabbitMQContainer RABBIT =
+            new RabbitMQContainer(DockerImageName.parse("rabbitmq:4-management-alpine"))
+                    .withStartupTimeout(Duration.ofMinutes(2));
+
     static {
         POSTGRES.start();
         REDIS.start();
+        RABBIT.start();
         createSmsSchema();
     }
 

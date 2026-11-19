@@ -115,6 +115,11 @@ public abstract class AbstractSmsIntegrationTest {
         registry.add("spring.data.redis.host", SmsTestEnvironment.REDIS::getHost);
         registry.add("spring.data.redis.port", () -> SmsTestEnvironment.REDIS.getMappedPort(6379));
 
+        registry.add("spring.rabbitmq.host", SmsTestEnvironment.RABBIT::getHost);
+        registry.add("spring.rabbitmq.port", () -> SmsTestEnvironment.RABBIT.getMappedPort(5672));
+        registry.add("spring.rabbitmq.username", SmsTestEnvironment.RABBIT::getAdminUsername);
+        registry.add("spring.rabbitmq.password", SmsTestEnvironment.RABBIT::getAdminPassword);
+
         registry.add("app.jwt.secret", () -> JWT_SECRET);
     }
 }

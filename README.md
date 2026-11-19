@@ -96,8 +96,8 @@ docker compose up --build
     -c "select message from sms.sms_request order by created_at desc limit 1"
   ```
 
-- `notification-service` (порт `8090`, тоже только внутри docker-сети) — Telegram-уведомления и 2FA.
-  Контракт и текущий объём — в [notification-service/CONTRACT.md](notification-service/CONTRACT.md).
+- Telegram 2FA и привязка аккаунта теперь работают внутри `sms-verification-service` (порт `8091`).
+  Контракт и переменные окружения — в [sms-verification-service/TELEGRAM.md](sms-verification-service/TELEGRAM.md).
 
 </details>
 
@@ -161,11 +161,12 @@ flowchart LR
   API --> RD[(Redis<br/>кэш, refresh-токены, rate limit)]
   API -->|события| MQ{{RabbitMQ}}
   MQ -->|consumers| API
-  MQ -->|verification.requested| NS[notification-service<br/>Telegram, :8090]
-  NS -->|Bot API| TG[Telegram]
-  NS -->|X-Service-Token| API
+  API -->|verification.requested| MQ
+  MQ -->|verification.requested| SMS
   API --> SMTP[SMTP / Mailpit]
   API -->|HTTP + service JWT| SMS[sms-verification-service<br/>:8091]
+  API <-->|X-Service-Token| SMS
+  SMS -->|Bot API| TG[Telegram]
   SMS -->|vonage / twilio| GW[SMS-шлюз]
   PROM[Prometheus] -.->|/actuator/prometheus| API
   PROM -.->|/actuator/prometheus| SMS
@@ -174,9 +175,9 @@ flowchart LR
 
 **Один хост.** Фронт и бэк доступны по одному адресу, бэкенд наружу порт не публикует — весь трафик
 идёт через nginx. Поэтому нет CORS, а refresh-токен лежит в httpOnly-cookie.
-**Модульный монолит + два сервиса:** вся бизнес-логика и consumer-ы RabbitMQ живут в одном приложении.
-Отдельно вынесены только `sms-verification-service` (SMS и OTP) и `notification-service` (Telegram):
-оба слушают только docker-сеть, наружу их порты не публикуются, `/api/v1/sms` через nginx недоступен.
+**Модульный монолит + один сервис:** вся бизнес-логика и consumer-ы RabbitMQ живут в одном приложении.
+Отдельно вынесен только `sms-verification-service` (SMS, OTP и Telegram 2FA): он слушает только docker-сеть,
+наружу его порт не публикуется, `/api/v1/sms` через nginx недоступен.
 
 > 📚 Подробно (модули, схемы данных, ключи Redis, топология RabbitMQ, API-контракт):
 > **[INSTRUCTION.md](INSTRUCTION.md)** · журнал прогресса и решений — **[HANDOFF.md](HANDOFF.md)**
@@ -188,11 +189,11 @@ flowchart LR
 | Бэкенд | Java 25 (виртуальные потоки), Spring Boot 4.0.9, Spring Security (JWT + OAuth2 client), OpenPDF |
 | Данные | PostgreSQL + Flyway, MongoDB + GridFS, Redis |
 | Очереди | RabbitMQ (события: пересчёт сценариев, письма, PDF, verification.requested) |
-| Сервисы | `sms-verification-service` (SMS/OTP, vonage/twilio/sim), `notification-service` (Telegram) |
+| Сервисы | `sms-verification-service` (SMS/OTP vonage/twilio/sim, Telegram 2FA) |
 | Фронтенд | React 19, Vite, TypeScript, Tailwind CSS 4, React Router 7, Recharts |
 | Мониторинг | Prometheus (basic auth на actuator), Grafana с провижинингом датасорса и дашборда |
 | Инфраструктура | Docker Compose, nginx как единая точка входа, Cloudflare Tunnel (опционально) |
-| CI | GitHub Actions: backend, sms-verification, notification, frontend, Testcontainers, Docker build, branch policy |
+| CI | GitHub Actions: backend, sms-verification, frontend, Testcontainers, Docker build, branch policy |
 
 ## 📁 Структура
 
@@ -209,8 +210,7 @@ backend/          Spring Boot, модульный монолит
   customer/         профиль, KYC, подтверждение телефона через sms-verification-service
   loan/             заявки, договоры, подпись, журнал событий
   smsclient/        HTTP-клиент sms-verification-service + service JWT
-sms-verification-service/  SMS/OTP: создание, отправка, проверка кода, ретраи, rate limit
-notification-service/      Telegram-уведомления и 2FA (контракт в CONTRACT.md)
+sms-verification-service/  SMS/OTP: создание, отправка, проверка кода, ретраи, rate limit; Telegram 2FA
 frontend/         React + Vite + Tailwind, отдаётся через nginx
 monitoring/       Prometheus-шаблон и Grafana provisioning (датасорс + дашборд)
 postman/          коллекция и окружение для newman
@@ -223,8 +223,8 @@ HANDOFF.md        журнал прогресса и принятых решен
 
 - Ветка `dev` — основная рабочая, фичи идут через `feature/*` → `dev`.
 - PR в `main` принимаются **только из `dev`** (проверяет CI job `branch-policy`).
-- На каждый PR гоняются: backend и sms-verification-service (юнит-тесты), notification-service (сборка),
-  frontend (vitest + сборка), сборка Docker-образов. Testcontainers-тесты backend и sms-verification-service
+- На каждый PR гоняются: backend и sms-verification-service (юнит-тесты), frontend (vitest + сборка),
+  сборка Docker-образов. Testcontainers-тесты backend и sms-verification-service
   запускаются на push в `main`/`dev` и вручную (`workflow_dispatch`).
 
 ---

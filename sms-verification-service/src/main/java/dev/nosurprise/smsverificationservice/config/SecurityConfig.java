@@ -2,6 +2,8 @@ package dev.nosurprise.smsverificationservice.config;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;
+import dev.nosurprise.smsverificationservice.telegram.config.TelegramProperties;
+import dev.nosurprise.smsverificationservice.telegram.web.TelegramWebhookSecretFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 
 import javax.crypto.SecretKey;
@@ -42,6 +45,35 @@ public class SecurityConfig {
             .securityMatcher("/api/v1/sms/*/*")
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/sms/*/*").authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)))
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        return http.build();
+    }
+
+    /** Telegram webhook is called by Telegram: authenticity is proven by its secret_token header. */
+    @Bean
+    public SecurityFilterChain telegramWebhookChain(HttpSecurity http, TelegramProperties telegram) throws Exception {
+        http
+            .securityMatcher("/telegram/webhook")
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/telegram/webhook").permitAll()
+            )
+            .addFilterBefore(new TelegramWebhookSecretFilter(telegram.webhookSecretToken()),
+                    UsernamePasswordAuthenticationFilter.class)
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        return http.build();
+    }
+
+    /** Telegram verification status/confirm use the main backend's user JWT. */
+    @Bean
+    public SecurityFilterChain telegramVerifyChain(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
+        http
+            .securityMatcher("/api/verify/**")
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/verify/**").authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)))
             .csrf(csrf -> csrf.disable())
