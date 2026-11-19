@@ -98,9 +98,9 @@ public class LoanApplicationController {
     }
 
     @PostMapping("/{id}/signature")
-    ResponseEntity<Void> requestSignatureCode(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
-        signing.requestCode(userId(jwt), id);
-        return ResponseEntity.accepted().build();
+    ResponseEntity<Map<String, UUID>> requestSignatureCode(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        UUID verificationId = signing.requestCode(userId(jwt), id);
+        return ResponseEntity.accepted().body(Map.of("verificationId", verificationId));
     }
 
     @PostMapping("/{id}/signature/confirm")

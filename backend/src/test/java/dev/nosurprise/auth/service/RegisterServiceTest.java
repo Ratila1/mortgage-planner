@@ -2,6 +2,7 @@ package dev.nosurprise.auth.service;
 
 import dev.nosurprise.auth.event.VerificationEmailRequested;
 import dev.nosurprise.auth.web.dto.RegisterRequest;
+import dev.nosurprise.telegram.event.UserRegisteredEvent;
 import dev.nosurprise.user.Provider;
 import dev.nosurprise.user.UserEntity;
 import dev.nosurprise.user.UserService;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,9 +73,10 @@ class RegisterServiceTest {
 
         verify(tokenStore).create(created.getId());
         ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue()).isEqualTo(
-                new VerificationEmailRequested(created.getId(), "new.user@example.com", "token-1"));
+        verify(eventPublisher, times(2)).publishEvent(event.capture());
+        assertThat(event.getAllValues()).containsExactly(
+                new VerificationEmailRequested(created.getId(), "new.user@example.com", "token-1"),
+                new UserRegisteredEvent(created.getId(), "new.user@example.com"));
     }
 
     @Test

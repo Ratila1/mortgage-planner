@@ -290,11 +290,12 @@ customer/        профиль клиента, KYC-документы, подт
 loan/            типы, калькулятор, заявки, договоры, подпись, задачи истечения и очистки,
                  журнал событий заявки, запись кредитной истории в Mongo
 common/outbox/   outbox: запись событий, relay, идемпотентность consumer-ов
-common/sms/      порт SmsSender и заглушка
+smsclient/       HTTP-клиент sms-verification-service + service-to-service JWT
 ```
 
 Зависимости (дополняют §4 `INSTRUCTION.md`):
 - `customer → user` (через `UserService`);
+- `customer`, `loan → smsclient` (через `SmsClient`);
 - `loan → customer, user, pdf` (через их публичные сервисы);
 - `notification` слушает события `loan.*`;
 - `customer` и `user` ничего не знают о `loan`.
@@ -661,15 +662,19 @@ syncedAt
 - `SolvencyCheck`: на вход заявка, на выход подсказка для админа. Сейчас одна реализация `DebtLoadCheck`
   (ПДН на лету, ничего не пишет). Позже бюро и скоринг добавятся списком бинов `SolvencyCheck`.
 - `CreditHistoryStore`: запись и чтение кредитной истории. Реализация на Mongo. Запись — только из consumer-а и пересборки.
-- `SmsSender`: выбирается настройкой `app.sms.provider` (env `SMS_PROVIDER`):
-  - `log` (по умолчанию) — `LoggingSmsSender` пишет код в лог бэкенда, для локальной разработки;
-  - `vonage` — `VonageSmsSender`, Vonage Messages API через SDK `com.vonage:server-sdk`. Ключи — `VONAGE_API_KEY`,
-    `VONAGE_API_SECRET`, отправитель — `VONAGE_FROM` (по умолчанию «Vonage APIs»). Номер уходит без «+».
-  - `twilio` — `TwilioSmsSender`, Twilio Messaging API (`POST /2010-04-01/Accounts/{AccountSid}/Messages.json`), без SDK.
-    Ключи — `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_SECRET` (Auth Token или секрет API-ключа с `TWILIO_API_KEY_SID`),
-    отправитель — `TWILIO_FROM` или `TWILIO_MESSAGING_SERVICE_SID`. Без ключей приложение не стартует.
-  - Если провайдер не принял SMS → `502 SMS_DELIVERY_FAILED`, код и пауза 60 с отзываются, клиент может сразу повторить.
-  - На trial-аккаунте Twilio SMS уходят только на номера из Verified Caller IDs.
+- `SmsClient`: HTTP-клиент отдельного `sms-verification-service`, собственного SMS-провайдера в бэкенде нет.
+  - Адрес — `SMS_CLIENT_BASE_URL` (по умолчанию `http://sms-verification-service:8091`), вызовы подписаны
+    service-to-service JWT (`SMS_CLIENT_SERVICE_JWT_SECRET`, по умолчанию `JWT_SECRET`).
+  - Провайдер выбирается в самом сервисе: `SMS_VERIFY_PROVIDER` = `sim` | `vonage` | `twilio`
+    (`VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM` / `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_SECRET`, `TWILIO_FROM`).
+    На trial-аккаунте Twilio SMS уходят только на номера из Verified Caller IDs.
+  - На каждый запрос кода генерируется новый `Idempotency-Key`; повторный запрос — не чаще раза в 60 секунд.
+    Раньше — `CodeCooldownException` → `429 RATE_LIMITED` (и для телефона, и для подписи).
+  - Ответ сервиса `429` → `429 RATE_LIMITED`; недоступность или `5xx` → `502 SMS_DELIVERY_FAILED`.
+    После неудачной отправки ключ cooldown снимается, клиент может повторить сразу.
+  - Ключи Redis: `phone-verification:<userId>:<uuid>` и `signing:<applicationId>:<uuid>`; cooldown —
+    `phone-otp-cooldown:<userId>` и `sign-otp:cooldown:<userId>`.
+  - nginx не проксирует `/api/v1/sms`: снаружи доступен только бэкенд.
 - `ContractRenderer`: PDF договора из снимка. Шаблон отдельно от кода.
 
 ### 7.5 Чистые функции
@@ -790,7 +795,7 @@ syncedAt
 Каждый шаг — отдельный PR, бэк и фронт вместе:
 1. **Outbox:** `outbox_events`, `processed_events`, `OutboxPublisher`, relay, очистка. Без бизнес-событий, с тестами.
 2. **Профиль клиента:** `customer_profile`, `GET/PUT /api/me/profile`, раздел «Профиль» в личном кабинете.
-3. **Подтверждение телефона:** `SmsSender`-заглушка, коды в Redis.
+3. **Подтверждение телефона:** `sms-verification-service` (SMS + OTP в Redis), backend ходит в него по HTTP; cooldown 60 с.
 4. **KYC:** `kyc_documents`, загрузка, лимиты nginx и Spring.
 5. **Типы займов:** админский CRUD, seed-миграция, публичный список, калькулятор `/quote`.
 6. **Подача заявки** со снимком зарплаты и модификатора, журналом `loan_events` (`LoanEventRecorder`), разделы «Мои займы» и «Карточка займа» в личном кабинете.
@@ -825,7 +830,7 @@ syncedAt
 | Просмотры паспорта | строка в логе приложения, отдельной таблицы нет |
 | Договоры | PDF в GridFS |
 | Подпись | код из SMS, юридически достаточно |
-| SMS-провайдер | Vonage или Twilio (`SMS_PROVIDER=vonage` / `twilio`); локально — код в логе (`SMS_PROVIDER=log`) |
+| SMS-провайдер | отдельный `sms-verification-service`; провайдер `sim` / `vonage` / `twilio` (`SMS_VERIFY_PROVIDER`), backend только вызывает сервис по HTTP |
 | Личный кабинет | профиль, мои займы, карточка займа, уведомления (§3.13) |
 | Комментарии в коде | что и зачем для неочевидных решений и бизнес-правил, без пересказа кода (§7.11) |
 | События | своя таблица outbox; старые модули переводятся отдельной задачей |

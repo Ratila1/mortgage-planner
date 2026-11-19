@@ -7,6 +7,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,9 +18,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -103,6 +106,22 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("обрыв клиента → 200 без тела и без 500 INTERNAL_ERROR")
+    void clientAbortIsNotInternalError() throws Exception {
+        mockMvc.perform(get("/throw/client-abort"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    @DisplayName("недоступный async-запрос после обрыва клиента → 200 без тела и без 500 INTERNAL_ERROR")
+    void asyncRequestNotUsableIsNotInternalError() throws Exception {
+        mockMvc.perform(get("/throw/async-abort"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
+    }
+
+    @Test
     @DisplayName("IllegalArgumentException и прочие непойманные → 500 INTERNAL_ERROR")
     void unexpectedBecomesInternalError() throws Exception {
         mockMvc.perform(get("/throw/illegal-argument"))
@@ -160,6 +179,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/throw/unexpected")
         String unexpected() {
             throw new IllegalStateException("boom");
+        }
+
+        @GetMapping("/throw/client-abort")
+        String clientAbort() throws ClientAbortException {
+            throw new ClientAbortException("client gone");
+        }
+
+        @GetMapping("/throw/async-abort")
+        String asyncAbort() throws AsyncRequestNotUsableException {
+            throw new AsyncRequestNotUsableException("request is no longer usable");
         }
     }
 }

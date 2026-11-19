@@ -54,7 +54,14 @@ async function refreshAccess(): Promise<boolean> {
   return refreshing;
 }
 
-async function send(method: string, path: string, body?: unknown, retry = true, auth = true): Promise<Response> {
+async function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  retry = true,
+  auth = true,
+  signal?: AbortSignal,
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   // Публичные /api/auth/*-запросы не отправляем с Bearer: протухший токен дал бы 401
@@ -66,18 +73,19 @@ async function send(method: string, path: string, body?: unknown, retry = true, 
     headers,
     credentials: 'include',
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
 
   // Access истёк (TTL 15 мин): один раз обновляем по refresh-cookie и повторяем запрос.
   if (res.status === 401 && retry && accessToken && !path.startsWith('/api/auth/')) {
-    if (await refreshAccess()) return send(method, path, body, false);
+    if (await refreshAccess()) return send(method, path, body, false, auth, signal);
   }
   if (!res.ok) throw await parseProblem(res);
   return res;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await send(method, path, body);
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await send(method, path, body, true, true, signal);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -352,7 +360,7 @@ async function adminDecision(id: Id, action: 'approve' | 'reject' | 'repaid', ex
 }
 
 export const httpApi: Api = {
-  calculate: (params) => request<CalcResult>('POST', '/api/calc', calcBody(params)),
+  calculate: (params, signal) => request<CalcResult>('POST', '/api/calc', calcBody(params), signal),
   getCalculation: (calcId) => request<CalcResult>('GET', `/api/calc/${encodeURIComponent(calcId)}`),
   stress: (params, deltas) => request<StressRow[]>('POST', '/api/calc/stress', { ...calcBody(params), deltas }),
 

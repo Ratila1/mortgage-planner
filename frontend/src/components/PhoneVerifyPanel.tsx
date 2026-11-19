@@ -4,7 +4,7 @@ import { Alert, Button, TextInput } from './ui';
 
 /**
  * Подтверждение телефона кодом из SMS (§3.3, шаг 3): без него бэк не даст запросить код подписи договора.
- * Кулдаун общий на все SMS пользователя — 60 с (OneTimeCodeStore.COOLDOWN), 3 попытки ввода, код живёт 5 минут.
+ * Код живёт в sms-verification-service, пауза 60 с общая на все SMS пользователя, 3 попытки ввода, код живёт 5 минут.
  */
 export function PhoneVerifyPanel({ phone, onVerified }: { phone: string; onVerified: () => void }) {
   const [cooldown, setCooldown] = useState(0);
@@ -27,7 +27,7 @@ export function PhoneVerifyPanel({ phone, onVerified }: { phone: string; onVerif
       setSent(true);
       setCooldown(60);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, 'otp'));
       // Кулдаун кода приходит 429 c Retry-After — показываем кнопку с обратным отсчётом.
       if (err instanceof ApiError && err.retryAfter) setCooldown(err.retryAfter);
     } finally {

@@ -138,7 +138,7 @@ class LoanRulesIntegrationTest extends LoanItSupport {
         awaitContract(client, applicationId);
         clearSmsCooldown(client);
         api.postEmpty("/api/loans/applications/" + applicationId + "/signature", client.token());
-        String realCode = sms.lastCode(client.phone());
+        String realCode = lastCode(client.phone());
         String wrong = realCode.equals("000000") ? "111111" : "000000";
 
         for (int attempt = 0; attempt < 3; attempt++) {

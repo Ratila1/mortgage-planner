@@ -16,6 +16,7 @@ import dev.nosurprise.pdf.PdfNotReadyException;
 import dev.nosurprise.notification.NotificationNotFoundException;
 import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
@@ -179,13 +181,26 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, ErrorCode.PHONE_NOT_VERIFIED, ex.getMessage());
     }
 
+    /** Several profiles share the phone; binding must not silently pick one of them. */
+    @ExceptionHandler(dev.nosurprise.customer.AmbiguousPhoneException.class)
+    ProblemDetail onAmbiguousPhone(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.AMBIGUOUS_PHONE, ex.getMessage());
+    }
+
     @ExceptionHandler(dev.nosurprise.common.otp.CodeInvalidException.class)
     ProblemDetail onCodeInvalid(RuntimeException ex) {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.OTP_INVALID, ex.getMessage());
     }
 
-    /** SMS-провайдер не принял сообщение: код уже отозван, клиент может сразу повторить. */
-    @ExceptionHandler(dev.nosurprise.common.sms.SmsDeliveryException.class)
+    /** SMS-сервис отказал по своему лимиту (например, номер уже получал SMS в эту минуту). */
+    @ExceptionHandler(dev.nosurprise.smsclient.SmsClientRateLimitedException.class)
+    ProblemDetail onSmsClientRateLimited(RuntimeException ex) {
+        return problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED,
+                "SMS was requested too recently, try again in a minute");
+    }
+
+    /** SMS отправить не удалось (sms-сервис недоступен или ответил ошибкой): код не выдан, можно повторить. */
+    @ExceptionHandler(dev.nosurprise.smsclient.SmsClientException.class)
     ProblemDetail onSmsDelivery(RuntimeException ex) {
         return problem(HttpStatus.BAD_GATEWAY, ErrorCode.SMS_DELIVERY_FAILED, "SMS could not be sent, try again later");
     }
@@ -289,6 +304,12 @@ public class GlobalExceptionHandler {
     ProblemDetail onMethodNotSupported(org.springframework.web.HttpRequestMethodNotSupportedException ex) {
         return problem(HttpStatus.METHOD_NOT_ALLOWED, ErrorCode.METHOD_NOT_ALLOWED,
                 ex.getMessage());
+    }
+
+    /** The client closed the connection while the response was being written; not a server error. */
+    @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
+    void onClientAbort(Exception ex) {
+        log.debug("client aborted the response", ex);
     }
 
     @ExceptionHandler(Exception.class)

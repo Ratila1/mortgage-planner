@@ -59,17 +59,17 @@ class SmokeIntegrationTest extends AbstractIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("Flyway применил V1-V8, таблицы и seed offers на месте")
+    @DisplayName("Flyway применил миграции (V1+), таблицы и seed offers на месте")
     void flywayMigrationsAndSchema() {
         List<String> versions = jdbc.queryForList(
                 "select version from flyway_schema_history where version is not null order by installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+        assertThat(versions).containsSubsequence("1", "2", "3", "4", "5", "6", "7", "8");
 
         List<Boolean> successes = jdbc.queryForList(
                 "select success from flyway_schema_history where version is not null order by installed_rank",
                 Boolean.class);
-        assertThat(successes).hasSize(8).containsOnly(true);
+        assertThat(successes).hasSize(versions.size()).containsOnly(true);
 
         for (String table : List.of("users", "user_roles", "bank_offers", "saved_scenarios", "notifications")) {
             Integer count = jdbc.queryForObject(

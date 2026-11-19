@@ -60,5 +60,6 @@ public class RegisterService {
         UserEntity user = userService.createLocalUser(email, passwordHash);
         String token = tokenStore.create(user.getId());
         eventPublisher.publishEvent(new VerificationEmailRequested(user.getId(), email, token));
+        eventPublisher.publishEvent(new dev.nosurprise.telegram.event.UserRegisteredEvent(user.getId(), email));
     }
 }

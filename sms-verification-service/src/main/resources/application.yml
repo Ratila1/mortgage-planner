@@ -1,0 +1,119 @@
+spring:
+  application:
+    name: sms-verification-service
+  threads:
+    virtual:
+      enabled: true
+  task:
+    scheduling:
+      pool:
+        size: 2
+      thread-name-prefix: sched-
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:nosurprise}
+    username: ${DB_USER:nosurprise}
+    password: ${DB_PASSWORD:nosurprise}
+    hikari:
+      schema: ${DB_SCHEMA:sms}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+      default_schema: ${DB_SCHEMA:sms}
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    default-schema: ${DB_SCHEMA:sms}
+    validate-on-migrate: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 2
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 4s
+  main:
+    allow-bean-definition-overriding: true
+
+sms:
+  cis-prefixes: ["+7","+375","+373","+374","+992","+993","+996","+998","+994","+380","+995"]
+  max-attempts: 3
+  first-backoff: 15s
+  second-backoff: 30s
+  otp-ttl: 5m
+  # Product rule (MICROLOANS.md §3.10, §4.4): 3 wrong attempts burn the code.
+  # sms-spec-v1.1.md §2.2 mentions 5 as the generic default; the product rule is stricter and wins.
+  max-verify-attempts: 3
+  simulated-success-rate: 0.7
+  dispatch-batch-size: 100
+  lock-lease: 30s
+  retention-request: 7d
+  retention-attempt: 30d
+  rate-limit:
+    phone-per-minute: 3
+    ip-per-minute: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: sms-verification-service
+
+server:
+  port: ${SERVER_PORT:8091}
+  forward-headers-strategy: framework
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:}
+  sms:
+    provider: ${SMS_VERIFY_PROVIDER:sim}
+  vonage:
+    api-key: ${VONAGE_API_KEY:}
+    api-secret: ${VONAGE_API_SECRET:}
+    from: ${VONAGE_FROM:Vonage APIs}
+  twilio:
+    account-sid: ${TWILIO_ACCOUNT_SID:}
+    auth-secret: ${TWILIO_AUTH_SECRET:}
+    from: ${TWILIO_FROM:}
+  telegram:
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    bot-username: ${TELEGRAM_BOT_USERNAME:}
+    webhook-path: /telegram/webhook
+    api-base: https://api.telegram.org
+    polling-enabled: ${TELEGRAM_POLLING_ENABLED:true}
+    # Telegram sends this value in X-Telegram-Bot-Api-Secret-Token; empty = webhook rejected.
+    webhook-secret-token: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:}
+  service:
+    # No placeholder: an unset token makes the internal service token fail closed.
+    token: ${SERVICE_TOKEN:}
+  main-backend:
+    base-url: ${MAIN_BACKEND_URL:http://backend:8080}
+  verification:
+    code-ttl: 5m
+    max-attempts: 3

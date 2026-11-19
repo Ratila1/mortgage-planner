@@ -2,7 +2,7 @@ package dev.nosurprise.integration.support;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpStatus;
@@ -10,12 +10,21 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.web.client.RestClient;
+import dev.nosurprise.smsclient.SmsClient;
+import dev.nosurprise.smsclient.dto.SmsResponse;
+import dev.nosurprise.smsclient.dto.VerifyResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -23,8 +32,8 @@ import static org.awaitility.Awaitility.await;
 /**
  * Общие шаги integration-тестов микрозаймов: клиент с профилем, подтверждённым телефоном и паспортом,
  * подача, решения админа, ожидание асинхронных шагов (outbox → RabbitMQ → consumer-ы).
+ * SMS-код выдаётся через mock SmsClient (бекенд в тестах не звонит в sms-сервис).
  */
-@Import(RecordingSmsSender.Config.class)
 public abstract class LoanItSupport extends AbstractIntegrationTest {
 
     /** Seed V14: «До зарплаты», 100–1000 BYN, 7–14 дней, 1 % в день, модификатор 20. */
@@ -39,8 +48,50 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
     @Autowired
     protected MongoTemplate mongo;
 
-    @Autowired
-    protected RecordingSmsSender sms;
+    @MockitoBean
+    protected SmsClient smsClient;
+
+    private final Map<UUID, String> smsCodeById = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> smsVerifyAttempts = new ConcurrentHashMap<>();
+    private final Map<String, String> smsCodeByPhone = new ConcurrentHashMap<>();
+
+    /** Совпадает с sms.max-verify-attempts в sms-verification-service (MICROLOANS §3.10: 3 попытки). */
+    private static final int MAX_VERIFY_ATTEMPTS = 3;
+
+    @BeforeEach
+    void stubSmsClient() {
+        Mockito.when(smsClient.createSms(ArgumentMatchers.anyString(), ArgumentMatchers.anyString()))
+            .thenAnswer(inv -> {
+                UUID smsId = UUID.randomUUID();
+                String phone = (String) inv.getArgument(1);
+                String code = String.format("%06d", 100000 + (int) (Math.random() * 900000));
+                smsCodeById.put(smsId, code);
+                smsCodeByPhone.put(phone, code);
+                return SmsResponse.builder().id(smsId).status("IN_PROGRESS").attempts(0)
+                    .createdAt(Instant.now()).expiresAt(Instant.now().plusSeconds(300)).build();
+            });
+        Mockito.when(smsClient.verify(ArgumentMatchers.any(UUID.class), ArgumentMatchers.anyString()))
+            .thenAnswer(inv -> {
+                UUID smsId = (UUID) inv.getArgument(0);
+                String code = (String) inv.getArgument(1);
+                String expected = smsCodeById.get(smsId);
+                int used = smsVerifyAttempts.getOrDefault(smsId, 0);
+                if (used >= MAX_VERIFY_ATTEMPTS) {
+                    return VerifyResponse.builder().verified(false).reason("TOO_MANY_ATTEMPTS").build();
+                }
+                smsVerifyAttempts.put(smsId, used + 1);
+                boolean ok = expected != null && expected.equals(code);
+                return VerifyResponse.builder().verified(ok).reason(ok ? null : "INVALID_CODE").build();
+            });
+    }
+
+    protected String lastCode(String phone) {
+        String code = smsCodeByPhone.get(phone);
+        if (code == null) {
+            throw new AssertionError("SMS na " + phone + " ne otpravilos");
+        }
+        return code;
+    }
 
     protected AuthFixture auth;
 
@@ -65,7 +116,7 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
         clearSmsCooldown(client);
         assertThat(api.postEmpty("/api/me/phone/verification", client.token()).getStatusCode())
                 .isEqualTo(HttpStatus.ACCEPTED);
-        String code = sms.lastCode(client.phone());
+        String code = lastCode(client.phone());
         assertThat(api.postJson("/api/me/phone/verification/confirm", "{\"code\":\"" + code + "\"}", client.token())
                 .getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
     }
@@ -133,7 +184,7 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
                 client.token());
         assertThat(requested.getStatusCode()).as(requested.getBody()).isEqualTo(HttpStatus.ACCEPTED);
         ResponseEntity<String> confirmed = api.postJson("/api/loans/applications/" + applicationId
-                + "/signature/confirm", "{\"code\":\"" + sms.lastCode(client.phone()) + "\"}", client.token());
+                + "/signature/confirm", "{\"code\":\"" + lastCode(client.phone()) + "\"}", client.token());
         assertThat(confirmed.getStatusCode()).as(confirmed.getBody()).isEqualTo(HttpStatus.OK);
         return json(confirmed);
     }

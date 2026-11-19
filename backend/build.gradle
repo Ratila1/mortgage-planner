@@ -38,15 +38,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
-    // sms: Vonage Messages API (провайдер app.sms.provider=vonage)
-    implementation 'com.vonage:server-sdk:9.3.1'
-
     // pdf
     implementation 'com.github.librepdf:openpdf:1.3.39'
 
     // metrics / observability
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    // resilience4j for SMS client circuit breaker
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
+    implementation 'io.github.resilience4j:resilience4j-micrometer:2.2.0'
+    implementation 'io.github.resilience4j:resilience4j-retry:2.2.0'
 
     // tests
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'

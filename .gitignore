@@ -10,3 +10,15 @@ node_modules/
 .vscode/
 # env
 .env
+# generated at container start from prometheus.template.yml (contains METRICS_PASSWORD)
+monitoring/prometheus/prometheus.yml
+# local agent artifacts, not part of the repository
+.agents/
+IMPLEMENTATION_STATUS.md
+skeptic-findings.json
+sms-service-skeptic-review.md
+work/
+.opencode/
+opencode.jsonc
+docs/
+.env.local

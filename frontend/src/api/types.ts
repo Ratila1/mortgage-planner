@@ -360,7 +360,7 @@ export interface MicroloanCalculationResult {
 }
 
 export interface Api {
-  calculate(params: CalcParams): Promise<CalcResult>;
+  calculate(params: CalcParams, signal?: AbortSignal): Promise<CalcResult>;
   getCalculation(calcId: string): Promise<CalcResult>;
   stress(params: CalcParams, deltas: number[]): Promise<StressRow[]>;
 

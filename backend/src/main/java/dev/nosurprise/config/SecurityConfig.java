@@ -113,6 +113,23 @@ public class SecurityConfig {
         return chain.build();
     }
 
+    /** Service-to-service endpoints: X-Service-Token instead of a user JWT. */
+    @Bean
+    @Order(0)
+    SecurityFilterChain internalFilterChain(HttpSecurity http, ObjectMapper objectMapper,
+                                            @Value("${app.service.token:}") String serviceToken) throws Exception {
+        ProblemEntryPoint entryPoint = new ProblemEntryPoint(objectMapper);
+        http
+            .securityMatcher("/api/internal/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth.anyRequest().hasAuthority("ROLE_SERVICE"))
+            .addFilterBefore(new ServiceTokenFilter(serviceToken, entryPoint),
+                    org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(entryPoint));
+        return http.build();
+    }
+
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, Environment env,
                                     ObjectProvider<OAuth2AuthenticationSuccessHandler> successHandlerProvider,

@@ -95,7 +95,7 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
       setCodeSent(true);
       setCooldown(SMS_COOLDOWN_SECONDS);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, 'otp'));
       // 429 с Retry-After: SMS недавно уже отправляли (общий кулдаун с подтверждением телефона).
       if (err instanceof ApiError && err.retryAfter) setCooldown(err.retryAfter);
     } finally {

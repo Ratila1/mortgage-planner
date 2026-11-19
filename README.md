@@ -21,7 +21,8 @@
 
 Люди берут ипотеку на 25 лет и не понимают, сколько переплатят и что будет, если ставка вырастет.
 Сервис быстро и честно показывает цифры: расчёт на `BigDecimal`, график с точностью до копейки,
-тест «а если ставка +3 п.п.?». Никаких микросервисов — один модульный монолит, который просто работает.
+тест «а если ставка +3 п.п.?». Ядро — модульный монолит; отправка SMS и Telegram-уведомления
+вынесены в два небольших сервиса, которые наружу не публикуются.
 
 ## ✨ Возможности
 
@@ -59,8 +60,10 @@ docker compose up --build
 | Что | Адрес |
 |---|---|
 | 💚 Приложение (фронт + API) | [http://localhost:8080](http://localhost:8080) |
-| 🐰 RabbitMQ UI | [http://localhost:15672](http://localhost:15672) — `guest` / `guest` |
+| 🐰 RabbitMQ UI | [http://localhost:15672](http://localhost:15672) — `nosurprise` / пароль из `.env` (`RABBITMQ_PASSWORD`) |
 | 📬 Письма (Mailpit) | [http://localhost:8025](http://localhost:8025) |
+| 📊 Метрики (Prometheus) | [http://localhost:9090](http://localhost:9090) — basic auth `METRICS_USER` / `METRICS_PASSWORD` |
+| 📈 Дашборды (Grafana) | [http://localhost:3000](http://localhost:3000) — `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` |
 
 <details>
 <summary><b>🔑 Демо-доступ и детали запуска</b></summary>
@@ -73,6 +76,28 @@ docker compose up --build
 - Чистый старт с пустыми базами: `docker compose down -v`.
 - Кнопки «Войти через Google / GitHub» появляются сами, когда бэкенд запущен с профилем `oauth`:
   фронт спрашивает список провайдеров у `GET /api/auth/oauth/providers`.
+
+</details>
+
+<details>
+<summary><b>📨 SMS и уведомления</b></summary>
+
+- `sms-verification-service` (порт `8091` внутри docker-сети) — единственный, кто отправляет SMS.
+  nginx не проксирует `/api/v1/sms`: снаружи доступен только backend, сервис вызывается по HTTP
+  с service-to-service JWT.
+- Повторный запрос кода — не чаще одного раза в 60 секунд, иначе `429 RATE_LIMITED`.
+  Это касается и подтверждения телефона, и подписи договора.
+- Провайдер задаётся `SMS_VERIFY_PROVIDER`: `sim` (по умолчанию), `vonage` или `twilio`.
+- В профиле `sim` SMS реально не уходят. Код лежит в `sms.sms_request.message` — по спеке он хранится
+  открытым текстом, чтобы переживать ретраи отправки. Посмотреть последний код:
+
+  ```bash
+  docker compose exec postgres psql -U nosurprise -d nosurprise \
+    -c "select message from sms.sms_request order by created_at desc limit 1"
+  ```
+
+- Telegram 2FA и привязка аккаунта теперь работают внутри `sms-verification-service` (порт `8091`).
+  Контракт и переменные окружения — в [sms-verification-service/TELEGRAM.md](sms-verification-service/TELEGRAM.md).
 
 </details>
 
@@ -92,7 +117,7 @@ redirect URI нужно регистрировать заранее.
 ### 🔧 Локальная разработка
 
 ```bash
-docker compose up -d postgres mongo redis rabbitmq mailpit
+docker compose up -d postgres mongo redis rabbitmq mailpit sms-verification-service
 cd backend  && gradle bootRun                 # JDK 25
 cd frontend && npm install && npm run dev     # Node 22 → http://localhost:5173
 ```
@@ -100,8 +125,9 @@ cd frontend && npm install && npm run dev     # Node 22 → http://localhost:517
 ### 🧪 Тесты
 
 ```bash
-cd backend  && gradle build           # юнит + Testcontainers (нужен Docker)
-cd frontend && npm test && npm run build
+cd backend                 && gradle build        # юнит + Testcontainers (нужен Docker)
+cd sms-verification-service && gradle test integrationTest  # Testcontainers
+cd frontend                && npm test && npm run build
 ```
 
 <details>
@@ -135,12 +161,23 @@ flowchart LR
   API --> RD[(Redis<br/>кэш, refresh-токены, rate limit)]
   API -->|события| MQ{{RabbitMQ}}
   MQ -->|consumers| API
+  API -->|verification.requested| MQ
+  MQ -->|verification.requested| SMS
   API --> SMTP[SMTP / Mailpit]
+  API -->|HTTP + service JWT| SMS[sms-verification-service<br/>:8091]
+  API <-->|X-Service-Token| SMS
+  SMS -->|Bot API| TG[Telegram]
+  SMS -->|vonage / twilio| GW[SMS-шлюз]
+  PROM[Prometheus] -.->|/actuator/prometheus| API
+  PROM -.->|/actuator/prometheus| SMS
+  GR[Grafana] --> PROM
 ```
 
 **Один хост.** Фронт и бэк доступны по одному адресу, бэкенд наружу порт не публикует — весь трафик
 идёт через nginx. Поэтому нет CORS, а refresh-токен лежит в httpOnly-cookie.
-**Модульный монолит:** consumer-ы RabbitMQ живут в том же приложении, никаких микросервисов.
+**Модульный монолит + один сервис:** вся бизнес-логика и consumer-ы RabbitMQ живут в одном приложении.
+Отдельно вынесен только `sms-verification-service` (SMS, OTP и Telegram 2FA): он слушает только docker-сеть,
+наружу его порт не публикуется, `/api/v1/sms` через nginx недоступен.
 
 > 📚 Подробно (модули, схемы данных, ключи Redis, топология RabbitMQ, API-контракт):
 > **[INSTRUCTION.md](INSTRUCTION.md)** · журнал прогресса и решений — **[HANDOFF.md](HANDOFF.md)**
@@ -151,10 +188,12 @@ flowchart LR
 |---|---|
 | Бэкенд | Java 25 (виртуальные потоки), Spring Boot 4.0.9, Spring Security (JWT + OAuth2 client), OpenPDF |
 | Данные | PostgreSQL + Flyway, MongoDB + GridFS, Redis |
-| Очереди | RabbitMQ (события: пересчёт сценариев, письма, PDF) |
+| Очереди | RabbitMQ (события: пересчёт сценариев, письма, PDF, verification.requested) |
+| Сервисы | `sms-verification-service` (SMS/OTP vonage/twilio/sim, Telegram 2FA) |
 | Фронтенд | React 19, Vite, TypeScript, Tailwind CSS 4, React Router 7, Recharts |
+| Мониторинг | Prometheus (basic auth на actuator), Grafana с провижинингом датасорса и дашборда |
 | Инфраструктура | Docker Compose, nginx как единая точка входа, Cloudflare Tunnel (опционально) |
-| CI | GitHub Actions: backend + Testcontainers, frontend, Docker build, branch policy |
+| CI | GitHub Actions: backend, sms-verification, frontend, Testcontainers, Docker build, branch policy |
 
 ## 📁 Структура
 
@@ -168,7 +207,13 @@ backend/          Spring Boot, модульный монолит
   scenario/         сохранённые сценарии, сравнение, пересчёт
   notification/     уведомления + consumer-ы очередей
   pdf/              генерация PDF-графика
+  customer/         профиль, KYC, подтверждение телефона через sms-verification-service
+  loan/             заявки, договоры, подпись, журнал событий
+  smsclient/        HTTP-клиент sms-verification-service + service JWT
+sms-verification-service/  SMS/OTP: создание, отправка, проверка кода, ретраи, rate limit; Telegram 2FA
 frontend/         React + Vite + Tailwind, отдаётся через nginx
+monitoring/       Prometheus-шаблон и Grafana provisioning (датасорс + дашборд)
+postman/          коллекция и окружение для newman
 INSTRUCTION.md    архитектура и правила для разработчиков и агентов
 HANDOFF.md        журнал прогресса и принятых решений
 .github/          CI, CODEOWNERS, шаблон PR
@@ -178,7 +223,9 @@ HANDOFF.md        журнал прогресса и принятых решен
 
 - Ветка `dev` — основная рабочая, фичи идут через `feature/*` → `dev`.
 - PR в `main` принимаются **только из `dev`** (проверяет CI job `branch-policy`).
-- На каждый PR гоняются: backend (юнит + Testcontainers), frontend (vitest + сборка), сборка Docker-образов.
+- На каждый PR гоняются: backend и sms-verification-service (юнит-тесты), frontend (vitest + сборка),
+  сборка Docker-образов. Testcontainers-тесты backend и sms-verification-service
+  запускаются на push в `main`/`dev` и вручную (`workflow_dispatch`).
 
 ---
 
