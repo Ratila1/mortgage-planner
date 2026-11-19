@@ -1,6 +1,7 @@
 package dev.nosurprise.smsverificationservice.telegram.service;
 
 import dev.nosurprise.smsverificationservice.api.error.ConflictException;
+import dev.nosurprise.smsverificationservice.api.error.ValidationException;
 import dev.nosurprise.smsverificationservice.service.PhoneNormalizer;
 import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBinding;
 import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBindingRepository;
@@ -61,6 +62,37 @@ class BindingServiceTest {
         verify(bot).sendMessage(42L, "Несколько аккаунтов привязаны к этому номеру. Обратитесь в поддержку.");
         verify(repository, never()).save(any());
         verifyNoInteractions(events);
+    }
+
+    @Test
+    @DisplayName("номер Telegram без '+' приводится к E.164 и привязывается")
+    void bindsBareInternationalPhone() {
+        when(normalizer.toE164("375336405030")).thenThrow(new ValidationException("Invalid phone number"));
+        when(normalizer.toE164("+375336405030")).thenReturn("+375336405030");
+        when(backend.findUserIdByPhone("+375336405030")).thenReturn(Optional.of(USER));
+        when(repository.findByTelegramId(42L)).thenReturn(Optional.empty());
+        when(repository.findById(USER)).thenReturn(Optional.empty());
+        when(repository.save(any(TelegramBinding.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.bindContact(42L, "375336405030", "ivan")).isTrue();
+
+        verify(normalizer).toE164("+375336405030");
+        verify(backend).findUserIdByPhone("+375336405030");
+        verify(events).telegramLinked(USER, 42L, "+375336405030");
+        verify(bot).sendMessage(42L, "Аккаунт привязан. Коды подтверждения будут приходить сюда.");
+    }
+
+    @Test
+    @DisplayName("нецифровой контакт не повторяет нормализацию с '+'")
+    void doesNotRetryGarbageWithPlus() {
+        when(normalizer.toE164("not-a-phone")).thenThrow(new ValidationException("Invalid phone number"));
+
+        assertThatThrownBy(() -> service.bindContact(42L, "not-a-phone", "ivan"))
+                .isInstanceOf(ValidationException.class);
+
+        verify(normalizer).toE164("not-a-phone");
+        verify(normalizer, never()).toE164("+not-a-phone");
+        verifyNoInteractions(backend, bot, events, repository);
     }
 
     @Test

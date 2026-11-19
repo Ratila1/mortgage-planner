@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,8 +32,10 @@ public class MainBackendClient {
         try {
             UserByPhoneResponse response = restClient.get()
                     .uri(uri -> uri.path("/api/internal/users/by-phone")
-                            .queryParam("phone", phone)
-                            .build())
+                            // URI variable expansion percent-encodes '+'; a raw '+' is decoded
+                            // as a space by the servlet container and the lookup misses.
+                            .queryParam("phone", "{phone}")
+                            .build(Map.of("phone", phone)))
                     .retrieve()
                     .body(UserByPhoneResponse.class);
             return response == null ? Optional.empty() : Optional.ofNullable(response.userId());

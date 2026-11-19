@@ -6,6 +6,7 @@ import dev.nosurprise.smsverificationservice.domain.SmsRequestRepository;
 import dev.nosurprise.smsverificationservice.domain.SmsAttemptRepository;
 import dev.nosurprise.smsverificationservice.provider.DispatchSmsProvider;
 import dev.nosurprise.smsverificationservice.provider.DispatchSmsProvider.SendResult;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class SmsDispatchJob {
@@ -29,6 +31,7 @@ public class SmsDispatchJob {
     private final TransactionTemplate txTemplate;
     private final SmsProperties props;
     private final MeterRegistry metrics;
+    private final AtomicInteger batchSize = new AtomicInteger();
 
     public SmsDispatchJob(SmsRequestRepository repo, SmsAttemptRepository attemptRepo,
                           DispatchSmsProvider dispatchProvider, TransactionTemplate txTemplate,
@@ -39,6 +42,7 @@ public class SmsDispatchJob {
         this.txTemplate = txTemplate;
         this.props = props;
         this.metrics = metrics;
+        Gauge.builder("sms_dispatch_batch_size", batchSize, AtomicInteger::get).register(metrics);
     }
 
     /** Интервал и стартовая задержка вынесены в свойства: тесты отключают фоновую отправку, вызывая {@link #dispatch()} вручную. */
@@ -46,7 +50,7 @@ public class SmsDispatchJob {
                initialDelayString = "${sms.dispatch-initial-delay:PT0S}")
     public void dispatch() {
         List<UUID> ids = repo.claimBatch(INSTANCE_ID, props.dispatchBatchSize(), props.lockLease().toMillis());
-        metrics.gauge("sms_dispatch_batch_size", ids.size());
+        batchSize.set(ids.size());
 
         for (UUID id : ids) {
             try {

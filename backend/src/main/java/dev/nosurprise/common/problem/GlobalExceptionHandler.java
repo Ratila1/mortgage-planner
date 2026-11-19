@@ -16,6 +16,7 @@ import dev.nosurprise.pdf.PdfNotReadyException;
 import dev.nosurprise.notification.NotificationNotFoundException;
 import dev.nosurprise.scenario.ScenarioNotFoundException;
 import dev.nosurprise.user.UserNotFoundException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
@@ -302,6 +304,12 @@ public class GlobalExceptionHandler {
     ProblemDetail onMethodNotSupported(org.springframework.web.HttpRequestMethodNotSupportedException ex) {
         return problem(HttpStatus.METHOD_NOT_ALLOWED, ErrorCode.METHOD_NOT_ALLOWED,
                 ex.getMessage());
+    }
+
+    /** The client closed the connection while the response was being written; not a server error. */
+    @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
+    void onClientAbort(Exception ex) {
+        log.debug("client aborted the response", ex);
     }
 
     @ExceptionHandler(Exception.class)

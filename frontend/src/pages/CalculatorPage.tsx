@@ -77,19 +77,24 @@ export function CalculatorPage() {
 
   useEffect(() => {
     if (validateParams(debouncedParams)) return;
+    const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
     api
-      .calculate(debouncedParams)
+      .calculate(debouncedParams, controller.signal)
       .then((r) => {
         if (cancelled) return;
         setResult(r);
         setError(null);
       })
-      .catch((err) => !cancelled && setError(errorMessage(err, 'calc')))
+      .catch((err) => {
+        if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) return;
+        setError(errorMessage(err, 'calc'));
+      })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [debouncedParams]);
 

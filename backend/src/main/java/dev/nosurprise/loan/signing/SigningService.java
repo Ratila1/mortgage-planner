@@ -110,11 +110,13 @@ public class SigningService {
         cooldown.tryAcquire(cooldownKey);
 
         String idempotencyKey = "signing:" + applicationId + ":" + UUID.randomUUID();
+        UUID smsId;
         try {
             SmsResponse response = smsClient.createSms(idempotencyKey, profile.phone());
+            smsId = response.getId();
 
             // Код привязан к заявке: запоминаем smsId и SHA-256 договора, отправленного на подпись.
-            redisTemplate.opsForValue().set(SMS_ID_PREFIX + applicationId, response.getId().toString(), BINDING_TTL);
+            redisTemplate.opsForValue().set(SMS_ID_PREFIX + applicationId, smsId.toString(), BINDING_TTL);
             redisTemplate.opsForValue().set(SMS_SHA_PREFIX + applicationId, contract.getSha256(), BINDING_TTL);
 
             incidents.record(applicationId, LoanEventType.SIGN_CODE_SENT, userId, null);
@@ -131,8 +133,8 @@ public class SigningService {
             verifications.save(new TelegramVerification(verificationId, userId, "SIGNING",
                     applicationId.toString(), now, now.plus(Duration.ofMinutes(TELEGRAM_TTL_MINUTES))));
             outbox.publish(TelegramRoutingKeys.VERIFICATION_REQUESTED, "telegram-verification", verificationId,
-                    new VerificationRequested(UUID.randomUUID(), now, verificationId, userId, "SIGNING",
-                            applicationId.toString(), TELEGRAM_TTL_MINUTES));
+                    new VerificationRequested(UUID.randomUUID(), now, verificationId, smsId, userId,
+                            "SIGNING", applicationId.toString(), TELEGRAM_TTL_MINUTES));
             return verificationId;
         });
     }

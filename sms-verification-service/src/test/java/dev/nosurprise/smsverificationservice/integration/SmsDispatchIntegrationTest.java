@@ -5,6 +5,7 @@ import dev.nosurprise.smsverificationservice.integration.support.AbstractSmsInte
 import dev.nosurprise.smsverificationservice.provider.DispatchSmsProvider;
 import dev.nosurprise.smsverificationservice.provider.DispatchSmsProvider.SendResult;
 import dev.nosurprise.smsverificationservice.worker.SmsDispatchJob;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -37,6 +38,9 @@ class SmsDispatchIntegrationTest extends AbstractSmsIntegrationTest {
 
     @Autowired
     private SmsRequestRepository requests;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @MockitoBean
     private DispatchSmsProvider provider;
@@ -159,6 +163,21 @@ class SmsDispatchIntegrationTest extends AbstractSmsIntegrationTest {
         assertThat(finished.get("provider_message_id")).isEqualTo("prov-lease");
         assertThat(finished.get("locked_until")).isNull();
         assertThat(finished.get("sent_at")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("метрика размера батча обновляется, а не застывает на первом значении")
+    void batchSizeGaugeFollowsEachDispatch() {
+        when(provider.send(anyString(), anyString())).thenReturn(SendResult.success("prov-gauge"));
+
+        create();
+        dispatchJob.dispatch();
+        assertThat(meterRegistry.get("sms_dispatch_batch_size").gauge().value()).isEqualTo(1.0);
+
+        create();
+        create();
+        dispatchJob.dispatch();
+        assertThat(meterRegistry.get("sms_dispatch_batch_size").gauge().value()).isEqualTo(2.0);
     }
 
     private UUID create() {

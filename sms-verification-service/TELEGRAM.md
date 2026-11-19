@@ -1,15 +1,18 @@
 # Telegram 2FA contract
 
 Telegram verification was moved from the retired `notification-service` into this service.
-The service keeps its port `8091`; SMS OTP behavior is unchanged.
+The service keeps its port `8091`. SMS delivery and verification behavior is unchanged; the service
+now also stores the plaintext SMS code in Redis so Telegram can send the same code.
 
 ## Flow
 
 1. The backend starts a signing request (`POST /api/loans/applications/{id}/signature`). It still sends the
    SMS code and additionally stores a `telegram_verifications` row and publishes `verification.requested`
-   to `domain.events`. The HTTP response contains `verificationId`.
-2. This service consumes `verification.requested`, generates a 6-digit code, stores its SHA-256 hash in
-   Redis and sends the code to the bound Telegram chat. Status becomes `SENT`.
+   with the created `smsId` to `domain.events`. The HTTP response contains `verificationId`.
+2. This service consumes `verification.requested`, reads the SMS code from the short-lived Redis key
+   `sms:otp:code:{smsId}`, stores its SHA-256 hash in `tg:otp:{verificationId}` and sends the same code to
+   the bound Telegram chat. Status becomes `SENT`. Events without `smsId`, or with an `smsId` whose code is
+   missing or expired, leave the verification `PENDING` and send no Telegram code.
 3. The client polls `GET /api/verify/{id}/status` and posts `POST /api/verify/{id}/confirm` with
    `{ "code": "123456" }`. Both endpoints require the backend user JWT.
 4. On success this service calls `POST /api/internal/verifications/{id}/complete` on the backend with
@@ -38,7 +41,8 @@ Exchange `domain.events` (DLX `domain.events.dlx`) with queues `telegram.verific
 ## Storage
 
 Tables `sms.telegram_bindings` and `sms.verification_requests` are created by Flyway `V2`.
-Redis keys: `tg:otp:{id}` (hash, TTL from the event), `tg:otp:used:{id}` (24 h), `tg:update:{id}` (24 h).
+Redis keys: `tg:otp:{id}` (hash, TTL from the event), `tg:otp:used:{id}` (24 h), `tg:update:{id}` (24 h),
+`sms:otp:code:{smsId}` (plaintext SMS code, OTP TTL).
 
 ## Environment
 

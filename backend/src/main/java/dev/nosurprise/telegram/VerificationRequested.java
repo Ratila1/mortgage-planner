@@ -10,6 +10,7 @@ public record VerificationRequested(
         UUID eventId,
         Instant occurredAt,
         UUID verificationId,
+        UUID smsId,
         UUID userId,
         String operationType,
         String operationRef,

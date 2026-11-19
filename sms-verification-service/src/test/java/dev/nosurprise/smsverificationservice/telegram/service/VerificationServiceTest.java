@@ -1,12 +1,15 @@
 package dev.nosurprise.smsverificationservice.telegram.service;
 
 import dev.nosurprise.smsverificationservice.service.OtpHasher;
+import dev.nosurprise.smsverificationservice.service.RedisOtpStore;
 import dev.nosurprise.smsverificationservice.telegram.config.VerificationProperties;
+import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBinding;
 import dev.nosurprise.smsverificationservice.telegram.domain.VerificationRequest;
 import dev.nosurprise.smsverificationservice.telegram.domain.VerificationRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -23,7 +26,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,6 +39,8 @@ class VerificationServiceTest {
 
     private static final UUID ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID USER = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    private static final UUID SMS_ID = UUID.fromString("44444444-4444-4444-4444-444444444444");
+    private static final long CHAT_ID = 292199985L;
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     private final OtpHasher hasher = new OtpHasher();
@@ -47,6 +54,7 @@ class VerificationServiceTest {
     private final TelegramBotService bot = mock(TelegramBotService.class);
     private final MainBackendClient backend = mock(MainBackendClient.class);
     private final TelegramEventPublisher events = mock(TelegramEventPublisher.class);
+    private final RedisOtpStore smsOtps = mock(RedisOtpStore.class);
 
     private final VerificationRequest request = new VerificationRequest(ID, USER, "SIGNING",
             "33333333-3333-3333-3333-333333333333", "SENT", NOW, NOW.plus(Duration.ofMinutes(5)));
@@ -58,7 +66,7 @@ class VerificationServiceTest {
         when(redis.opsForValue()).thenReturn(values);
         when(repository.findById(ID)).thenReturn(Optional.of(request));
         when(repository.findByIdAndUserId(ID, USER)).thenReturn(Optional.of(request));
-        service = new VerificationService(redis, repository, bindings, bot, backend, events, hasher,
+        service = new VerificationService(redis, repository, bindings, bot, backend, events, hasher, smsOtps,
                 Clock.fixed(NOW, ZoneOffset.UTC), new VerificationProperties(Duration.ofMinutes(5), 3));
     }
 
@@ -67,6 +75,10 @@ class VerificationServiceTest {
         stored.put("hash", hasher.hash(code));
         stored.put("userId", userId);
         when(hashes.entries("tg:otp:" + ID)).thenReturn(stored);
+    }
+
+    private TelegramBinding binding() {
+        return new TelegramBinding(USER, "+375291234567", CHAT_ID, "tester", NOW);
     }
 
     @Test
@@ -174,9 +186,63 @@ class VerificationServiceTest {
         when(repository.existsById(ID)).thenReturn(false);
         when(bindings.findByUser(USER)).thenReturn(Optional.empty());
 
-        service.handleRequested(ID, USER, "SIGNING", "33333333-3333-3333-3333-333333333333", 5);
+        service.handleRequested(ID, USER, "SIGNING", "33333333-3333-3333-3333-333333333333", SMS_ID, 5);
 
         verify(redis, never()).expire(anyString(), any(Duration.class));
         verify(bot, never()).sendMessage(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("в Telegram уходит тот же код, что был сгенерирован для SMS")
+    void telegramReceivesSmsCode() {
+        request.setStatus("PENDING");
+        when(bindings.findByUser(USER)).thenReturn(Optional.of(binding()));
+        when(smsOtps.getPlainCode(SMS_ID)).thenReturn(Optional.of("123456"));
+
+        service.handleRequested(ID, USER, "SIGNING", "33333333-3333-3333-3333-333333333333", SMS_ID, 5);
+
+        verify(bot).sendMessage(CHAT_ID, "Ваш код подтверждения: 123456");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<Object, Object>> stored = ArgumentCaptor.forClass(Map.class);
+        verify(hashes).putAll(eq("tg:otp:" + ID), stored.capture());
+        assertThat(stored.getValue().get("hash")).isEqualTo(hasher.hash("123456"));
+        verify(redis).expire("tg:otp:" + ID, Duration.ofMinutes(5));
+        assertThat(request.getStatus()).isEqualTo("SENT");
+        verify(events).verificationSent(ID, USER, "SIGNING");
+    }
+
+    @Test
+    @DisplayName("событие без smsId оставляет верификацию PENDING и не отправляет чужой код")
+    void eventWithoutSmsIdLeavesVerificationPending() {
+        when(bindings.findByUser(USER)).thenReturn(Optional.of(binding()));
+
+        service.handleRequested(ID, USER, "SIGNING", "33333333-3333-3333-3333-333333333333", null, 5);
+
+        verify(smsOtps, never()).getPlainCode(any());
+        verify(bot, never()).sendMessage(anyLong(), anyString());
+        verify(hashes, never()).putAll(anyString(), anyMap());
+        verifyNoInteractions(events);
+        assertSavedStatusIs("PENDING");
+    }
+
+    @Test
+    @DisplayName("истёкший SMS-код оставляет верификацию PENDING и не отправляется в Telegram")
+    void expiredSmsCodeLeavesVerificationPending() {
+        when(bindings.findByUser(USER)).thenReturn(Optional.of(binding()));
+        when(smsOtps.getPlainCode(SMS_ID)).thenReturn(Optional.empty());
+
+        service.handleRequested(ID, USER, "SIGNING", "33333333-3333-3333-3333-333333333333", SMS_ID, 5);
+
+        verify(smsOtps).getPlainCode(SMS_ID);
+        verify(bot, never()).sendMessage(anyLong(), anyString());
+        verify(hashes, never()).putAll(anyString(), anyMap());
+        verifyNoInteractions(events);
+        assertSavedStatusIs("PENDING");
+    }
+
+    private void assertSavedStatusIs(String status) {
+        ArgumentCaptor<VerificationRequest> saved = ArgumentCaptor.forClass(VerificationRequest.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(status);
     }
 }

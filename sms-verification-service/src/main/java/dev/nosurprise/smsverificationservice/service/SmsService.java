@@ -94,6 +94,7 @@ public class SmsService {
         }
 
         redisOtpStore.saveOtp(saved.getId(), otpHash, phone);
+        redisOtpStore.savePlainCode(saved.getId(), code);
         metrics.counter("sms_created_total", "language", lang.name()).increment();
         return CreateResult.created(saved);
     }

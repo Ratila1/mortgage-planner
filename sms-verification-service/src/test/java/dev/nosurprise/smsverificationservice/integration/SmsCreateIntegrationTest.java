@@ -1,9 +1,12 @@
 package dev.nosurprise.smsverificationservice.integration;
 
+import dev.nosurprise.smsverificationservice.config.SmsProperties;
 import dev.nosurprise.smsverificationservice.integration.support.AbstractSmsIntegrationTest;
 import dev.nosurprise.smsverificationservice.service.OtpHasher;
+import dev.nosurprise.smsverificationservice.service.RedisOtpStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.databind.JsonNode;
@@ -20,6 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SmsCreateIntegrationTest extends AbstractSmsIntegrationTest {
 
     private static final String PHONE = "+375291234567";
+
+    @Autowired
+    private RedisOtpStore otpStore;
+
+    @Autowired
+    private SmsProperties smsProperties;
 
     @Test
     @DisplayName("create: 202, номер в E.164, код в сообщении, в БД только SHA-256")
@@ -45,6 +54,13 @@ class SmsCreateIntegrationTest extends AbstractSmsIntegrationTest {
         String code = codeFromMessage(id);
         assertThat(row.get("otp_hash")).isEqualTo(new OtpHasher().hash(code));
         assertThat(row.get("message").toString()).contains(code);
+
+        String codeKey = "sms:otp:code:" + id;
+        assertThat(redis.opsForValue().get(codeKey)).isEqualTo(code);
+        assertThat(redis.getExpire(codeKey)).isBetween(1L, smsProperties.otpTtl().toSeconds());
+        assertThat(otpStore.getPlainCode(id)).contains(code);
+        assertThat(otpStore.getPlainCode(UUID.randomUUID())).isEmpty();
+
         assertThat(row.get("otp_expires_at")).isNotNull();
     }
 

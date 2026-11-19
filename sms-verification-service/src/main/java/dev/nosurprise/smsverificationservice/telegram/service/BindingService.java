@@ -1,6 +1,7 @@
 package dev.nosurprise.smsverificationservice.telegram.service;
 
 import dev.nosurprise.smsverificationservice.api.error.ConflictException;
+import dev.nosurprise.smsverificationservice.api.error.ValidationException;
 import dev.nosurprise.smsverificationservice.service.PhoneNormalizer;
 import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBinding;
 import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBindingRepository;
@@ -42,7 +43,7 @@ public class BindingService {
      * when the phone is ambiguous (several accounts share it).
      */
     public boolean bindContact(long telegramId, String rawPhone, String username) {
-        String phone = phoneNormalizer.toE164(rawPhone);
+        String phone = normalizeTelegramPhone(rawPhone);
         Optional<UUID> userId;
         try {
             userId = backend.findUserIdByPhone(phone);
@@ -57,6 +58,21 @@ public class BindingService {
         link(userId.get(), phone, telegramId, username);
         bot.sendMessage(telegramId, "Аккаунт привязан. Коды подтверждения будут приходить сюда.");
         return true;
+    }
+
+    private String normalizeTelegramPhone(String rawPhone) {
+        try {
+            return phoneNormalizer.toE164(rawPhone);
+        } catch (ValidationException ex) {
+            // Telegram contacts often arrive as bare international digits, e.g. 375291234567.
+            // The normalizer needs a leading '+' because no default region is configured;
+            // retry only for that shape so national/garbage input stays invalid.
+            String raw = rawPhone.trim();
+            if (raw.matches("\\d{10,15}") && !raw.startsWith("0")) {
+                return phoneNormalizer.toE164("+" + raw);
+            }
+            throw ex;
+        }
     }
 
     @Transactional

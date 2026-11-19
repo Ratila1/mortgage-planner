@@ -1,6 +1,7 @@
 package dev.nosurprise.smsverificationservice.telegram.service;
 
 import dev.nosurprise.smsverificationservice.service.OtpHasher;
+import dev.nosurprise.smsverificationservice.service.RedisOtpStore;
 import dev.nosurprise.smsverificationservice.telegram.config.VerificationProperties;
 import dev.nosurprise.smsverificationservice.telegram.domain.TelegramBinding;
 import dev.nosurprise.smsverificationservice.telegram.domain.VerificationRequest;
@@ -11,7 +12,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,12 +19,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Telegram 2FA lifecycle: issue a code, verify it and complete the backend operation. */
+/** Telegram 2FA lifecycle: deliver the SMS code, verify it and complete the backend operation. */
 @Service
 public class VerificationService {
 
     private static final Logger log = LoggerFactory.getLogger(VerificationService.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final String OTP_KEY = "tg:otp:%s";
     private static final String USED_KEY = "tg:otp:used:%s";
     private static final Duration USED_TTL = Duration.ofHours(24);
@@ -36,13 +35,14 @@ public class VerificationService {
     private final MainBackendClient backend;
     private final TelegramEventPublisher events;
     private final OtpHasher hasher;
+    private final RedisOtpStore smsOtps;
     private final Clock clock;
     private final VerificationProperties props;
 
     public VerificationService(StringRedisTemplate redis, VerificationRequestRepository repository,
                                BindingService bindings, TelegramBotService telegram, MainBackendClient backend,
-                               TelegramEventPublisher events, OtpHasher hasher, Clock clock,
-                               VerificationProperties props) {
+                               TelegramEventPublisher events, OtpHasher hasher, RedisOtpStore smsOtps,
+                               Clock clock, VerificationProperties props) {
         this.redis = redis;
         this.repository = repository;
         this.bindings = bindings;
@@ -50,6 +50,7 @@ public class VerificationService {
         this.backend = backend;
         this.events = events;
         this.hasher = hasher;
+        this.smsOtps = smsOtps;
         this.clock = clock;
         this.props = props;
     }
@@ -57,7 +58,7 @@ public class VerificationService {
     /** Called by the verification.requested consumer. Safe to replay. */
     @Transactional
     public void handleRequested(UUID verificationId, UUID userId, String operationType,
-                                String operationRef, int ttlMinutes) {
+                                String operationRef, UUID smsId, int ttlMinutes) {
         if (repository.existsById(verificationId)) {
             log.info("Verification {} already processed, ignoring duplicate", verificationId);
             return;
@@ -74,19 +75,27 @@ public class VerificationService {
             return;
         }
 
+        // Events published before the shared-code contract have no smsId. A missing/expired code
+        // must not become a second, independently generated OTP for the same operation.
+        Optional<String> code = smsId == null ? Optional.empty() : smsOtps.getPlainCode(smsId);
+        if (code.isEmpty()) {
+            log.warn("SMS code for smsId {} is missing or expired, verification {} stays PENDING",
+                    smsId, verificationId);
+            return;
+        }
+
         // Write the OTP only when a chat exists: status() derives SENT from the persisted row,
         // and a stray Redis key would otherwise make the client wait for a code never sent.
-        String code = String.format("%06d", RANDOM.nextInt(1_000_000));
         String key = OTP_KEY.formatted(verificationId);
         redis.opsForHash().putAll(key, Map.of(
-                "hash", hasher.hash(code),
+                "hash", hasher.hash(code.get()),
                 "userId", userId.toString(),
                 "operationRef", operationRef,
                 "attempts", "0"));
         redis.expire(key, ttl);
 
         // Fail loudly so RabbitMQ can retry / dead-letter instead of silently losing the code.
-        telegram.sendMessage(binding.get().getTelegramId(), "Ваш код подтверждения: " + code);
+        telegram.sendMessage(binding.get().getTelegramId(), "Ваш код подтверждения: " + code.get());
         repository.findById(verificationId).ifPresent(request -> request.setStatus("SENT"));
         events.verificationSent(verificationId, userId, operationType);
     }

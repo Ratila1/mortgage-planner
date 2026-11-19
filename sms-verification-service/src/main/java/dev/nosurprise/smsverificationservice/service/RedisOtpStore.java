@@ -16,6 +16,7 @@ public class RedisOtpStore {
     private final SmsProperties props;
 
     private static final String OTP_KEY = "sms:otp:%s";
+    private static final String CODE_KEY = "sms:otp:code:%s";
     private static final String USED_KEY = "sms:otp:used:%s";
 
     public RedisOtpStore(RedisTemplate<String, Object> redis, SmsProperties props) {
@@ -27,6 +28,15 @@ public class RedisOtpStore {
         Map<String, Object> data = Map.of("hash", hash, "phone", phone, "attempts", "0");
         redis.opsForHash().putAll(OTP_KEY.formatted(smsId), data);
         redis.expire(OTP_KEY.formatted(smsId), props.otpTtl());
+    }
+
+    public void savePlainCode(UUID smsId, String code) {
+        redis.opsForValue().set(CODE_KEY.formatted(smsId), code, props.otpTtl());
+    }
+
+    public Optional<String> getPlainCode(UUID smsId) {
+        Object code = redis.opsForValue().get(CODE_KEY.formatted(smsId));
+        return code == null ? Optional.empty() : Optional.of(code.toString());
     }
 
     public Optional<OtpData> getOtp(UUID smsId) {
