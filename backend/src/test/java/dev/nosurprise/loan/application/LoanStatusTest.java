@@ -1,5 +1,6 @@
 package dev.nosurprise.loan.application;
 
+import dev.nosurprise.loan.application.state.LoanState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -11,7 +12,9 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Все пары статусов против таблицы переходов §3.8. */
+/**
+ * Все пары статусов против таблицы переходов §3.8 через {@link LoanState}.
+ */
 class LoanStatusTest {
 
     private static final Set<String> ALLOWED = Set.of(
@@ -28,17 +31,19 @@ class LoanStatusTest {
     @MethodSource("allPairs")
     @DisplayName("переход разрешён только если он есть в таблице §3.8")
     void transitions(LoanStatus from, LoanStatus to) {
-        assertThat(from.canTransitionTo(to)).isEqualTo(ALLOWED.contains(from + "->" + to));
+        assertThat(LoanState.of(from).allowedTransitions().contains(to))
+                .isEqualTo(ALLOWED.contains(from + "->" + to));
     }
 
     @ParameterizedTest
     @MethodSource("allStatuses")
     @DisplayName("активные статусы — SUBMITTED, APPROVED, ACTIVE; конечные — без исходящих переходов")
     void activeAndFinal(LoanStatus status) {
-        assertThat(status.isActive()).isEqualTo(Set.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE)
-                .contains(status));
-        assertThat(status.isFinal()).isEqualTo(Set.of(LoanStatus.REJECTED, LoanStatus.CANCELLED, LoanStatus.EXPIRED,
-                LoanStatus.REPAID).contains(status));
+        assertThat(LoanState.of(status).isActive()).isEqualTo(
+                Set.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE).contains(status));
+        assertThat(LoanState.of(status).isFinal()).isEqualTo(
+                Set.of(LoanStatus.REJECTED, LoanStatus.CANCELLED, LoanStatus.EXPIRED, LoanStatus.REPAID)
+                        .contains(status));
     }
 
     static Stream<LoanStatus> allStatuses() {
