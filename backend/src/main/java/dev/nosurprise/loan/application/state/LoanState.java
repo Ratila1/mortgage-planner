@@ -49,14 +49,14 @@ public interface LoanState {
      * Действия при выходе из состояния.
      */
     default void onExit(LoanApplication context) {
-        // по умолчанию ничего
+        LoanStateMetrics.recordExit(this, context, java.time.Instant.now());
     }
 
     /**
      * Действия при входе в состояние (установить closedAt, decidedAt и т.п.).
      */
     default void onEnter(LoanApplication context, UUID actorId, Instant now) {
-        // по умолчанию ничего
+        LoanStateMetrics.recordEnter(this, context, actorId, now);
     }
 
     static LoanState of(LoanStatus status) {

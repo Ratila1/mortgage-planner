@@ -90,6 +90,9 @@ app:
     offer-ttl-business-days: 5  # срок подписания одобренного предложения, пн–пт
     business-zone: Europe/Minsk
     debt-load-warning-percent: 50
+    state-metrics:
+      dump-cron: 0 0 23 * * *
+      report-dir: "${LOAN_STATE_METRICS_REPORT_DIR:${java.io.tmpdir}/nosurprise-reports}"
     credit-history-reconcile-delay: 15m
   kyc:
     max-file-size: 5MB
