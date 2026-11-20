@@ -34,6 +34,7 @@ public final class RepaidState implements LoanState {
 
     @Override
     public void onEnter(LoanApplication context, UUID actorId, Instant now) {
+        LoanState.super.onEnter(context, actorId, now);
         context.setClosedAt(now);
     }
 }

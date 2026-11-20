@@ -3,6 +3,7 @@ package dev.nosurprise.loan.application;
 import dev.nosurprise.customer.ProfileView;
 import dev.nosurprise.loan.calc.LoanQuote;
 import dev.nosurprise.loan.application.state.LoanState;
+import dev.nosurprise.loan.application.state.LoanStateMetrics;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -113,6 +114,8 @@ public class LoanApplication {
         application.state = LoanState.of(LoanStatus.SUBMITTED);
         application.createdAt = now;
         application.updatedAt = now;
+        application.state.onEnter(application, userId, now);
+        LoanStateMetrics.recordTransition(null, LoanStatus.SUBMITTED, application, userId, now);
         return application;
     }
 
@@ -166,6 +169,7 @@ public class LoanApplication {
             throw new InvalidStatusTransitionException(this.status, target);
         }
         current.validateTransition(this, target, now);
+        LoanStateMetrics.recordTransition(this.status, target, this, actorId, now);
         current.onExit(this);
         this.status = target;
         this.state = LoanState.of(target);
