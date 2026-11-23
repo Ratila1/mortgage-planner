@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: credit-bureau
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${BUREAU_DB_URL:jdbc:postgresql://localhost:5432/nosurprise_bureau}
+    username: ${BUREAU_DB_USER:nosurprise}
+    password: ${BUREAU_DB_PASSWORD:nosurprise}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  mongodb:
+    # Та же база, что у монолита; бюро только читает коллекцию credit_history (CREDIT_BUREAU.md §5.1).
+    uri: ${MONGODB_URI:mongodb://localhost:27017/nosurprise}
+    representation:
+      uuid: standard
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: ${SERVER_PORT:8091}
+  # Снаружи бюро доступно только через nginx по /bureau/ (CREDIT_BUREAU.md §10).
+  servlet:
+    context-path: /bureau
+  # IP клиента для лимита неудачных входов берём из X-Forwarded-For, который выставляет наш nginx.
+  forward-headers-strategy: framework
+
+app:
+  # База монолита — только чтение VIEW bureau_applicant_lookup (CREDIT_BUREAU.md §5.2).
+  # Отдельный маленький пул read-only: бюро не должно отъедать соединения у монолита и не может ничего записать.
+  lookup:
+    url: ${LOOKUP_DB_URL:jdbc:postgresql://localhost:5432/nosurprise}
+    username: ${LOOKUP_DB_USER:nosurprise}
+    password: ${LOOKUP_DB_PASSWORD:nosurprise}
+    maximum-pool-size: 5
+    connection-timeout: 3s
+  bureau:
+    # Админский API бюро (заголовок X-Admin-Key). Пусто — админский API закрыт.
+    admin-key: ${BUREAU_ADMIN_KEY:}
+    # Если задан и провайдеров ещё нет — при старте создаётся песочница с этим ключом (§9).
+    sandbox-key: ${BUREAU_SANDBOX_KEY:}
+    default-requests-per-minute: 60
+    default-requests-per-day: 5000
+    sandbox-requests-per-minute: 10
+    sandbox-requests-per-day: 100
+    auth-failures-per-window: 10      # неудачных входов с одного IP до блокировки
+    auth-failure-window: 10m
+    idempotency-ttl: 24h
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    tags-sorter: alpha
+  default-produces-media-type: application/json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

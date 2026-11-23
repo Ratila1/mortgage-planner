@@ -11,6 +11,7 @@ export default defineConfig({
       '/api': 'http://localhost:8080',
       '/oauth2': 'http://localhost:8080',
       '/login/oauth2': 'http://localhost:8080',
+      '/bureau': 'http://localhost:8080',
     },
   },
   test: {
