@@ -37,9 +37,7 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
 
     // resilience4j circuit breaker
-    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
-    implementation 'io.github.resilience4j:resilience4j-micrometer:2.2.0'
 
     // libphonenumber for phone normalization
     implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.8'

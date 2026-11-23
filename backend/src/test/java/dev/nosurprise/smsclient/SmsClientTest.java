@@ -46,6 +46,10 @@ class SmsClientTest {
     @DisplayName("201/202 от sms-сервиса → SmsResponse")
     void success() {
         server.expect(requestTo(BASE_URL + "/api/v1/sms"))
+                // Контракт с sms-verification-service: без service-JWT эндпоинт отвечает 401.
+                .andExpect(request -> assertThat(request.getHeaders().getFirst("Authorization"))
+                        .as("service JWT must be attached")
+                        .startsWith("Bearer "))
                 .andRespond(withSuccess("""
                         {"id":"11111111-1111-1111-1111-111111111111","status":"IN_PROGRESS","attempts":0}
                         """, MediaType.APPLICATION_JSON));
