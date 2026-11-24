@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, Ref } from 'react';
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useId } from 'react';
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
 export { cx };
@@ -61,6 +61,23 @@ export function Card({ className, children, style }: { className?: string; child
   return <section className={cx('card p-5 sm:p-6', className)} style={style}>{children}</section>;
 }
 
+/**
+ * Панель фильтров: ровная сетка с подписями над каждым полем.
+ * Ширина колонок задаётся сеткой, а не самими контролами — поэтому
+ * фильтры не «скачут» при изменении размера окна.
+ */
+export function FilterPanel({ children, columns = 5 }: { children: ReactNode; columns?: 3 | 4 | 5 }) {
+  const cols =
+    columns === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' :
+    columns === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' :
+    'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5';
+  return (
+    <div className={cx('mb-4 grid gap-3 rounded-xl border border-line/70 bg-paper-2/40 p-3', cols)}>
+      {children}
+    </div>
+  );
+}
+
 export function Field({
   label,
   hint,
@@ -99,9 +116,10 @@ export function TextInput({
         className,
       )}
     >
+      {/* 2 × 9px + 24px строки + 2px рамки обёртки = 44px, как у Select. */}
       <input
         {...rest}
-        className="min-w-0 flex-1 bg-transparent px-3.5 py-2.5 text-ink outline-none placeholder:text-ink-3"
+        className="min-w-0 flex-1 bg-transparent px-3.5 py-[9px] text-ink outline-none placeholder:text-ink-3"
       />
       {suffix && <span className="pr-3.5 text-sm text-ink-3">{suffix}</span>}
     </div>
@@ -224,14 +242,18 @@ export function Select<T extends string>({
   label?: string;
   className?: string;
 }) {
+  const id = useId();
   return (
+    // Ширина задаётся сеткой родителя; className добавляется, а не заменяет w-full,
+    // чтобы привычные mt-*/basis-* не сбрасывали ширину поля.
     <div className={cx('w-full', className)}>
-      {label && <label className="block text-sm font-medium text-ink-2 mb-1.5">{label}</label>}
+      {label && <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink-2">{label}</label>}
       <div className="relative">
         <select
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="ui-select w-full rounded-xl border border-line bg-field px-4 py-2.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
+          className="ui-select w-full rounded-xl border border-line bg-field pl-3.5 pr-10 text-ink outline-none focus:border-money focus:ring-2 focus:ring-money/15 transition"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -259,8 +281,9 @@ export function Badge({
     gold: 'bg-gold-soft text-gold-ink',
   };
   return (
-    <span className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold', tones[tone])}>
-      {children}
+    <span className={cx('inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold', tones[tone])}>
+      {/* min-w-0 + truncate: длинный статус ужимается вместе с ячейкой, а не распирает таблицу. */}
+      <span className="min-w-0 truncate">{children}</span>
     </span>
   );
 }
