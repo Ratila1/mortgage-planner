@@ -157,10 +157,8 @@ sms:
   dispatch-batch-size: 100
   lock-lease: 30s
   retention-request: 7d
-  retention-attempt: 30d
   rate-limit:
     phone-per-minute: 3
-    ip-per-minute: 30
 
 management:
   endpoints:
