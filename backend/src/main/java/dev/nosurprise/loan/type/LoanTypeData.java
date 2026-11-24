@@ -8,7 +8,7 @@ import java.math.BigDecimal;
  */
 public record LoanTypeData(String name, String description, BigDecimal minAmount, BigDecimal maxAmount,
                            int minTermDays, int maxTermDays, BigDecimal dailyRate, BigDecimal modifier,
-                           boolean active) {
+                           boolean active, BigDecimal purposeScore) {
 
     public static final int MIN_TERM_DAYS = 7;
     public static final int MAX_TERM_DAYS = 30;
@@ -25,6 +25,9 @@ public record LoanTypeData(String name, String description, BigDecimal minAmount
         }
         if (modifier.signum() < 0) {
             throw new InvalidLoanTypeException("modifier must be >= 0");
+        }
+        if (purposeScore != null && (purposeScore.signum() < 0 || purposeScore.compareTo(BigDecimal.ONE) > 0)) {
+            throw new InvalidLoanTypeException("purposeScore must be between 0 and 1");
         }
     }
 }

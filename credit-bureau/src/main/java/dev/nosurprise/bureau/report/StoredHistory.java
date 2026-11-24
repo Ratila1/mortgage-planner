@@ -2,6 +2,7 @@ package dev.nosurprise.bureau.report;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -10,7 +11,8 @@ import java.util.List;
  */
 public record StoredHistory(List<StoredLoan> loans) {
 
+    /** overdueDays — как записал монолит (для OVERDUE — на момент синхронизации); dueDate/paidAt — с V17. */
     public record StoredLoan(String status, BigDecimal amount, Instant submittedAt, Instant decidedAt,
-                             Instant closedAt) {
+                             Instant closedAt, LocalDate dueDate, LocalDate paidAt, Integer overdueDays) {
     }
 }

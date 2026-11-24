@@ -7,8 +7,9 @@ import {
   type MicroloanCalculationResult,
   type MicroloanType,
   type PassportStatus,
+  type Sex,
 } from '../api';
-import { Alert, Button, Card, Field, FileInput, PageTitle, Skeleton, TextInput } from '../components/ui';
+import { Alert, Button, Card, Field, FileInput, PageTitle, Select, Skeleton, TextInput } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, parseMoneyInput, toNumber } from '../lib/format';
 
 /** Параметры займа приходят из калькулятора через state навигации. */
@@ -18,7 +19,18 @@ interface PrefillState {
   termDays: number;
 }
 
-const EMPTY_PROFILE: CustomerProfileInput = { lastName: '', firstName: '', middleName: '', phone: '', monthlyIncome: '' };
+const EMPTY_PROFILE: CustomerProfileInput = {
+  lastName: '',
+  firstName: '',
+  middleName: '',
+  phone: '',
+  monthlyIncome: '',
+  birthDate: '',
+  sex: '',
+  country: 'BY',
+  city: '',
+};
+const COUNTRY_RE = /^[A-Za-z]{2}$/;
 const PHONE_RE = /^\+\d{10,15}$/;
 const MAX_PASSPORT_BYTES = 5 * 1024 * 1024;
 
@@ -66,6 +78,11 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
             middleName: savedProfile.middleName,
             phone: savedProfile.phone,
             monthlyIncome: savedProfile.monthlyIncome,
+            birthDate: savedProfile.birthDate,
+            sex: savedProfile.sex,
+            // У старых профилей страны нет — по умолчанию Беларусь.
+            country: savedProfile.country || 'BY',
+            city: savedProfile.city,
           });
         }
         setPassport(savedPassport);
@@ -85,6 +102,11 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
     if (!profile.firstName.trim()) return 'Укажите имя';
     if (!PHONE_RE.test(profile.phone.trim())) return 'Телефон в формате +375291234567';
     if (!(toNumber(profile.monthlyIncome) > 0)) return 'Укажите зарплату в месяц';
+    // Нужны скорингу (CREDIT_POLICY.md §4). Возраст не проверяем здесь: вне 18–90 скоринг откажет сам.
+    if (!profile.birthDate) return 'Укажите дату рождения';
+    if (!profile.sex) return 'Укажите пол';
+    if (!COUNTRY_RE.test(profile.country.trim())) return 'Страна — двухбуквенный код, например BY';
+    if (!profile.city.trim()) return 'Укажите город';
     if (!hasPassport && !file) return 'Загрузите фото паспорта';
     if (file && !['image/jpeg', 'image/png'].includes(file.type)) return 'Фото паспорта — только JPEG или PNG';
     if (file && file.size > MAX_PASSPORT_BYTES) return 'Фото паспорта — не больше 5 МБ';
@@ -211,6 +233,53 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
               onChange={(e) => setProfile({ ...profile, monthlyIncome: parseMoneyInput(e.target.value) })}
             />
           </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Дата рождения" htmlFor="ml-birth">
+              <TextInput
+                id="ml-birth"
+                type="date"
+                value={profile.birthDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })}
+                autoComplete="bday"
+              />
+            </Field>
+            <Field label="Пол" htmlFor="ml-sex">
+              <Select
+                value={profile.sex || ''}
+                options={[
+                  { value: '', label: 'Не выбран' },
+                  { value: 'FEMALE', label: 'Женский' },
+                  { value: 'MALE', label: 'Мужской' },
+                ]}
+                onChange={(sex) => setProfile({ ...profile, sex: sex as Sex | '' })}
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Страна" htmlFor="ml-country" hint="Код: BY, PL…">
+              <TextInput
+                id="ml-country"
+                value={profile.country}
+                maxLength={2}
+                onChange={(e) => setProfile({ ...profile, country: e.target.value.toUpperCase() })}
+                autoComplete="country"
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Город" htmlFor="ml-city">
+                <TextInput
+                  id="ml-city"
+                  value={profile.city}
+                  maxLength={100}
+                  onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                  autoComplete="address-level2"
+                />
+              </Field>
+            </div>
+          </div>
 
           <Field
             label="Фото паспорта"

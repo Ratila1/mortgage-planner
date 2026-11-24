@@ -1,6 +1,9 @@
 package dev.nosurprise.bureau.report;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -10,6 +13,8 @@ import java.util.UUID;
 public final class CreditReportMapper {
 
     static final String CURRENCY = "BYN";
+    /** Дни текущей просрочки считаются на дату ответа по Минску, как у монолита. */
+    static final ZoneId BUSINESS_ZONE = ZoneId.of("Europe/Minsk");
 
     private CreditReportMapper() {
     }
@@ -23,9 +28,18 @@ public final class CreditReportMapper {
         List<CreditReportResponse.Loan> loans = history.loans().stream()
                 .map(loan -> new CreditReportResponse.Loan(loan.status(),
                         loan.amount() == null ? null : loan.amount().setScale(2).toPlainString(), CURRENCY,
-                        loan.submittedAt(), loan.decidedAt(), loan.closedAt()))
+                        loan.submittedAt(), loan.decidedAt(), loan.closedAt(), loan.dueDate(), loan.paidAt(),
+                        overdueDays(loan, LocalDate.ofInstant(generatedAt, BUSINESS_ZONE))))
                 .toList();
         return new CreditReportResponse(reportId, true, matchedBy.name(), loans.size(), byStatus, loans, generatedAt);
+    }
+
+    /** Для OVERDUE — от даты возврата до сегодня; для остальных — как записал монолит. */
+    static Integer overdueDays(StoredHistory.StoredLoan loan, LocalDate today) {
+        if ("OVERDUE".equals(loan.status()) && loan.dueDate() != null) {
+            return (int) Math.max(0, ChronoUnit.DAYS.between(loan.dueDate(), today));
+        }
+        return loan.overdueDays();
     }
 
     public static CreditReportResponse notFound(UUID reportId, Instant generatedAt) {

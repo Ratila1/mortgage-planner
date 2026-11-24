@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +34,7 @@ public record CreditReportResponse(
     @JsonInclude(JsonInclude.Include.ALWAYS)
     @Schema(description = "Займ")
     public record Loan(
-            @Schema(description = "ACTIVE — действует, REPAID — погашен", example = "REPAID")
+            @Schema(description = "ACTIVE — действует, OVERDUE — просрочен, REPAID — погашен", example = "REPAID")
             String status,
             @Schema(description = "Сумма займа, строкой без потери точности", example = "500.00")
             String amount,
@@ -43,7 +44,14 @@ public record CreditReportResponse(
             Instant submittedAt,
             @Schema(description = "Дата одобрения")
             Instant decidedAt,
-            @Schema(description = "Дата погашения; null — займ действует")
-            Instant closedAt) {
+            @Schema(description = "Когда займ закрыт в системе; null — займ действует")
+            Instant closedAt,
+            @Schema(description = "Дата возврата по договору; null — у займов до появления даты возврата",
+                    example = "2026-11-30")
+            LocalDate dueDate,
+            @Schema(description = "Фактическая дата оплаты; null — не погашен", example = "2026-11-29")
+            LocalDate paidAt,
+            @Schema(description = "Дней просрочки: у погашенного — итог, у просроченного — на сегодня", example = "0")
+            Integer overdueDays) {
     }
 }

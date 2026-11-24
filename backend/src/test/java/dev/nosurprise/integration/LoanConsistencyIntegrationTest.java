@@ -118,7 +118,7 @@ class LoanConsistencyIntegrationTest extends LoanItSupport {
 
         CreditHistoryDocument older = new CreditHistoryDocument(current.id(), current.userId(), 1,
                 current.lastEventId() - 1, "SUBMITTED", current.loan(), current.monthlyIncome(),
-                current.debtLoadPercent(), current.submittedAt(), null, null, null, null, current.timeline(),
+                current.debtLoadPercent(), current.submittedAt(), null, null, null, null, null, null, null, current.timeline(),
                 current.incidents(), Instant.now());
 
         assertThat(store.replaceIfNewer(older)).isFalse();

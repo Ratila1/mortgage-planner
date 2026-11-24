@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -23,8 +24,8 @@ import java.util.UUID;
 public class CreditHistoryReader {
 
     static final String COLLECTION = "credit_history";
-    /** Кредитная история — только займы (§3.1.1): Mongo хранит все статусы заявки. */
-    static final List<String> LOAN_STATUSES = List.of("ACTIVE", "REPAID");
+    /** Кредитная история — только займы (§3.1.1): Mongo хранит все статусы заявки. OVERDUE — CREDIT_POLICY.md §10. */
+    static final List<String> LOAN_STATUSES = List.of("ACTIVE", "OVERDUE", "REPAID");
 
     private final MongoTemplate mongo;
 
@@ -35,7 +36,8 @@ public class CreditHistoryReader {
     public StoredHistory find(UUID userId) {
         Query query = Query.query(Criteria.where("userId").is(userId).and("status").in(LOAN_STATUSES))
                 .with(Sort.by(Sort.Direction.ASC, "submittedAt"));
-        query.fields().include("status", "loan.amount", "submittedAt", "decidedAt", "closedAt");
+        query.fields().include("status", "loan.amount", "submittedAt", "decidedAt", "closedAt", "dueDate", "paidAt",
+                "overdueDays");
         List<StoredHistory.StoredLoan> loans = mongo.find(query, Document.class, COLLECTION).stream()
                 .map(CreditHistoryReader::loan)
                 .toList();
@@ -46,7 +48,13 @@ public class CreditHistoryReader {
         Document terms = loan.get("loan", Document.class);
         return new StoredHistory.StoredLoan(loan.getString("status"),
                 terms == null ? null : money(terms.get("amount")),
-                instant(loan.get("submittedAt")), instant(loan.get("decidedAt")), instant(loan.get("closedAt")));
+                instant(loan.get("submittedAt")), instant(loan.get("decidedAt")), instant(loan.get("closedAt")),
+                date(loan.get("dueDate")), date(loan.get("paidAt")), loan.getInteger("overdueDays"));
+    }
+
+    /** Даты возврата и оплаты монолит пишет ISO-строкой (yyyy-MM-dd); в документах до схемы 2 их нет. */
+    static LocalDate date(Object value) {
+        return value instanceof String text && !text.isBlank() ? LocalDate.parse(text) : null;
     }
 
     /** Монолит пишет деньги как Decimal128 (spring.data.mongodb.representation.big-decimal); строку тоже понимаем. */

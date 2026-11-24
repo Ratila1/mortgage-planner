@@ -279,6 +279,16 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.FORBIDDEN, ErrorCode.SELF_DECISION_FORBIDDEN, ex.getMessage());
     }
 
+    @ExceptionHandler(dev.nosurprise.loan.application.ScoringRequiredException.class)
+    ProblemDetail onScoringRequired(RuntimeException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.SCORING_REQUIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(dev.nosurprise.loan.application.InvalidPaidDateException.class)
+    ProblemDetail onInvalidPaidDate(RuntimeException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, ex.getMessage());
+    }
+
     @ExceptionHandler(dev.nosurprise.loan.contract.DocumentNotFoundException.class)
     ProblemDetail onDocumentNotFound(RuntimeException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.DOCUMENT_NOT_FOUND, ex.getMessage());

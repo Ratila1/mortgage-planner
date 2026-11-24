@@ -2,6 +2,9 @@ package dev.nosurprise.bureau.report;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -49,7 +52,11 @@ public final class SandboxReports {
 
     private static StoredHistory.StoredLoan loan(String status, String amount, String submitted, String decided,
                                                  String closed) {
+        // Фиктивные даты возврата: срок 14 дней от одобрения; погашенные — вовремя, в день закрытия.
+        LocalDate due = LocalDate.ofInstant(Instant.parse(decided), ZoneOffset.UTC).plusDays(14);
+        LocalDate paid = closed == null ? null : LocalDate.ofInstant(Instant.parse(closed), ZoneOffset.UTC);
+        Integer overdueDays = paid == null ? null : (int) Math.max(0, ChronoUnit.DAYS.between(due, paid));
         return new StoredHistory.StoredLoan(status, new BigDecimal(amount), Instant.parse(submitted),
-                Instant.parse(decided), closed == null ? null : Instant.parse(closed));
+                Instant.parse(decided), closed == null ? null : Instant.parse(closed), due, paid, overdueDays);
     }
 }

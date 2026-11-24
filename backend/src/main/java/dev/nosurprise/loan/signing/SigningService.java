@@ -9,6 +9,7 @@ import dev.nosurprise.common.sms.SmsSender;
 import dev.nosurprise.customer.CustomerService;
 import dev.nosurprise.customer.PhoneNotVerifiedException;
 import dev.nosurprise.customer.ProfileView;
+import dev.nosurprise.loan.LoanProperties;
 import dev.nosurprise.loan.application.InvalidStatusTransitionException;
 import dev.nosurprise.loan.application.LoanApplication;
 import dev.nosurprise.loan.application.LoanApplicationEvent;
@@ -59,13 +60,14 @@ public class SigningService {
     private final LoanIncidentRecorder incidents;
     private final OutboxPublisher outbox;
     private final TransactionTemplate tx;
+    private final LoanProperties properties;
     private final Clock clock;
 
     public SigningService(LoanApplicationService applications, LoanApplicationRepository repository,
                           LoanDocumentRepository documents, LoanSignatureRepository signatures,
                           CustomerService customers, UserService users, OneTimeCodeStore codes, SmsSender sms,
                           LoanEventRecorder recorder, LoanIncidentRecorder incidents, OutboxPublisher outbox,
-                          PlatformTransactionManager transactionManager, Clock clock) {
+                          PlatformTransactionManager transactionManager, LoanProperties properties, Clock clock) {
         this.applications = applications;
         this.repository = repository;
         this.documents = documents;
@@ -78,6 +80,7 @@ public class SigningService {
         this.incidents = incidents;
         this.outbox = outbox;
         this.tx = new TransactionTemplate(transactionManager);
+        this.properties = properties;
         this.clock = clock;
     }
 
@@ -138,7 +141,7 @@ public class SigningService {
         LoanApplication signed = tx.execute(status -> {
             Instant now = clock.instant();
             LoanApplication application = repository.findById(applicationId).orElseThrow();
-            application.activate(now);
+            application.activate(now, properties.businessZone());
             repository.save(application);
             signatures.save(new LoanSignature(applicationId, contract.getId(), contract.getSha256(), phone, ip,
                     userAgent, now));

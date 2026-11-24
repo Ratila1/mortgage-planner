@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -21,8 +22,10 @@ class CreditReportMapperTest {
     @DisplayName("найден: количество, статусы, по займу статус, сумма строкой и даты")
     void found() {
         StoredHistory history = new StoredHistory(List.of(
-                new StoredHistory.StoredLoan("REPAID", new BigDecimal("300"), NOW, NOW, NOW),
-                new StoredHistory.StoredLoan("ACTIVE", new BigDecimal("800.5"), NOW, NOW, null)));
+                new StoredHistory.StoredLoan("REPAID", new BigDecimal("300"), NOW, NOW, NOW,
+                        LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 12), 2),
+                new StoredHistory.StoredLoan("ACTIVE", new BigDecimal("800.5"), NOW, NOW, null,
+                        LocalDate.of(2026, 11, 25), null, 0)));
         UUID reportId = UUID.randomUUID();
 
         CreditReportResponse response = CreditReportMapper.found(reportId, SearchQuery.SearchBy.PHONE, history, NOW);
@@ -35,6 +38,22 @@ class CreditReportMapperTest {
         assertThat(response.loans()).extracting(CreditReportResponse.Loan::amount).containsExactly("300.00", "800.50");
         assertThat(response.loans().get(1).closedAt()).isNull();
         assertThat(response.loans()).allSatisfy(loan -> assertThat(loan.currency()).isEqualTo("BYN"));
+        assertThat(response.loans().get(0).overdueDays()).isEqualTo(2);
+        assertThat(response.loans().get(0).paidAt()).isEqualTo(LocalDate.of(2026, 11, 12));
+    }
+
+    @Test
+    @DisplayName("просроченный: дни просрочки считаются от даты возврата на дату ответа по Минску")
+    void overdueDaysAreCountedAtReportTime() {
+        StoredHistory history = new StoredHistory(List.of(
+                new StoredHistory.StoredLoan("OVERDUE", new BigDecimal("500"), NOW, NOW, null,
+                        LocalDate.of(2026, 11, 8), null, 1)));
+
+        CreditReportResponse response = CreditReportMapper.found(UUID.randomUUID(), SearchQuery.SearchBy.PHONE,
+                history, NOW);
+
+        assertThat(response.loansByStatus()).containsEntry("OVERDUE", 1);
+        assertThat(response.loans().get(0).overdueDays()).isEqualTo(10);
     }
 
     @Test

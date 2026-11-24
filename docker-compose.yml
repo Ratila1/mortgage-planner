@@ -108,7 +108,7 @@ services:
 
 
 
-  # Отдельные БД сервисов (notification-service, credit-bureau) в том же Postgres. Одноразовый контейнер
+  # Отдельные БД сервисов (credit-bureau, credit-policy) в том же Postgres. Одноразовый контейнер
   # при каждом `up` создаёт те, которых ещё нет: скрипты postgres-init срабатывают только на пустом volume,
   # а на уже существующем volume сервисы падали с «database ... does not exist».
   db-init:
@@ -121,7 +121,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
       PGDATABASE: ${POSTGRES_DB:-nosurprise}
     command: >
-      sh -c "for db in nosurprise_bureau; do
+      sh -c "for db in nosurprise_bureau nosurprise_scoring; do
       psql -tAc \"SELECT 1 FROM pg_database WHERE datname = '$$db'\" | grep -q 1
       || psql -c \"CREATE DATABASE $$db\" || exit 1; done"
     restart: "no"
@@ -154,11 +154,35 @@ services:
       retries: 30
       start_period: 40s
 
+  credit-policy:   # кредитная политика: скоринг заявок (CREDIT_POLICY.md), снаружи — только через nginx /credit-policy/
+    build: ./credit-policy
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+    environment:
+      # своя БД: правила, цели, чёрный список, журнал расчётов (создаёт db-init, таблицы — Flyway сервиса).
+      # В БД монолита сервис не ходит: данные для расчёта приходят в событии loan.scoring.requested.
+      POLICY_DB_URL: jdbc:postgresql://postgres:5432/nosurprise_scoring
+      POLICY_DB_USER: ${POSTGRES_USER:-nosurprise}
+      POLICY_DB_PASSWORD: ${POSTGRES_PASSWORD:-nosurprise}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      # тот же секрет, что у монолита: админка ходит сюда с access-токеном монолита
+      JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me}
+    expose: ["8092"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8092'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 40s
+
   frontend:
     build: ./frontend
     depends_on:
       backend: { condition: service_healthy }
-      # notification-service и credit-bureau nginx резолвит при запросе (см. frontend/nginx.conf):
+      # notification-service, credit-bureau и credit-policy nginx резолвит при запросе (см. frontend/nginx.conf):
       # их падение не мешает подняться сайту, эти пути просто отвечают 502.
     ports: ["8080:80"]   # единая точка входа: фронт + /api + /oauth2
 

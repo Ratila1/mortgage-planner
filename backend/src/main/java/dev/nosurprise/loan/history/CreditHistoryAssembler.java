@@ -6,6 +6,8 @@ import dev.nosurprise.loan.application.LoanEventType;
 import dev.nosurprise.loan.calc.DebtLoad;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -48,6 +50,9 @@ public final class CreditHistoryAssembler {
                 application.getDecidedBy(),
                 application.getDecisionComment(),
                 application.getClosedAt(),
+                application.getDueDate() == null ? null : application.getDueDate().toString(),
+                application.getPaidAt() == null ? null : application.getPaidAt().toString(),
+                application.overdueDays(LocalDate.ofInstant(syncedAt, ZoneOffset.UTC)),
                 timeline,
                 incidents,
                 syncedAt);

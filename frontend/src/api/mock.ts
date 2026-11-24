@@ -4,8 +4,18 @@ import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, Me, OfferInput, Scenario,
   MicroloanType, MicroloanTypeInput, MicroloanApplication, MicroloanApplicationStatus,
   MicroloanCalculationResult, AdminUser, CustomerProfile, CustomerProfileInput, PassportStatus,
-  AdminMicroloanApplicationCard,
+  AdminMicroloanApplicationCard, MicroloanScoring,
 } from './types';
+
+/** В мок-режиме credit-policy нет: все заявки «посчитаны» с одним и тем же результатом. */
+const MOCK_SCORING: MicroloanScoring = {
+  status: 'COMPLETED',
+  score: '0.7000',
+  points: 280,
+  ratingClass: 'B2',
+  pdPercent: '1.94',
+  decision: 'RECOMMEND',
+};
 
 /**
  * Моки API для работы без бэкенда (VITE_USE_MOCKS != 'false').
@@ -669,6 +679,7 @@ export const mockApi: Api = {
         debtLoadWarning: Number(a.debtLoadPercent) > 50,
         status: a.status,
         createdAt: a.createdAt,
+        scoring: MOCK_SCORING,
       }));
   },
   async adminGetMicroloanApplication(id) {
@@ -701,6 +712,7 @@ export const mockApi: Api = {
       decisionComment: a.rejectionReason,
       offerExpiresAt: a.offerExpiresAt,
       closedAt: null,
+      scoring: MOCK_SCORING,
       passportUrl: `/api/admin/loan-applications/${a.id}/passport`,
       documents: [],
       // В моках кредитной истории нет: показываем честный «прочерк».
@@ -748,9 +760,20 @@ export const mockApi: Api = {
     await delay();
     requireAdmin();
     const app = findApplication(id);
-    if (app.status !== 'ACTIVE') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (app.status !== 'ACTIVE' && app.status !== 'OVERDUE') throw fail(409, 'INVALID_STATUS_TRANSITION');
     app.status = 'REPAID';
     persistMicroloan();
+  },
+  async adminRequestScoring(id) {
+    await delay();
+    requireAdmin();
+    // В моках скоринга нет: заявка сразу считается посчитанной (см. MOCK_SCORING).
+    if (findApplication(id).status !== 'SUBMITTED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+  },
+  async adminGetScoringDetail() {
+    await delay();
+    requireAdmin();
+    return null;
   },
   async adminListUsers() {
     await delay();

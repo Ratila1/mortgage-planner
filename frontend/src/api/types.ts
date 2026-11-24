@@ -196,6 +196,7 @@ export type MicroloanApplicationStatus =
   | 'REJECTED'
   | 'CANCELLED'
   | 'ACTIVE'
+  | 'OVERDUE'
   | 'EXPIRED'
   | 'REPAID';
 
@@ -211,19 +212,35 @@ export interface MicroloanType {
   dailyRatePct: string;
   /** Фиксированная надбавка типа в BYN, прибавляется к сумме к возврату. */
   modifier: Money;
+  /**
+   * Балл цели займа для скоринга, 0–1 (CREDIT_POLICY.md §3.2): тип займа и есть цель.
+   * Чем надёжнее цель, тем выше балл: техника 0.6, «до зарплаты» 0.3.
+   */
+  purposeScore?: string;
   active: boolean;
   version: number;
 }
 
 export type MicroloanTypeInput = Omit<MicroloanType, 'id' | 'version'>;
 
-/** Профиль клиента (GET/PUT /api/me/profile). Email не входит: он берётся из учётной записи. */
+export type Sex = 'MALE' | 'FEMALE';
+
+/**
+ * Профиль клиента (GET/PUT /api/me/profile). Email не входит: он берётся из учётной записи.
+ * Дата рождения, пол, страна и город нужны скорингу (CREDIT_POLICY.md §4); у старых профилей они пустые.
+ */
 export interface CustomerProfile {
   lastName: string;
   firstName: string;
   middleName: string;
   phone: string;
   monthlyIncome: Money;
+  /** yyyy-MM-dd */
+  birthDate: string;
+  sex: Sex | '';
+  /** ISO-код страны: BY, PL… */
+  country: string;
+  city: string;
   phoneVerified: boolean;
 }
 
@@ -251,8 +268,50 @@ export interface MicroloanApplication {
   rejectionReason: string | null;
   offerExpiresAt: string | null;
   createdAt: string;
+  /** Дата возврата (yyyy-MM-dd): появляется после подписи договора. */
+  dueDate?: string | null;
+  /** Дни просрочки: у OVERDUE — на сегодня, у погашенного — итог. */
+  overdueDays?: number | null;
   /** Документы есть только в GET /{id} (в списке бэк отдаёт пустой список). */
   documents: AdminLoanDocument[];
+}
+
+/**
+ * Итог скоринга заявки (CREDIT_POLICY.md §6.4). status PENDING — ждём ответ credit-policy;
+ * без COMPLETED или NOT_CALCULATED одобрить нельзя (бэк ответит 409 SCORING_REQUIRED).
+ */
+export interface MicroloanScoring {
+  status: 'PENDING' | 'COMPLETED' | 'NOT_CALCULATED';
+  score: string | null;
+  points: number | null;
+  /** A1…E3; F — стоп-фактор (чёрный список, просрочка, возраст). */
+  ratingClass: string | null;
+  /** PD — вероятность невозврата, %. */
+  pdPercent: string | null;
+  decision: 'RECOMMEND' | 'REVIEW' | 'AUTO_REJECT' | null;
+}
+
+/** Строка расшифровки скоринга: вклад фактора = балл × вес. */
+export interface ScoringFactor {
+  factor: 'HISTORY' | 'PURPOSE' | 'AGE' | 'CITY' | 'SEX';
+  value: string | null;
+  score: number;
+  weight: number;
+  contribution: number;
+}
+
+/** Расчёт из credit-policy (GET /credit-policy/api/admin/scorings/{applicationId}). */
+export interface ScoringDetail {
+  status: 'COMPLETED' | 'NOT_CALCULATED';
+  ratingClass: string | null;
+  points: number | null;
+  pdPercent: string | null;
+  decision: 'RECOMMEND' | 'REVIEW' | 'AUTO_REJECT';
+  /** Стоп-факторы и причины, по которым балл не считается. */
+  reasons: string[];
+  breakdown: ScoringFactor[];
+  rulesVersion: number;
+  createdAt: string;
 }
 
 /** Строка списка заявок в админке. */
@@ -267,6 +326,9 @@ export interface AdminMicroloanApplication {
   debtLoadWarning: boolean;
   status: MicroloanApplicationStatus;
   createdAt: string;
+  /** null — заявка подана до появления скоринга. */
+  scoring?: MicroloanScoring | null;
+  overdueDays?: number | null;
 }
 
 /** Документ заявки (договор и т.п.): скачивается по downloadUrl с Bearer-токеном. */
@@ -343,6 +405,10 @@ export interface AdminMicroloanApplicationCard {
   decisionComment: string | null;
   offerExpiresAt: string | null;
   closedAt: string | null;
+  dueDate?: string | null;
+  paidAt?: string | null;
+  overdueDays?: number | null;
+  scoring?: MicroloanScoring | null;
   /** GET по этому адресу отдаёт фото паспорта (no-store); 404 — фото удалено по сроку. */
   passportUrl: string;
   documents: AdminLoanDocument[];
@@ -448,6 +514,10 @@ export interface Api {
   adminRejectMicroloanApplication(id: Id, reason: string): Promise<void>;
   /** Отметка «Погашен» для займа в ACTIVE. */
   adminMarkMicroloanRepaid(id: Id): Promise<void>;
+  /** Запросить скоринг заново: ответ не пришёл или заявка подана до скоринга (только SUBMITTED). */
+  adminRequestScoring(id: Id): Promise<void>;
+  /** Расшифровка скоринга из credit-policy; null — расчёта ещё нет. */
+  adminGetScoringDetail(applicationId: Id): Promise<ScoringDetail | null>;
 
   adminListUsers(query?: string): Promise<AdminUser[]>;
   /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */

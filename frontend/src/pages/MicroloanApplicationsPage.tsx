@@ -8,7 +8,7 @@ import {
 } from '../api';
 import { Alert, Badge, Button, Card, EmptyState, PageTitle, Skeleton } from '../components/ui';
 import { ContractSigning } from '../components/ContractSigning';
-import { formatDateTime, formatMoney } from '../lib/format';
+import { formatDate, formatDateTime, formatMoney } from '../lib/format';
 
 export const MICROLOAN_STATUS_LABELS: Record<MicroloanApplicationStatus, string> = {
   SUBMITTED: 'На рассмотрении',
@@ -16,6 +16,7 @@ export const MICROLOAN_STATUS_LABELS: Record<MicroloanApplicationStatus, string>
   REJECTED: 'Отклонена',
   CANCELLED: 'Отменена',
   ACTIVE: 'Заём выдан',
+  OVERDUE: 'Просрочен',
   EXPIRED: 'Предложение истекло',
   REPAID: 'Погашен',
 };
@@ -26,12 +27,13 @@ export const MICROLOAN_STATUS_TONES: Record<MicroloanApplicationStatus, 'money' 
   REJECTED: 'stamp',
   CANCELLED: 'neutral',
   ACTIVE: 'money',
+  OVERDUE: 'stamp',
   EXPIRED: 'neutral',
   REPAID: 'neutral',
 };
 
 /** Пока есть заявка или заём в этих статусах, новую подать нельзя (один активный займ). */
-const BLOCKING: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE'];
+const BLOCKING: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE', 'OVERDUE'];
 /** Клиент может отменить заявку до подписи. */
 const CANCELLABLE: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED'];
 
@@ -164,6 +166,14 @@ function ApplicationRow({
           )}
           {app.status === 'APPROVED' && app.offerExpiresAt && (
             <p className="mt-1 text-xs text-ink-3">Подписать до {formatDateTime(app.offerExpiresAt)}</p>
+          )}
+          {app.status === 'ACTIVE' && app.dueDate && (
+            <p className="mt-1 text-xs text-ink-3">Вернуть до {formatDate(app.dueDate)}</p>
+          )}
+          {app.status === 'OVERDUE' && (
+            <p className="mt-1 max-w-xs text-xs font-semibold text-stamp">
+              Просрочка {app.overdueDays ?? 0} дн. Погасите заём, чтобы не попасть в чёрный список.
+            </p>
           )}
         </td>
         <td className="whitespace-nowrap p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>

@@ -14,13 +14,16 @@ public enum LoanStatus {
     REJECTED,
     CANCELLED,
     ACTIVE,
+    /** Дата возврата прошла, а погашения нет (CREDIT_POLICY.md §5). Переводит ночная задача. */
+    OVERDUE,
     EXPIRED,
     REPAID;
 
     private static final Map<LoanStatus, Set<LoanStatus>> TRANSITIONS = Map.of(
             SUBMITTED, EnumSet.of(CANCELLED, APPROVED, REJECTED),
             APPROVED, EnumSet.of(ACTIVE, EXPIRED),
-            ACTIVE, EnumSet.of(REPAID),
+            ACTIVE, EnumSet.of(REPAID, OVERDUE),
+            OVERDUE, EnumSet.of(REPAID),
             REJECTED, EnumSet.noneOf(LoanStatus.class),
             CANCELLED, EnumSet.noneOf(LoanStatus.class),
             EXPIRED, EnumSet.noneOf(LoanStatus.class),
@@ -30,9 +33,9 @@ public enum LoanStatus {
         return TRANSITIONS.get(this).contains(target);
     }
 
-    /** Активные статусы: у пользователя не больше одного такого займа (частичный уникальный индекс в V15). */
+    /** Незакрытые статусы: у пользователя не больше одного такого займа (частичный уникальный индекс, V17). */
     public boolean isActive() {
-        return this == SUBMITTED || this == APPROVED || this == ACTIVE;
+        return this == SUBMITTED || this == APPROVED || this == ACTIVE || this == OVERDUE;
     }
 
     public boolean isFinal() {

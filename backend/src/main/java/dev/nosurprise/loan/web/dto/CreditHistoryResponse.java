@@ -18,7 +18,8 @@ public record CreditHistoryResponse(Summary summary, List<Loan> loans) {
         return new CreditHistoryResponse(
                 new Summary(s.totalLoans(), s.byStatus(), s.hasActiveLoan(), str(s.lastMonthlyIncome()),
                         str(s.lastDebtLoadPercent()), str(s.minDebtLoadPercent()), str(s.maxDebtLoadPercent()),
-                        s.incidentsByType(), s.firstSubmittedAt()),
+                        s.incidentsByType(), s.firstSubmittedAt(), s.overdueLoans(), s.maxOverdueDays(),
+                        s.hasOverdueLoan()),
                 view.loans().stream().map(CreditHistoryResponse::loan).toList());
     }
 
@@ -27,7 +28,7 @@ public record CreditHistoryResponse(Summary summary, List<Loan> loans) {
         return new Loan(d.id(), d.status(), l.typeName(), str(l.amount()), l.termDays(), str(l.dailyRate()),
                 str(l.modifier()), str(l.interest()), str(l.total()), str(d.monthlyIncome()),
                 str(d.debtLoadPercent()), d.submittedAt(), d.decidedAt(), d.decidedBy(), d.decisionComment(),
-                d.closedAt(),
+                d.closedAt(), d.dueDate(), d.paidAt(), d.overdueDays(),
                 d.timeline().stream().map(t -> new TimelineEntry(t.status(), t.at(), t.actorId())).toList(),
                 d.incidents().stream().map(i -> new Incident(i.type(), i.at())).toList(),
                 d.syncedAt());
@@ -39,13 +40,15 @@ public record CreditHistoryResponse(Summary summary, List<Loan> loans) {
 
     public record Summary(int totalLoans, Map<String, Integer> byStatus, boolean hasActiveLoan,
                           String lastMonthlyIncome, String lastDebtLoadPercent, String minDebtLoadPercent,
-                          String maxDebtLoadPercent, Map<String, Integer> incidentsByType, Instant firstSubmittedAt) {
+                          String maxDebtLoadPercent, Map<String, Integer> incidentsByType, Instant firstSubmittedAt,
+                          int overdueLoans, int maxOverdueDays, boolean hasOverdueLoan) {
     }
 
     public record Loan(UUID applicationId, String status, String loanTypeName, String amount, int termDays,
                        String dailyRate, String modifier, String interest, String total, String monthlyIncome,
                        String debtLoadPercent, Instant submittedAt, Instant decidedAt, UUID decidedBy,
-                       String decisionComment, Instant closedAt, List<TimelineEntry> timeline,
+                      String decisionComment, Instant closedAt, String dueDate, String paidAt,
+                       Integer overdueDays, List<TimelineEntry> timeline,
                        List<Incident> incidents, Instant syncedAt) {
     }
 

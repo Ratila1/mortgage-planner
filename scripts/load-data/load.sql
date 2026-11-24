@@ -118,14 +118,20 @@ SELECT md5('load-app-' || n || '-' || k)::uuid AS id,
            WHEN 'REPAID'    THEN created_at + make_interval(days => term_days + 2)
            WHEN 'REJECTED'  THEN created_at + interval '1 day'
            WHEN 'CANCELLED' THEN created_at + interval '2 hours'
-           WHEN 'EXPIRED'   THEN created_at + interval '6 days' END AS closed_at
+           WHEN 'EXPIRED'   THEN created_at + interval '6 days' END AS closed_at,
+       -- дата возврата и фактическая оплата (V17); каждый пятый погашенный — с опозданием на 2–11 дней
+       CASE WHEN status IN ('ACTIVE', 'REPAID')
+            THEN (created_at + interval '1 day 2 hours')::date + term_days END AS due_date,
+       CASE WHEN status = 'REPAID'
+            THEN (created_at + interval '1 day 2 hours')::date + term_days
+                 + CASE WHEN (n * 7 + k) % 5 = 0 THEN 2 + (n + k) % 10 ELSE -1 END END AS paid_at
 FROM terms;
 
 \echo '5/7 loan_applications'
 INSERT INTO loan_applications (id, user_id, loan_type_id, amount, term_days, daily_rate, modifier, interest, total,
                                applicant_last_name, applicant_first_name, applicant_middle_name, applicant_phone,
                                applicant_monthly_income, kyc_document_id, status, decided_at, decision_comment,
-                               offer_expires_at, closed_at, created_at, updated_at)
+                               offer_expires_at, closed_at, due_date, paid_at, created_at, updated_at)
 SELECT a.id, a.user_id, a.type_id, a.amount, a.term_days, a.daily_rate, a.modifier, a.interest,
        a.amount + a.interest + a.modifier,
        cp.last_name, cp.first_name, cp.middle_name, cp.phone, cp.monthly_income,
@@ -136,7 +142,8 @@ SELECT a.id, a.user_id, a.type_id, a.amount, a.term_days, a.daily_rate, a.modifi
            WHEN 'SUBMITTED' THEN NULL
            WHEN 'CANCELLED' THEN NULL
            ELSE 'Нагрузочные данные' END,
-       a.offer_expires_at, a.closed_at, a.created_at, coalesce(a.closed_at, a.decided_at, a.created_at)
+       a.offer_expires_at, a.closed_at, a.due_date, a.paid_at, a.created_at,
+       coalesce(a.closed_at, a.decided_at, a.created_at)
 FROM load_apps a
 JOIN customer_profile cp ON cp.user_id = a.user_id
 ON CONFLICT DO NOTHING;

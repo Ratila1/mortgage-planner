@@ -12,6 +12,7 @@ export default defineConfig({
       '/oauth2': 'http://localhost:8080',
       '/login/oauth2': 'http://localhost:8080',
       '/bureau': 'http://localhost:8080',
+      '/credit-policy': 'http://localhost:8080',
     },
   },
   test: {

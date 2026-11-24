@@ -6,12 +6,58 @@ import {
   type AdminMicroloanApplication,
   type AdminMicroloanApplicationCard,
   type MicroloanApplicationStatus,
+  type MicroloanScoring,
+  type ScoringDetail,
 } from '../api';
 import { Alert, Badge, Button, Card, EmptyState, PageTitle, Select, Skeleton, Spinner, TextInput } from '../components/ui';
-import { formatDateTime, formatMoney } from '../lib/format';
+import { formatDate, formatDateTime, formatMoney } from '../lib/format';
 import { MICROLOAN_STATUS_LABELS, MICROLOAN_STATUS_TONES } from './MicroloanApplicationsPage';
 
-const STATUSES: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REPAID'];
+const STATUSES: MicroloanApplicationStatus[] = [
+  'SUBMITTED', 'APPROVED', 'ACTIVE', 'OVERDUE', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REPAID',
+];
+
+/** С этого дня просрочки админ видит подсказку «кандидат в ЧС» (CREDIT_POLICY.md §5.3). */
+const BLACKLIST_HINT_DAYS = 30;
+
+const DECISION_LABELS: Record<NonNullable<MicroloanScoring['decision']>, string> = {
+  RECOMMEND: 'рекомендовано',
+  REVIEW: 'высокий риск',
+  AUTO_REJECT: 'автоотказ',
+};
+
+const FACTOR_LABELS: Record<string, string> = {
+  HISTORY: 'История',
+  PURPOSE: 'Цель (тип займа)',
+  AGE: 'Возраст',
+  CITY: 'Город',
+  SEX: 'Пол',
+};
+
+const REASON_LABELS: Record<string, string> = {
+  AGE_OUT_OF_RANGE: 'возраст вне 18–90',
+  BLACKLISTED: 'чёрный список',
+  CURRENT_OVERDUE: 'текущая просрочка',
+  MISSING_PROFILE_DATA: 'в профиле не хватает данных',
+  PURPOSE_SCORE_MISSING: 'у типа займа нет балла цели',
+};
+
+/** Одобрять можно только посчитанную заявку: иначе бэк ответит 409 SCORING_REQUIRED. */
+const isScored = (scoring?: MicroloanScoring | null) =>
+  scoring?.status === 'COMPLETED' || scoring?.status === 'NOT_CALCULATED';
+
+function ScoringBadge({ scoring }: { scoring?: MicroloanScoring | null }) {
+  if (!scoring) return <span className="text-xs text-ink-3">нет</span>;
+  if (scoring.status === 'PENDING') return <Badge tone="neutral">считается…</Badge>;
+  if (scoring.status === 'NOT_CALCULATED') return <Badge tone="gold">не рассчитан</Badge>;
+  const tone = scoring.decision === 'RECOMMEND' ? 'money' : scoring.decision === 'REVIEW' ? 'gold' : 'stamp';
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Badge tone={tone}>{scoring.ratingClass}</Badge>
+      {scoring.pdPercent && <span className="text-xs text-ink-3">PD {scoring.pdPercent}%</span>}
+    </div>
+  );
+}
 
 /** Названия документов (LoanDocument.type). */
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -21,8 +67,9 @@ const DOCUMENT_LABELS: Record<string, string> = {
 
 /**
  * Заявки на микрозаймы (MICROLOANS.md §4.6). Бэк отдаёт список по одному статусу, поэтому здесь фильтр,
- * а не общий список. Действия — только разрешённые переходы: SUBMITTED → одобрить/отклонить с причиной,
- * ACTIVE → «Погашен». Остальные переходы (подпись, истечение) делает клиент или планировщик.
+ * а не общий список. Действия — только разрешённые переходы: SUBMITTED → одобрить (после скоринга)/отклонить
+ * с причиной, ACTIVE и OVERDUE → «Погашен». Остальные переходы (подпись, истечение, просрочка) делает клиент
+ * или планировщик. Скоринг — CREDIT_POLICY.md: класс, PD и решение credit-policy.
  * Клик «Подробнее» раскрывает карточку: ФИО/телефон, фото паспорта, документы и кредитная история (§3.4).
  */
 export function AdminMicroloanApplicationsPage() {
@@ -139,7 +186,7 @@ export function AdminMicroloanApplicationsPage() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-sm">
+            <table className="w-full min-w-[1060px] text-sm">
               <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
                 <tr>
                   <th className="p-4 font-semibold">Клиент</th>
@@ -148,6 +195,7 @@ export function AdminMicroloanApplicationsPage() {
                   <th className="p-4 text-right font-semibold">Срок</th>
                   <th className="p-4 text-right font-semibold">Зарплата</th>
                   <th className="p-4 text-right font-semibold">ПДН</th>
+                  <th className="p-4 font-semibold">Скоринг</th>
                   <th className="p-4 font-semibold">Статус</th>
                   <th className="p-4 font-semibold">Создана</th>
                   <th className="p-4" />
@@ -205,7 +253,16 @@ function FragmentRow({
           {app.debtLoadPercent}%
         </td>
         <td className="p-4">
+          <ScoringBadge scoring={app.scoring} />
+        </td>
+        <td className="p-4">
           <Badge tone={MICROLOAN_STATUS_TONES[app.status]}>{MICROLOAN_STATUS_LABELS[app.status]}</Badge>
+          {app.status === 'OVERDUE' && (
+            <p className="mt-1 text-xs font-semibold text-stamp">
+              {app.overdueDays ?? 0} дн.
+              {(app.overdueDays ?? 0) >= BLACKLIST_HINT_DAYS && ' · кандидат в ЧС'}
+            </p>
+          )}
         </td>
         <td className="whitespace-nowrap p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
         <td className="p-4 text-right">
@@ -218,16 +275,28 @@ function FragmentRow({
                 <Button
                   size="sm"
                   loading={busyId === app.id}
+                  disabled={!isScored(app.scoring)}
+                  title={isScored(app.scoring) ? undefined : 'Одобрить можно после результата скоринга'}
                   onClick={() => onAction(() => api.adminApproveMicroloanApplication(app.id), 'заявка одобрена')}
                 >
                   Одобрить
                 </Button>
+                {!isScored(app.scoring) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={busyId === app.id}
+                    onClick={() => onAction(() => api.adminRequestScoring(app.id), 'скоринг запрошен')}
+                  >
+                    Запросить скоринг
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setRejecting({ id: app.id, reason: '' })}>
                   Отклонить
                 </Button>
               </>
             )}
-            {app.status === 'ACTIVE' && (
+            {(app.status === 'ACTIVE' || app.status === 'OVERDUE') && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -266,7 +335,7 @@ function FragmentRow({
       </tr>
       {open && (
         <tr className="border-t border-line/40 bg-paper-2/40">
-          <td colSpan={9} className="p-4">
+          <td colSpan={10} className="p-4">
             <ApplicationDetail id={app.id} />
           </td>
         </tr>
@@ -374,6 +443,9 @@ function ApplicationDetail({ id }: { id: string }) {
           <DetailRow label="Проценты" value={formatMoney(card.interest)} />
           <DetailRow label="Модификатор" value={formatMoney(card.modifier)} />
           <DetailRow label="К возврату" value={formatMoney(card.total)} />
+          <DetailRow label="Вернуть до" value={card.dueDate ? formatDate(card.dueDate) : '—'} />
+          {card.paidAt && <DetailRow label="Оплачен" value={formatDate(card.paidAt)} />}
+          {(card.overdueDays ?? 0) > 0 && <DetailRow label="Просрочка" value={`${card.overdueDays} дн.`} />}
         </DetailSection>
 
         <DetailSection title="Решение">
@@ -390,6 +462,8 @@ function ApplicationDetail({ id }: { id: string }) {
           />
         </DetailSection>
       </div>
+
+      <ScoringSection applicationId={card.id} scoring={card.scoring} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailSection title="Фото паспорта (KYC)">
@@ -516,5 +590,83 @@ function CreditHistoryBlock({ history }: { history: AdminCreditHistory }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/** Скоринг заявки: итог из монолита + расшифровка по факторам из credit-policy (CREDIT_POLICY.md §6.4). */
+function ScoringSection({ applicationId, scoring }: { applicationId: string; scoring?: MicroloanScoring | null }) {
+  const [detail, setDetail] = useState<ScoringDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setDetail(null);
+    setError(null);
+    if (!isScored(scoring)) return;
+    api
+      .adminGetScoringDetail(applicationId)
+      .then((d) => alive && setDetail(d))
+      .catch((err) => alive && setError(errorMessage(err)));
+    return () => {
+      alive = false;
+    };
+  }, [applicationId, scoring?.status]);
+
+  if (!scoring) {
+    return (
+      <DetailSection title="Скоринг">
+        <p className="text-sm text-ink-2">Заявка подана до появления скоринга — нажмите «Запросить скоринг».</p>
+      </DetailSection>
+    );
+  }
+  if (scoring.status === 'PENDING') {
+    return (
+      <DetailSection title="Скоринг">
+        <p className="text-sm text-ink-2">Считается… Если результат не пришёл за минуту — «Запросить скоринг».</p>
+      </DetailSection>
+    );
+  }
+  return (
+    <DetailSection title="Скоринг">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div>
+          <DetailRow label="Класс" value={<ScoringBadge scoring={scoring} />} />
+          <DetailRow label="Скорбалл" value={scoring.points == null ? '—' : `${scoring.points} из 400`} />
+          <DetailRow label="PD (вероятность невозврата)" value={scoring.pdPercent ? `${scoring.pdPercent}%` : '—'} />
+          <DetailRow label="Решение" value={scoring.decision ? DECISION_LABELS[scoring.decision] : '—'} />
+          {detail && detail.reasons.length > 0 && (
+            <DetailRow label="Причины" value={detail.reasons.map((r) => REASON_LABELS[r] ?? r).join(', ')} />
+          )}
+        </div>
+        <div className="lg:col-span-2">
+          {error && <Alert>{error}</Alert>}
+          {detail && detail.breakdown.length > 0 && (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-ink-3">
+                <tr>
+                  <th className="py-1 font-semibold">Фактор</th>
+                  <th className="py-1 font-semibold">Значение</th>
+                  <th className="py-1 text-right font-semibold">Балл</th>
+                  <th className="py-1 text-right font-semibold">Вес</th>
+                  <th className="py-1 text-right font-semibold">Вклад</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.breakdown.map((f) => (
+                  <tr key={f.factor} className="border-t border-line/40">
+                    <td className="py-1">{FACTOR_LABELS[f.factor] ?? f.factor}</td>
+                    <td className="py-1 text-ink-2">{f.value ?? '—'}</td>
+                    <td className="num py-1 text-right">{Number(f.score).toFixed(2)}</td>
+                    <td className="num py-1 text-right">{Math.round(Number(f.weight) * 100)}%</td>
+                    <td className="num py-1 text-right">{Number(f.contribution).toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {detail && <p className="mt-2 text-xs text-ink-3">Правила версии {detail.rulesVersion}</p>}
+        </div>
+      </div>
+    </DetailSection>
   );
 }

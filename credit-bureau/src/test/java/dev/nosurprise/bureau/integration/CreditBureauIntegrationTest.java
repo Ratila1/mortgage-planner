@@ -61,7 +61,7 @@ class CreditBureauIntegrationTest {
                    replace(lower(a.applicant_last_name), 'ё', 'е') AS last_name_norm,
                    replace(lower(a.applicant_first_name), 'ё', 'е') AS first_name_norm,
                    replace(lower(coalesce(a.applicant_middle_name, '')), 'ё', 'е') AS middle_name_norm
-            FROM loan_applications a WHERE a.status IN ('ACTIVE', 'REPAID');
+            FROM loan_applications a WHERE a.status IN ('ACTIVE', 'OVERDUE', 'REPAID');
             """;
     static final MongoDBContainer MONGO = new MongoDBContainer(DockerImageName.parse("mongo:8"));
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))

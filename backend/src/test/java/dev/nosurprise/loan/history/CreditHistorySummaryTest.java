@@ -16,7 +16,7 @@ class CreditHistorySummaryTest {
         return new CreditHistoryDocument(UUID.randomUUID(), UUID.randomUUID(), 1, 1, status,
                 new CreditHistoryDocument.Loan(UUID.randomUUID(), "T", BigDecimal.TEN, 10, BigDecimal.ONE,
                         BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.TEN),
-                new BigDecimal("1000"), new BigDecimal(debtLoad), submitted, null, null, null, null, List.of(),
+                new BigDecimal("1000"), new BigDecimal(debtLoad), submitted, null, null, null, null, null, null, null, List.of(),
                 java.util.Arrays.stream(incidents)
                         .map(type -> new CreditHistoryDocument.Incident(type, submitted, null)).toList(),
                 submitted);

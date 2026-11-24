@@ -1,5 +1,9 @@
 package dev.nosurprise.integration.support;
 
+import dev.nosurprise.loan.application.LoanApplication;
+import dev.nosurprise.loan.application.LoanApplicationRepository;
+import dev.nosurprise.loan.scoring.ScoringCompleted;
+import dev.nosurprise.loan.scoring.ScoringResultService;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -13,8 +17,11 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +48,12 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
 
     @Autowired
     protected RecordingSmsSender sms;
+
+    @Autowired
+    protected LoanApplicationRepository loanApplications;
+
+    @Autowired
+    protected ScoringResultService scoringResults;
 
     protected AuthFixture auth;
 
@@ -83,7 +96,8 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
 
     protected static String profileJson(String phone, String income) {
         return "{\"lastName\":\"Иванов\",\"firstName\":\"Иван\",\"middleName\":\"Иванович\",\"phone\":\"" + phone
-                + "\",\"monthlyIncome\":\"" + income + "\"}";
+                + "\",\"monthlyIncome\":\"" + income + "\",\"birthDate\":\"1981-05-02\",\"sex\":\"MALE\""
+                + ",\"country\":\"BY\",\"city\":\"Минск\"}";
     }
 
     protected static String submitJson(String phone, String amount, int termDays) {
@@ -101,9 +115,31 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
         return json(response);
     }
 
+    /**
+     * Одобрение. credit-policy в этих тестах нет, поэтому сначала имитируем его ответ (RECOMMEND) тем же путём,
+     * что и consumer очереди результатов, а version берём из свежей карточки.
+     */
     protected JsonNode approve(String adminToken, JsonNode application) {
+        completeScoring(id(application), "RECOMMEND");
+        long version = adminCard(adminToken, id(application)).get("version").asLong();
         ResponseEntity<String> response = api.postJson("/api/admin/loan-applications/" + id(application) + "/approve",
-                "{\"version\":" + application.get("version").asLong() + "}", adminToken);
+                "{\"version\":" + version + "}", adminToken);
+        assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
+        return json(response);
+    }
+
+    /** Ответ credit-policy на текущий запрос скоринга заявки (CREDIT_POLICY.md §8.2). */
+    protected void completeScoring(String applicationId, String decision) {
+        LoanApplication application = loanApplications.findById(UUID.fromString(applicationId)).orElseThrow();
+        boolean reject = "AUTO_REJECT".equals(decision);
+        scoringResults.apply(new ScoringCompleted(UUID.randomUUID(), Instant.now(),
+                application.getScoringRequestId(), application.getId(), "COMPLETED",
+                new BigDecimal(reject ? "0.2000" : "0.7000"), reject ? 80 : 280, reject ? "E1" : "B2",
+                new BigDecimal(reject ? "0.468750" : "0.019412"), decision, List.of(), 1));
+    }
+
+    protected JsonNode adminCard(String adminToken, String applicationId) {
+        ResponseEntity<String> response = api.get("/api/admin/loan-applications/" + applicationId, adminToken);
         assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
         return json(response);
     }
