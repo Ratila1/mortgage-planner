@@ -505,8 +505,7 @@ export interface Api {
   confirmPhoneVerification(code: string): Promise<void>;
   cancelMicroloanApplication(id: Id): Promise<void>;
 
-  adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string): Promise<AdminMicroloanApplication[]>;
-  /** Карточка заявки: полные данные клиента, документы, фото паспорта (passportUrl) и кредитная история. */
+  adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string, page?: number, size?: number): Promise<{ items: AdminMicroloanApplication[]; total: number; page: number; size: number }>;  /** Карточка заявки: полные данные клиента, документы, фото паспорта (passportUrl) и кредитная история. */
   adminGetMicroloanApplication(id: Id): Promise<AdminMicroloanApplicationCard>;
   /** Фото паспорта (blob); 404 — фото удалено по сроку хранения. */
   adminViewPassport(id: Id): Promise<Blob>;
@@ -519,8 +518,7 @@ export interface Api {
   /** Расшифровка скоринга из credit-policy; null — расчёта ещё нет. */
   adminGetScoringDetail(applicationId: Id): Promise<ScoringDetail | null>;
 
-  adminListUsers(query?: string): Promise<AdminUser[]>;
-  /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */
+  adminListUsers(query?: string, page?: number, size?: number): Promise<{ items: AdminUser[]; total: number; page: number; size: number }>;  /** Блокировка (бэкен заодно отзывает все refresh-токены) и разблокировка. Блок себя — 400 SELF_BLOCK_FORBIDDEN. */
   adminBlockUser(id: Id): Promise<void>;
   adminUnblockUser(id: Id): Promise<void>;
 }

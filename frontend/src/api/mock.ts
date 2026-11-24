@@ -660,11 +660,11 @@ export const mockApi: Api = {
     }
   },
 
-  async adminListMicroloanApplications(status) {
+  async adminListMicroloanApplications(status, _query, page = 0, size = 20) {
     await delay();
     requireAdmin();
-    return state.microloanApplications
-      .filter((a) => a.status === status)
+    const all = state.microloanApplications
+      .filter((a) => status === 'ALL' || !status || a.status === status)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((a) => ({
         id: a.id,
@@ -679,6 +679,8 @@ export const mockApi: Api = {
         createdAt: a.createdAt,
         scoring: MOCK_SCORING,
       }));
+    const start = page * size;
+    return { items: all.slice(start, start + size), total: all.length, page, size };
   },
   async adminGetMicroloanApplication(id) {
     await delay();
@@ -773,10 +775,12 @@ export const mockApi: Api = {
     requireAdmin();
     return null;
   },
-  async adminListUsers() {
+  async adminListUsers(_query, page = 0, size = 20) {
     await delay();
     requireAdmin();
-    return state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const all = state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const start = page * size;
+    return { items: all.slice(start, start + size), total: all.length, page, size };
   },
   async adminBlockUser(id) {
     await delay();

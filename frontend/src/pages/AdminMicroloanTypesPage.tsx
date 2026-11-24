@@ -220,7 +220,7 @@ export function AdminMicroloanTypesPage() {
             </div>
           ) : (
             <div className="card overflow-x-auto p-0">
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full text-sm">
                 <thead className="border-b border-line text-left text-xs uppercase tracking-wider text-ink-3">
                   <tr>
                     <th className="p-4 font-semibold">Название</th>

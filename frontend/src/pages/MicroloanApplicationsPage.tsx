@@ -100,7 +100,7 @@ export function MicroloanApplicationsPage() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full text-sm">
               <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
                 <tr>
                   <th className="p-4 font-semibold">Тип займа</th>
@@ -176,7 +176,7 @@ function ApplicationRow({
             </p>
           )}
         </td>
-        <td className="whitespace-nowrap p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
+        <td className="p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
         <td className="p-4 text-right">
           <div className="flex justify-end gap-2">
             {app.status === 'APPROVED' && (

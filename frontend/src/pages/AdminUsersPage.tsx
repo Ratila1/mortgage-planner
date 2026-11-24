@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, errorMessage, type AdminUser, type LoginProvider } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, PageTitle, Select, Skeleton, TextInput } from '../components/ui';
+import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, PageTitle, Pagination, Select, Skeleton, TextInput } from '../components/ui';
 import { formatMoneyShort, formatDateTime } from '../lib/format';
 
 /** Способ входа хранится в users.provider и приходит с бэка как есть. */
@@ -35,6 +35,10 @@ export function AdminUsersPage() {
   const [confirmTarget, setConfirmTarget] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'USER'>('ALL');
@@ -50,15 +54,18 @@ export function AdminUsersPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setUsers(await api.adminListUsers(debouncedSearch));
+      const res = await api.adminListUsers(debouncedSearch, page, PAGE_SIZE);
+      setUsers(res.items);
+      setTotal(res.total);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, page]);
 
+  useEffect(() => { setPage(0); }, [debouncedSearch, roleFilter, providerFilter, blockedFilter, sort]);
   useEffect(() => { reload(); }, [reload]);
 
   const filteredUsers = useMemo(() => {
@@ -126,59 +133,59 @@ export function AdminUsersPage() {
         </Card>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-                <tr>
-                  <th className="p-4 font-semibold">ID</th>
-                  <th className="p-4 font-semibold">Email</th>
-                  <th className="p-4 font-semibold">ФИО</th>
-                  <th className="p-4 text-right font-semibold">Зарплата</th>
-                  <th className="p-4 font-semibold">Провайдер</th>
-                  <th className="p-4 font-semibold">Создан</th>
-                  <th className="p-4 font-semibold">Телефон</th>
-                  <th className="p-4 font-semibold">Роли</th>
-                  <th className="p-4 font-semibold">Действия</th>
+          <table className="w-full text-sm">
+            <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
+              <tr>
+                <th className="p-4 font-semibold">ID</th>
+                <th className="p-4 font-semibold">Email</th>
+                <th className="p-4 font-semibold">ФИО</th>
+                <th className="p-4 text-right font-semibold">Зарплата</th>
+                <th className="p-4 font-semibold">Провайдер</th>
+                <th className="p-4 font-semibold">Создан</th>
+                <th className="p-4 font-semibold">Телефон</th>
+                <th className="p-4 font-semibold">Роли</th>
+                <th className="p-4 font-semibold">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers?.map((user) => (
+                <tr key={user.id} className="border-t border-line/60 last:border-0">
+                  <td className="p-4 font-mono text-xs text-ink-3">{user.id}</td>
+                  <td className="p-4">
+                    <span className="font-semibold">{user.email}</span>
+                    {user.blocked && <span className="mt-1 block"><Badge tone="stamp">заблокирован</Badge></span>}
+                  </td>
+                  <td className="p-4">{user.fullName || '—'}</td>
+                  <td className="num p-4 text-right">{user.salary ? formatMoneyShort(user.salary) : '—'}</td>
+                  <td className="p-4">
+                    <Badge tone="gold">{PROVIDER_LABELS[user.provider] ?? user.provider}</Badge>
+                  </td>
+                  <td className="p-4 text-ink-3">{formatDateTime(user.createdAt)}</td>
+                  <td className="p-4">{user.phone || '—'}</td>
+                  <td className="p-4"><RoleBadges roles={user.roles} /></td>
+                  <td className="p-4">
+                    {/* Себя не блокируем — бэкен это запрещает (SELF_BLOCK_FORBIDDEN), кнопку прячем. */}
+                    {user.id === me?.id ? (
+                      <span className="text-xs text-ink-3">это вы</span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={user.blocked ? 'secondary' : 'ghost'}
+                        loading={busyId === user.id}
+                        onClick={() => setConfirmTarget(user)}
+                      >
+                        {user.blocked ? 'Разблокировать' : 'Заблокировать'}
+                      </Button>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredUsers?.map((user) => (
-                  <tr key={user.id} className="border-t border-line/60 last:border-0">
-                    <td className="p-4 font-mono text-xs text-ink-3">{user.id}</td>
-                    <td className="p-4">
-                      <span className="font-semibold">{user.email}</span>
-                      {user.blocked && <span className="mt-1 block"><Badge tone="stamp">заблокирован</Badge></span>}
-                    </td>
-                    <td className="p-4">{user.fullName || '—'}</td>
-                    <td className="num p-4 text-right">{user.salary ? formatMoneyShort(user.salary) : '—'}</td>
-                    <td className="p-4">
-                      <Badge tone="gold">{PROVIDER_LABELS[user.provider] ?? user.provider}</Badge>
-                    </td>
-                    <td className="p-4 text-ink-3 whitespace-nowrap">{formatDateTime(user.createdAt)}</td>
-                    <td className="p-4">{user.phone || '—'}</td>
-                    <td className="p-4"><RoleBadges roles={user.roles} /></td>
-                    <td className="p-4">
-                      {/* Себя не блокируем — бэкен это запрещает (SELF_BLOCK_FORBIDDEN), кнопку прячем. */}
-                      {user.id === me?.id ? (
-                        <span className="text-xs text-ink-3">это вы</span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant={user.blocked ? 'secondary' : 'ghost'}
-                          loading={busyId === user.id}
-                          onClick={() => setConfirmTarget(user)}
-                        >
-                          {user.blocked ? 'Разблокировать' : 'Заблокировать'}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </Card>
       )}
+
+      <Pagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
 
       <ConfirmDialog
         open={confirmTarget !== null}

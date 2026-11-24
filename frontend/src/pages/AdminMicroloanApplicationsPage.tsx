@@ -9,7 +9,7 @@ import {
   type MicroloanScoring,
   type ScoringDetail,
 } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Select, Skeleton, Spinner, TextInput } from '../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, PageTitle, Pagination, Select, Skeleton, Spinner, TextInput } from '../components/ui';
 import { formatDate, formatDateTime, formatMoney } from '../lib/format';
 import { MICROLOAN_STATUS_LABELS, MICROLOAN_STATUS_TONES } from './MicroloanApplicationsPage';
 
@@ -73,11 +73,13 @@ const DOCUMENT_LABELS: Record<string, string> = {
  * Клик «Подробнее» раскрывает карточку: ФИО/телефон, фото паспорта, документы и кредитная история (§3.4).
  */
 export function AdminMicroloanApplicationsPage() {
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
   const [status, setStatus] = useState<'ALL' | MicroloanApplicationStatus>('SUBMITTED');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'name'>('date_desc');
-  const [applications, setApplications] = useState<AdminMicroloanApplication[] | null>(null);
+  const [result, setResult] = useState<{ items: AdminMicroloanApplication[]; total: number; page: number; size: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,17 +96,21 @@ export function AdminMicroloanApplicationsPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setApplications(await api.adminListMicroloanApplications(status === 'ALL' ? null : status, debouncedSearch));
+      const res = await api.adminListMicroloanApplications(status === 'ALL' ? null : status, debouncedSearch, page, PAGE_SIZE);
+      setResult(res);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [status, debouncedSearch]);
+  }, [status, debouncedSearch, page]);
+
+  // Смена поиска — начинаем с первой страницы.
+  useEffect(() => { setPage(0); }, [debouncedSearch]);
 
   useEffect(() => {
-    setApplications(null);
+    setResult(null);
     setOpenId(null);
     reload();
   }, [reload]);
@@ -125,8 +131,8 @@ export function AdminMicroloanApplicationsPage() {
   };
 
   const sortedApplications = useMemo(() => {
-    if (!applications) return null;
-    const list = [...applications];
+    if (!result) return null;
+    const list = [...result.items];
     switch (sort) {
       case 'date_asc': list.sort((a, b) => a.createdAt.localeCompare(b.createdAt)); break;
       case 'amount_desc': list.sort((a, b) => Number(b.amount) - Number(a.amount)); break;
@@ -135,7 +141,7 @@ export function AdminMicroloanApplicationsPage() {
       default: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); break;
     }
     return list;
-  }, [applications, sort]);
+  }, [result, sort]);
 
   return (
     <div>
@@ -144,7 +150,10 @@ export function AdminMicroloanApplicationsPage() {
           <Select
             value={status}
             options={[{ value: 'ALL', label: 'Все статусы' }, ...STATUSES.map((s) => ({ value: s, label: MICROLOAN_STATUS_LABELS[s] }))]}
-            onChange={(v) => setStatus(v as 'ALL' | MicroloanApplicationStatus)}
+            onChange={(v) => {
+              setStatus(v as 'ALL' | MicroloanApplicationStatus);
+              setPage(0);
+            }}
             className="w-44"
           />
           <TextInput
@@ -174,7 +183,7 @@ export function AdminMicroloanApplicationsPage() {
       {notice && <div className="mb-4"><Alert tone="money">{notice}</Alert></div>}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
-      {applications === null ? (
+      {result === null ? (
         <div className="space-y-3" aria-hidden="true">
           <Skeleton className="h-12" />
           <Skeleton className="h-64" />
@@ -185,40 +194,40 @@ export function AdminMicroloanApplicationsPage() {
         </Card>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1060px] text-sm">
-              <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-                <tr>
-                  <th className="p-4 font-semibold">Клиент</th>
-                  <th className="p-4 font-semibold">Тип займа</th>
-                  <th className="p-4 text-right font-semibold">Сумма</th>
-                  <th className="p-4 text-right font-semibold">Срок</th>
-                  <th className="p-4 text-right font-semibold">Зарплата</th>
-                  <th className="p-4 text-right font-semibold">ПДН</th>
-                  <th className="p-4 font-semibold">Скоринг</th>
-                  <th className="p-4 font-semibold">Статус</th>
-                  <th className="p-4 font-semibold">Создана</th>
-                  <th className="p-4" />
-                </tr>
-              </thead>
-              <tbody>
-                {sortedApplications?.map((app) => (
-                  <FragmentRow
-                    key={app.id}
-                    app={app}
-                    open={openId === app.id}
-                    busyId={busyId}
-                    rejecting={rejecting}
-                    setRejecting={setRejecting}
-                    onToggle={() => setOpenId(openId === app.id ? null : app.id)}
-                    onAction={(action, message) => act(app, action, message)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
+              <tr>
+                <th className="p-4 font-semibold">Клиент</th>
+                <th className="p-4 font-semibold">Тип займа</th>
+                <th className="p-4 text-right font-semibold">Сумма</th>
+                <th className="p-4 text-right font-semibold">Срок</th>
+                <th className="p-4 text-right font-semibold">Зарплата</th>
+                <th className="p-4 text-right font-semibold">ПДН</th>
+                <th className="p-4 font-semibold">Скоринг</th>
+                <th className="p-4 font-semibold">Статус</th>
+                <th className="p-4 font-semibold">Создана</th>
+                <th className="p-4" />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedApplications?.map((app) => (
+                <FragmentRow
+                  key={app.id}
+                  app={app}
+                  open={openId === app.id}
+                  busyId={busyId}
+                  rejecting={rejecting}
+                  setRejecting={setRejecting}
+                  onToggle={() => setOpenId(openId === app.id ? null : app.id)}
+                  onAction={(action, message) => act(app, action, message)}
+                />
+              ))}
+            </tbody>
+          </table>
         </Card>
       )}
+
+      <Pagination page={page} total={result?.total ?? 0} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
@@ -264,7 +273,7 @@ function FragmentRow({
             </p>
           )}
         </td>
-        <td className="whitespace-nowrap p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
+        <td className="p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
         <td className="p-4 text-right">
           <div className="flex justify-end gap-2">
             <Button size="sm" variant={open ? 'secondary' : 'ghost'} onClick={onToggle}>
@@ -558,37 +567,35 @@ function CreditHistoryBlock({ history }: { history: AdminCreditHistory }) {
         </DetailSection>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-            <tr>
-              <th className="p-3 font-semibold">Тип займа</th>
-              <th className="p-3 text-right font-semibold">Сумма</th>
-              <th className="p-3 text-right font-semibold">Срок</th>
-              <th className="p-3 font-semibold">Статус</th>
-              <th className="p-3 text-right font-semibold">ПДН</th>
-              <th className="p-3 font-semibold">Подана</th>
-              <th className="p-3 font-semibold">Решение</th>
+      <table className="w-full text-sm">
+        <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
+          <tr>
+            <th className="p-3 font-semibold">Тип займа</th>
+            <th className="p-3 text-right font-semibold">Сумма</th>
+            <th className="p-3 text-right font-semibold">Срок</th>
+            <th className="p-3 font-semibold">Статус</th>
+            <th className="p-3 text-right font-semibold">ПДН</th>
+            <th className="p-3 font-semibold">Подана</th>
+            <th className="p-3 font-semibold">Решение</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loans.map((loan) => (
+            <tr key={loan.applicationId} className="border-t border-line/60 align-top last:border-0">
+              <td className="p-3 font-semibold">{loan.loanTypeName}</td>
+              <td className="num p-3 text-right">{formatMoney(loan.amount)}</td>
+              <td className="p-3 text-right">{loan.termDays} дн.</td>
+              <td className="p-3">
+                <Badge tone={MICROLOAN_STATUS_TONES[loan.status]}>{MICROLOAN_STATUS_LABELS[loan.status]}</Badge>
+                {loan.decisionComment && <p className="mt-1 max-w-xs text-xs text-ink-3">{loan.decisionComment}</p>}
+              </td>
+              <td className="num p-3 text-right">{loan.debtLoadPercent ? `${loan.debtLoadPercent}%` : '—'}</td>
+              <td className="p-3 text-ink-3">{loan.submittedAt ? formatDateTime(loan.submittedAt) : '—'}</td>
+              <td className="p-3 text-ink-3">{loan.decidedAt ? formatDateTime(loan.decidedAt) : '—'}</td>
             </tr>
-          </thead>
-          <tbody>
-            {loans.map((loan) => (
-              <tr key={loan.applicationId} className="border-t border-line/60 align-top last:border-0">
-                <td className="p-3 font-semibold">{loan.loanTypeName}</td>
-                <td className="num p-3 text-right">{formatMoney(loan.amount)}</td>
-                <td className="p-3 text-right">{loan.termDays} дн.</td>
-                <td className="p-3">
-                  <Badge tone={MICROLOAN_STATUS_TONES[loan.status]}>{MICROLOAN_STATUS_LABELS[loan.status]}</Badge>
-                  {loan.decisionComment && <p className="mt-1 max-w-xs text-xs text-ink-3">{loan.decisionComment}</p>}
-                </td>
-                <td className="num p-3 text-right">{loan.debtLoadPercent ? `${loan.debtLoadPercent}%` : '—'}</td>
-                <td className="whitespace-nowrap p-3 text-ink-3">{loan.submittedAt ? formatDateTime(loan.submittedAt) : '—'}</td>
-                <td className="whitespace-nowrap p-3 text-ink-3">{loan.decidedAt ? formatDateTime(loan.decidedAt) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -510,14 +510,19 @@ export const httpApi: Api = {
   confirmPhoneVerification: (code) =>
     request<void>('POST', '/api/me/phone/verification/confirm', { code }),
 
-  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string) {
+  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string, pageParam = 0, sizeParam = 20) {
     const params = new URLSearchParams();
     if (status && status !== 'ALL') params.set('status', status);
     if (query && query.trim()) params.set('query', query.trim());
-    params.set('page', '0');
-    params.set('size', '100');
+    params.set('page', String(pageParam));
+    params.set('size', String(sizeParam));
     const page = await request<Raw>('GET', `/api/admin/loan-applications?${params.toString()}`);
-    return ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication);
+    return {
+      items: ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication),
+      total: Number(page.total ?? 0),
+      page: Number(page.page ?? pageParam),
+      size: Number(page.size ?? sizeParam),
+    };
   },
   adminGetMicroloanApplication: async (id) =>
     mapAdminApplicationCard(await request<Raw>('GET', `/api/admin/loan-applications/${id}`)),
@@ -539,26 +544,31 @@ export const httpApi: Api = {
     }
   },
 
-  async adminListUsers(query?: string) {
+  async adminListUsers(query?: string, pageParam = 0, sizeParam = 20) {
     const params = new URLSearchParams();
     if (query && query.trim()) params.set('query', query.trim());
-    params.set('page', '0');
-    params.set('size', '100');
+    params.set('page', String(pageParam));
+    params.set('size', String(sizeParam));
     const page = await request<Raw>('GET', `/api/admin/users?${params.toString()}`);
-    return ((page.items as Raw[] | undefined) ?? []).map(
-      (u): AdminUser => ({
-        id: String(u.id),
-        email: String(u.email),
-        fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || null,
-        salary: u.monthlyIncome ? String(u.monthlyIncome) : null,
-        provider: String(u.provider) as LoginProvider,
-        createdAt: String(u.createdAt),
-        phone: u.phone ? String(u.phone) : null,
-        roles: (Array.isArray(u.roles) ? u.roles : []) as Role[],
-        emailVerified: Boolean(u.emailVerified),
-        blocked: Boolean(u.blocked),
-      }),
-    );
+    return {
+      items: ((page.items as Raw[] | undefined) ?? []).map(
+        (u): AdminUser => ({
+          id: String(u.id),
+          email: String(u.email),
+          fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || null,
+          salary: u.monthlyIncome ? String(u.monthlyIncome) : null,
+          provider: String(u.provider) as LoginProvider,
+          createdAt: String(u.createdAt),
+          phone: u.phone ? String(u.phone) : null,
+          roles: (Array.isArray(u.roles) ? u.roles : []) as Role[],
+          emailVerified: Boolean(u.emailVerified),
+          blocked: Boolean(u.blocked),
+        }),
+      ),
+      total: Number(page.total ?? 0),
+      page: Number(page.page ?? pageParam),
+      size: Number(page.size ?? sizeParam),
+    };
   },
 
   adminBlockUser: (id) => request<void>('POST', `/api/admin/users/${id}/block`),

@@ -178,6 +178,39 @@ export function Segmented<T extends string>({
   );
 }
 
+export function Pagination({
+  page,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= 0) return null;
+  const hasPrev = page > 0;
+  const hasNext = page < totalPages - 1;
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-ink-2">
+        Всего: <span className="font-semibold text-ink">{total}</span>
+      </p>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="secondary" disabled={!hasPrev} onClick={() => onChange(page - 1)}>
+          ← Предыдущая
+        </Button>
+        <span className="text-sm text-ink-2">Страница {page + 1} из {totalPages}</span>
+        <Button size="sm" variant="secondary" disabled={!hasNext} onClick={() => onChange(page + 1)}>
+          Следующая →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Select<T extends string>({
   value,
   options,
