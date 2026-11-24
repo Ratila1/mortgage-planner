@@ -1,0 +1,1 @@
+{"uuid":"a71af0b5-8797-49f1-ada0-7e6b23a77591","name":"POST /api/auth/logout без cookie → 204 (идемпотентно)","children":["5bc4db53-2d53-4fa3-9c86-b8ff8c359640"],"befores":[],"afters":[],"start":1795507984169,"stop":1795507984288}

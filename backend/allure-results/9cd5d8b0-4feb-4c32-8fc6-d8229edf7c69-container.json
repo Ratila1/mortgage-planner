@@ -1,0 +1,1 @@
+{"uuid":"9cd5d8b0-4feb-4c32-8fc6-d8229edf7c69","name":"logout: удаляет текущий refresh-токен; без cookie — идемпотентно (ничего не делает)","children":["96009b38-37c0-4459-afdd-233aaf8c57c2"],"befores":[],"afters":[],"start":1795507973474,"stop":1795507973491}

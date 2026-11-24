@@ -1,0 +1,1 @@
+{"uuid":"6ded5c46-2dcb-4382-9af1-f4c228cbf876","name":"redis miss + mongo miss → расчёт, сохранение, запись calcId в кэш после сохранения","children":["f2e0f86c-82b4-4d73-ad2d-1971e9ef5d64"],"befores":[],"afters":[],"start":1795510340294,"stop":1795510340317}

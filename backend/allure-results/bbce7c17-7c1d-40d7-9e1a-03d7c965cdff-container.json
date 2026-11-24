@@ -1,0 +1,1 @@
+{"uuid":"bbce7c17-7c1d-40d7-9e1a-03d7c965cdff","name":"retry из application.yml: enabled, 3 попытки всего (1 + 2 retry), паузы 1с/2с/4с","children":["bc62cf48-99b9-4791-966f-8d41e0d2fa37"],"befores":[],"afters":[],"start":1795510360188,"stop":1795510360251}

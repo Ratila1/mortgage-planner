@@ -1,0 +1,1 @@
+{"uuid":"03539dd7-def8-4bbf-a313-8b99b51e812f","name":"POST /api/auth/login: успех → access в теле (Bearer) + refresh в httpOnly cookie","children":["cb90b2f0-0977-4d2a-b28f-5301e9f7c696"],"befores":[],"afters":[],"start":1795507985228,"stop":1795507985281}

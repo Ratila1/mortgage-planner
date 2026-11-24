@@ -1,0 +1,1 @@
+{"uuid":"a78af7b1-a254-41b4-8437-a7755e881cc7","name":"валидный JWT открывает защищённый роут (/api/me → 404, security пройден)","children":["92e90f04-9b8f-4a31-aa88-e62cf493faf0"],"befores":[],"afters":[],"start":1795508006338,"stop":1795508006463}

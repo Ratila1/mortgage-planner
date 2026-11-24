@@ -1,0 +1,1 @@
+{"uuid":"4bb523dc-fc7c-4ea7-aa53-87d59716d986","name":"/actuator/prometheus — НЕ публичный: без JWT → 401","children":["3f46aee1-32ec-443e-a49a-ad9bae1fbbaa"],"befores":[],"afters":[],"start":1795510362236,"stop":1795510362395}

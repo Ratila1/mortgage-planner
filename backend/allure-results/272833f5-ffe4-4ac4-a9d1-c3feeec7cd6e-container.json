@@ -1,0 +1,1 @@
+{"uuid":"272833f5-ffe4-4ac4-a9d1-c3feeec7cd6e","name":"GET /api/me: JWT валиден, но пользователя нет (subject удалён) → 401 UNAUTHORIZED","children":["de293884-acbe-4bfc-a9dd-ca69b5dae51c"],"befores":[],"afters":[],"start":1795508013006,"stop":1795508013025}

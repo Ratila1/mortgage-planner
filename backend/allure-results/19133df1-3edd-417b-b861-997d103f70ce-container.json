@@ -1,0 +1,1 @@
+{"uuid":"19133df1-3edd-417b-b861-997d103f70ce","name":"POST /api/auth/register: невалидный email → 400 VALIDATION_FAILED","children":["f47898d8-205a-4b74-851a-a4ecbb940359"],"befores":[],"afters":[],"start":1795510339019,"stop":1795510339046}

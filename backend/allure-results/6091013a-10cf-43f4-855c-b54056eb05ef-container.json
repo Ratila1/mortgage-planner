@@ -1,0 +1,1 @@
+{"uuid":"6091013a-10cf-43f4-855c-b54056eb05ef","name":"POST /api/auth/login: невалидное тело → 400 VALIDATION_FAILED","children":["bb3d8e16-67b6-4dd0-998e-fabc17f2e66c"],"befores":[],"afters":[],"start":1795507984491,"stop":1795507984545}

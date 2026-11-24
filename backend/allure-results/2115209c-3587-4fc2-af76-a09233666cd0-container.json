@@ -1,0 +1,1 @@
+{"uuid":"2115209c-3587-4fc2-af76-a09233666cd0","name":"createLocalUser: сохраняет пользователя с email_verified=false, ролью USER, provider LOCAL","children":["b9a1fb5a-3261-42e2-9304-85c6da221686"],"befores":[],"afters":[],"start":1795508012172,"stop":1795508012176}

@@ -1,0 +1,1 @@
+{"uuid":"658141f6-1191-4f8e-91b9-8f5c617512c2","name":"превышение лимита → отказ, Retry-After = остаток TTL ключа","children":["0bfd7ef5-a10d-4195-bb07-bfdcd44bf86f"],"befores":[],"afters":[],"start":1795508004658,"stop":1795508004662}

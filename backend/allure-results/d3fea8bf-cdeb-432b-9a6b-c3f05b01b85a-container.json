@@ -1,0 +1,1 @@
+{"uuid":"d3fea8bf-cdeb-432b-9a6b-c3f05b01b85a","name":"ROLE_ADMIN проходит на /api/admin/** (security пропускает → нет контроллера → 404)","children":["12c89fa0-2784-4016-9653-8ac44555bdc3"],"befores":[],"afters":[],"start":1795510360820,"stop":1795510361066}

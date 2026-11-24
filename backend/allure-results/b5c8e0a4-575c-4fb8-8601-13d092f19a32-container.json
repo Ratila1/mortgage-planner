@@ -1,0 +1,1 @@
+{"uuid":"b5c8e0a4-575c-4fb8-8601-13d092f19a32","name":"POST /api/auth/login-link/consume лимитируется по IP отдельным лимитом (10/мин)","children":["8162f786-8e6e-48b8-83b8-98d434f5dc22"],"befores":[],"afters":[],"start":1795510359641,"stop":1795510359657}

@@ -1,0 +1,1 @@
+{"uuid":"5caee75d-ad00-41d1-9c03-678f68211b5c","name":"POST /api/auth/refresh: без cookie / невалидный → 401 INVALID_REFRESH_TOKEN","children":["663c2e6a-12c2-4beb-bfe0-9ace07a0574a"],"befores":[],"afters":[],"start":1795510338634,"stop":1795510338685}

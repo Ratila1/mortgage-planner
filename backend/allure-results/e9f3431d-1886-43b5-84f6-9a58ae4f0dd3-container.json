@@ -1,0 +1,1 @@
+{"uuid":"e9f3431d-1886-43b5-84f6-9a58ae4f0dd3","name":"POST /api/calc: нарушение валидации → 400 VALIDATION_FAILED","children":["661af5d5-bdd3-4894-8ee1-a6b55382b16a"],"befores":[],"afters":[],"start":1795510342004,"stop":1795510342033}

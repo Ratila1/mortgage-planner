@@ -1,0 +1,1 @@
+{"uuid":"942bb625-113d-42fc-b1ae-a6ecfe1f9bad","name":"GET /api/me с невалидным (подделанным) JWT → 401 UNAUTHORIZED","children":["045d67be-010b-48dd-9e1f-deb47d6869ea"],"befores":[],"afters":[],"start":1795510370924,"stop":1795510370957}

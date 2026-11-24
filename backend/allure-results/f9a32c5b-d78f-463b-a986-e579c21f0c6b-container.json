@@ -1,0 +1,1 @@
+{"uuid":"f9a32c5b-d78f-463b-a986-e579c21f0c6b","name":"create: взнос ниже minDownPaymentPercent оффера → InvalidRequestException","children":["9c7c06a2-03a7-43bb-ac27-bee5b01738f4"],"befores":[],"afters":[],"start":1795508011728,"stop":1795508011754}

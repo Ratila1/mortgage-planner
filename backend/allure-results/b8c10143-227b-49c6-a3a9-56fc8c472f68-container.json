@@ -1,0 +1,1 @@
+{"uuid":"b8c10143-227b-49c6-a3a9-56fc8c472f68","name":"5xx от sms-сервиса → SmsClientException (клиенту уйдёт 502 SMS_DELIVERY_FAILED)","children":["bb803815-bca6-4bb4-bcfe-7a99f60c9a34"],"befores":[],"afters":[],"start":1795510369572,"stop":1795510369596}

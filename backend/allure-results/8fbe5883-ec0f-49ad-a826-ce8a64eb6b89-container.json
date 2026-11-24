@@ -1,0 +1,1 @@
+{"uuid":"8fbe5883-ec0f-49ad-a826-ce8a64eb6b89","name":"публичные роуты без JWT: /api/calc/**, /api/offers, /api/auth/**, /actuator/health/** → 404 (не 401/403)","children":["5baccf63-093c-4d80-801e-d82d8605b6fc"],"befores":[],"afters":[],"start":1795510362551,"stop":1795510362721}

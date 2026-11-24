@@ -1,0 +1,1 @@
+{"uuid":"d58f9924-013a-458c-b58a-865c4a2f4cdf","name":"топология: mail.send.q с DLX domain.events.dlx, DLQ и bindings по mail.requested","children":["acdb3808-580f-4e8e-9cea-c7a88efb69c0"],"befores":[],"afters":[],"start":1795510360254,"stop":1795510360316}

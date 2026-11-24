@@ -1,0 +1,1 @@
+{"uuid":"c9b95ef1-8c22-432b-b33a-6816a7d4b1dd","name":"POST /api/auth/verify-email: валидный токен → 200, access в теле + refresh-cookie (сразу вошёл)","children":["2c7025e0-682b-4adf-b46d-27587ffa7794"],"befores":[],"afters":[],"start":1795507983855,"stop":1795507983893}

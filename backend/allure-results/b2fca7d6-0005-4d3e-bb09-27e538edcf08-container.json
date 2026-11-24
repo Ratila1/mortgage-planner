@@ -1,0 +1,1 @@
+{"uuid":"b2fca7d6-0005-4d3e-bb09-27e538edcf08","name":"JWT с ролью USER на /api/admin/** → 403 ProblemDetail code=FORBIDDEN","children":["f6218e7f-84e3-45fe-b0d3-6f698c51ab39"],"befores":[],"afters":[],"start":1795510360401,"stop":1795510360818}

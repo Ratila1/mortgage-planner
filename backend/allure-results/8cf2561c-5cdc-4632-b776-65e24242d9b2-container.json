@@ -1,0 +1,1 @@
+{"uuid":"8cf2561c-5cdc-4632-b776-65e24242d9b2","name":"GET /api/me: роль USER (не ADMIN) проходит — роут требует только authenticated","children":["66206092-c6f9-4cd1-b7c0-e8dd6b3340d5"],"befores":[],"afters":[],"start":1795508013054,"stop":1795508013070}

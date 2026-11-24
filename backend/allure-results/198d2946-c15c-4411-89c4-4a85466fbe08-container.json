@@ -1,0 +1,1 @@
+{"uuid":"198d2946-c15c-4411-89c4-4a85466fbe08","name":"GitHub OAuth: email скрыт в /user — доходим до загрузки authorized client и берём /user/emails","children":["0b738fec-26b6-4b48-a84b-e30bbf96b0df"],"befores":[],"afters":[],"start":1795507985300,"stop":1795507985702}

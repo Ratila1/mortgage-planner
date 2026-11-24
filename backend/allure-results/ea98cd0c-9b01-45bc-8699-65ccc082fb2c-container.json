@@ -1,0 +1,1 @@
+{"uuid":"ea98cd0c-9b01-45bc-8699-65ccc082fb2c","name":"issue: opaque-токен (не JWT), cookie {userId}.{token}, метаданные в Redis, TTL 30 дн","children":["ab1e0989-4ddd-4014-99b7-bf67b2ef8f19"],"befores":[],"afters":[],"start":1795507974612,"stop":1795507974622}

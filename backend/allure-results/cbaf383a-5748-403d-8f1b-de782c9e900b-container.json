@@ -1,0 +1,1 @@
+{"uuid":"cbaf383a-5748-403d-8f1b-de782c9e900b","name":"429 от sms-сервиса → SmsClientRateLimitedException (клиенту уйдёт 429, а не 400/502)","children":["3282414d-640c-43e0-923b-3a96354ba97e"],"befores":[],"afters":[],"start":1795508011982,"stop":1795508011995}

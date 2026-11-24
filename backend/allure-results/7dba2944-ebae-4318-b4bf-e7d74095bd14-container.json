@@ -1,0 +1,1 @@
+{"uuid":"7dba2944-ebae-4318-b4bf-e7d74095bd14","name":"GET /api/me с валидным JWT → id, email, emailVerified, roles; без внутренних полей","children":["0c980761-19ef-4a80-a5fa-a56a9c31f025"],"befores":[],"afters":[],"start":1795510370860,"stop":1795510370894}

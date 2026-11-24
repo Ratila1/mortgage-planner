@@ -1,0 +1,1 @@
+{"uuid":"049d3321-b426-4d9f-a842-ff9e7897cbb5","name":"POST /api/auth/login-link/consume: валидный токен → 200, access + refresh-cookie","children":["ce74bb93-f46d-4413-8d9d-3236966eeca3"],"befores":[],"afters":[],"start":1795507984102,"stop":1795507984153}

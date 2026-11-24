@@ -1,0 +1,1 @@
+{"uuid":"a6d48d23-d853-40fe-8b68-154bc4d9523a","name":"POST /api/auth/login лимитируется по IP (10/мин), даже для аутентифицированных","children":["a82f6258-b266-4ee6-8e05-91eeb8ec55cc"],"befores":[],"afters":[],"start":1795510359690,"stop":1795510359702}

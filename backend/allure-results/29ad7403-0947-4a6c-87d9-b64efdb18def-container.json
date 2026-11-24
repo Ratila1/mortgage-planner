@@ -1,0 +1,1 @@
+{"uuid":"29ad7403-0947-4a6c-87d9-b64efdb18def","name":"некорректный тип path-variable / query-параметра → 400 VALIDATION_FAILED, не 500","children":["35ae5c91-45ef-4242-959c-4af5f6554e54"],"befores":[],"afters":[],"start":1795510359120,"stop":1795510359148}

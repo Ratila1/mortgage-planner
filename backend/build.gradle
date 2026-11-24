@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '2.3.0'
     id 'org.springframework.boot' version '4.0.9'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -61,17 +62,34 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-rabbitmq'
     testImplementation 'org.awaitility:awaitility'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Kotlin auto-tests (backend/src/test/kotlin): web UI, API, WireMock, Allure, DB checks
+    testImplementation 'org.jetbrains.kotlin:kotlin-stdlib'
+    testImplementation 'com.codeborne:selenide:7.9.3'
+    testImplementation 'com.squareup.retrofit2:retrofit:2.11.0'
+    testImplementation 'com.squareup.retrofit2:converter-gson:2.11.0'
+    testImplementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'org.wiremock:wiremock-standalone:3.10.0'
+    testImplementation 'io.qameta.allure:allure-junit5:2.29.0'
+    testImplementation 'io.qameta.allure:allure-selenide:2.29.0'
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-parameters'
 }
 
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = '25'
+        freeCompilerArgs += ['-java-parameters']
+    }
+}
+
 // Обычный `gradle test` не требует Docker: integration-тесты (Testcontainers)
 // помечены @Tag("integration") и исключены здесь.
 tasks.named('test') {
     useJUnitPlatform {
-        excludeTags 'integration'
+        excludeTags 'integration', 'ui'
     }
 }
 
@@ -82,11 +100,27 @@ tasks.register('integrationTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
-        includeTags 'integration'
+        includeTags 'integration', 'wiremock', 'wiremock'
     }
     shouldRunAfter tasks.named('test')
     maxParallelForks = 1
     systemProperty 'java.awt.headless', 'true'
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+tasks.register('uiTest', Test) {
+    description = 'Selenide web UI tests (requires running app on base.url)'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'ui'
+    }
+    systemProperty 'base.url', System.getProperty('base.url', 'http://localhost:8080')
+    systemProperty 'headless', System.getProperty('headless', 'true')
     testLogging {
         events 'failed'
         exceptionFormat 'full'

@@ -1,0 +1,1 @@
+{"uuid":"b7eb59d6-7689-440b-bf2a-a70307908211","name":"POST /api/auth/login: неизвестный email → 401 INVALID_CREDENTIALS (тот же код, что неверный пароль)","children":["16fa298e-02c7-435e-a480-e5cbfdbea193"],"befores":[],"afters":[],"start":1795507984388,"stop":1795507984468}

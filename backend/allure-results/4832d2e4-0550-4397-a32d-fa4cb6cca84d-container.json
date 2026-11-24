@@ -1,0 +1,1 @@
+{"uuid":"4832d2e4-0550-4397-a32d-fa4cb6cca84d","name":"POST /api/auth/register: короткий пароль → 400 VALIDATION_FAILED","children":["6e7a2b00-2a3d-4a3d-aa6b-1448ee90d375"],"befores":[],"afters":[],"start":1795507984943,"stop":1795507984978}

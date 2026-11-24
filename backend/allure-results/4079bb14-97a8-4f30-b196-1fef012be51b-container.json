@@ -1,0 +1,1 @@
+{"uuid":"4079bb14-97a8-4f30-b196-1fef012be51b","name":"GET /api/me без JWT → 401 ProblemDetail code=UNAUTHORIZED","children":["93b2ddf6-e058-40c3-b21b-a675eadecc91"],"befores":[],"afters":[],"start":1795508013074,"stop":1795508013089}

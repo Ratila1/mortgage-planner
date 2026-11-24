@@ -1,0 +1,1 @@
+{"uuid":"dbaaa13c-f07f-4185-92cd-3d9713a3aedd","name":"USER JWT (roles claim) получает 403 на /api/admin/**","children":["129f83db-bb07-4ddf-92fc-e93ab80e57f6"],"befores":[],"afters":[],"start":1795510362726,"stop":1795510362900}

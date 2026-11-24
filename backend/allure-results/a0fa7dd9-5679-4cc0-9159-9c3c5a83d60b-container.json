@@ -1,0 +1,1 @@
+{"uuid":"a0fa7dd9-5679-4cc0-9159-9c3c5a83d60b","name":"POST /api/auth/refresh: валидный cookie → 200, ротация (новый Set-Cookie)","children":["c5dc2373-2573-4475-90dd-fa6649e4236d"],"befores":[],"afters":[],"start":1795507984298,"stop":1795507984361}

@@ -1,0 +1,1 @@
+{"uuid":"e332b2cc-13f9-4a70-b82b-9f72443ca84a","name":"create: параметры не проходят bean-validation → InvalidRequestException","children":["1ef32920-1e0c-4294-b759-180f35a6bac1"],"befores":[],"afters":[],"start":1795508011809,"stop":1795508011828}

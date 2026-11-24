@@ -1,0 +1,1 @@
+{"uuid":"0f82e8a8-af6d-4652-9c3f-be2d9f1b4815","name":"сумма кредита округлилась до 0.00 → InvalidCalculationException (400), не 500","children":["ec7afd09-ff2d-415e-b680-2c446e293955"],"befores":[],"afters":[],"start":1795510343628,"stop":1795510343634}

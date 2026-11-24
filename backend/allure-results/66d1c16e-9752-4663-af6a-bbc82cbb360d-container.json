@@ -1,0 +1,1 @@
+{"uuid":"66d1c16e-9752-4663-af6a-bbc82cbb360d","name":"POST /api/auth/login-link: невалидный email → 400 VALIDATION_FAILED","children":["82894471-af70-4b1b-9c2d-0273d758b4b9"],"befores":[],"afters":[],"start":1795510338707,"stop":1795510338761}

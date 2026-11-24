@@ -1,0 +1,1 @@
+{"uuid":"d8368a76-933b-4998-9db9-b5dd19924e05","name":"createLocalUser: сущность создаётся без id, чтобы Hibernate сделал persist, а не merge","children":["1bc06d6f-d31e-4ed3-b219-dc34cca192c3"],"befores":[],"afters":[],"start":1795508012165,"stop":1795508012170}
