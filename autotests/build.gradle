@@ -1,0 +1,87 @@
+plugins {
+    id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '2.3.0'
+}
+
+group = 'dev.nosurprise.autotests'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+kotlin {
+    jvmToolchain(25)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+    }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Allure: шаги, вложения, отчёт
+    testImplementation 'io.qameta.allure:allure-junit5:2.35.6'
+    testImplementation 'io.qameta.allure:allure-attachments:2.35.6'
+
+    // API-слой: Retrofit + OkHttp
+    testImplementation 'com.squareup.retrofit2:retrofit:2.11.0'
+    testImplementation 'com.squareup.retrofit2:converter-gson:2.11.0'
+    testImplementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+
+    // Стабы внешних сервисов (Twilio, Telegram Bot API) — поднимаются внутри JVM тестов.
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
+    // Ожидание асинхронных статусов (dispatch/backoff).
+    testImplementation 'org.awaitility:awaitility:4.2.2'
+    // OTP живёт только в Redis — тесты читают код оттуда.
+    testImplementation 'redis.clients:jedis:5.2.0'
+
+    // Проверки состояния в PostgreSQL (T1: одна строка на Idempotency-Key).
+    testImplementation 'org.postgresql:postgresql:42.7.4'
+
+    // UI-слой: Selenide + Chrome. Драйвер подбирает Selenium Manager (нужен установленный Chrome).
+    testImplementation 'com.codeborne:selenide:7.19.2'
+    // Mobile-слой (T5): мобильный Chrome на эмуляторе через Appium, включается -Dappium=true.
+    testImplementation 'io.appium:java-client:11.0.0'
+    // Скриншоты и page source на шагах и при падении — сразу в Allure.
+    testImplementation 'io.qameta.allure:allure-selenide:2.35.6'
+
+    testImplementation 'org.assertj:assertj-core:3.26.3'
+    testImplementation 'ch.qos.logback:logback-classic:1.5.18'
+}
+
+def allureResultsDir = layout.buildDirectory.dir('allure-results')
+
+// environment.properties / categories.json должны попасть в allure-results до генерации отчёта.
+tasks.register('copyAllureConfig', Copy) {
+    from 'src/test/resources/allure'
+    into allureResultsDir
+}
+
+// Пробрасываем -Dappium / -Dselenide.* / -Dui.* / -Dmobile.* / -Dsms.* из CLI в JVM тестов.
+def forwardedPrefixes = ['appium', 'selenide', 'ui.', 'mobile.', 'sms.']
+
+tasks.named('test') {
+    useJUnitPlatform {
+        // gradle test -Ptags=smoke   (или -PexcludeTags=ui,mobile)
+        def included = project.findProperty('tags')
+        if (included) includeTags(included.toString())
+        def excluded = project.findProperty('excludeTags')
+        if (excluded) excludeTags(excluded.toString())
+    }
+    systemProperty 'allure.results.directory', allureResultsDir.get().asFile.absolutePath
+    System.properties.each { key, value ->
+        def name = key.toString()
+        if (forwardedPrefixes.any { name.startsWith(it) }) {
+            systemProperty name, value.toString()
+        }
+    }
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+        showStandardStreams = false
+    }
+    finalizedBy 'copyAllureConfig'
+}

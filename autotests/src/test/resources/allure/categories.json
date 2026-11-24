@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Проблема тестового окружения",
+    "matchedStatuses": ["broken"],
+    "traceRegex": ".*(ConnectException|UnknownHostException|NoSuchElementException|WebDriverException).*"
+  },
+  {
+    "name": "Дефект продукта",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*(AssertionError|AssertionFailedError).*"
+  }
+]

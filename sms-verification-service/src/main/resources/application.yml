@@ -55,8 +55,8 @@ spring:
 sms:
   cis-prefixes: ["+7","+375","+373","+374","+992","+993","+996","+998","+994","+380","+995"]
   max-attempts: 3
-  first-backoff: 15s
-  second-backoff: 30s
+  first-backoff: ${SMS_FIRST_BACKOFF:15s}
+  second-backoff: ${SMS_SECOND_BACKOFF:30s}
   # Single source of the code TTL: both SMS and Telegram channels read it.
   otp-ttl: 5m
   # Product rule (MICROLOANS.md 3.10, 4.4): 3 wrong attempts burn the code.
@@ -94,6 +94,10 @@ app:
   sms:
     # Single provider switch: sim | vonage | twilio | log.
     provider: ${SMS_VERIFY_PROVIDER:sim}
+    circuit-breaker:
+      # Предохранитель перед транспортом. В стенде автотестов выключен: тесты намеренно
+      # заваливают провайдера, открывают его на 30 секунд и роняют соседние тесты.
+      enabled: ${SMS_CIRCUIT_BREAKER_ENABLED:true}
     vonage:
       api-key: ${VONAGE_API_KEY:}
       api-secret: ${VONAGE_API_SECRET:}
@@ -111,7 +115,7 @@ app:
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     bot-username: ${TELEGRAM_BOT_USERNAME:}
     webhook-path: /telegram/webhook
-    api-base: https://api.telegram.org
+    api-base: ${TELEGRAM_API_BASE:https://api.telegram.org}
     # Local development only: polling deletes a configured webhook, so it is off by default.
     polling-enabled: ${TELEGRAM_POLLING_ENABLED:false}
     timeout: ${TELEGRAM_TIMEOUT:PT5S}

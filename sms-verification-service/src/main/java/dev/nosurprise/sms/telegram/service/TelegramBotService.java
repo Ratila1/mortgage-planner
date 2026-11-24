@@ -101,7 +101,12 @@ public class TelegramBotService {
     }
 
     private static JdkClientHttpRequestFactory requestFactory(Duration readTimeout) {
-        var httpClient = HttpClient.newBuilder().connectTimeout(readTimeout).build();
+        // Bot API — HTTP/1.1. Апгрейд h2c на незащищённом соединении не даёт выигрыша, а прокси
+        // и стабы (WireMock) получают chunked-тело вместе с Upgrade и обрывают запрос.
+        var httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(readTimeout)
+                .build();
         var factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(readTimeout);
         return factory;

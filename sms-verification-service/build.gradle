@@ -24,6 +24,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // Spring Boot 4: RestClient.Builder не приходит из webmvc-стартера, модуль нужен явно
+    // (TwilioSmsSender/TelegramBotService собирают RestClient).
+    implementation 'org.springframework.boot:spring-boot-restclient'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
     // messaging

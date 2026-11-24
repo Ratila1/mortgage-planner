@@ -1,0 +1,40 @@
+# Overlay для автотестов: пробрасывает порты наружу и переводит внешние транспорты на WireMock.
+# Запуск: docker compose -p sms-autotests -f docker-compose.yml -f docker-compose.autotests.yml up -d \
+#           postgres redis rabbitmq sms-verification-service
+# Основной compose остаётся без изменений и по-прежнему не публикует порты наружу.
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  sms-verification-service:
+    # Образ намеренно не фиксируем: compose собирает сервис из текущих исходников под именем проекта.
+    # С `image: ...:latest` стенд молча оставался бы на устаревшем образе после правок
+    # в application.yml/коде — тесты проверяли бы не то, что в репозитории.
+    ports:
+      - "8091:8091"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Провайдер SMS — Twilio, его base-url переопределяем на WireMock в JVM тестов.
+      SMS_VERIFY_PROVIDER: twilio
+      TWILIO_BASE_URL: ${TWILIO_BASE_URL:-http://host.docker.internal:18080}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-ACautotests}
+      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID:-SKautotests}
+      TWILIO_AUTH_SECRET: ${TWILIO_AUTH_SECRET:-autotests-secret}
+      TWILIO_FROM: ${TWILIO_FROM:-+10000000000}
+      # Telegram Bot API тоже уходит в WireMock (application.yml: ${TELEGRAM_API_BASE:...}).
+      TELEGRAM_API_BASE: ${TELEGRAM_API_BASE:-http://host.docker.internal:18080}
+      # Отличимый от "test" токен: тест T3 ищет его в артефактах отчёта и должен
+      # ловить утечку, а не совпадение со словом из чужого лога.
+      TELEGRAM_BOT_TOKEN: ${AUTOTESTS_TELEGRAM_TOKEN:-123456:AAautotestsTelegramToken}
+      # Предохранитель выключен: тесты намеренно валят провайдера (T2/T3), и открытый
+      # на 30 секунд breaker роняет тесты, которые идут следом.
+      SMS_CIRCUIT_BREAKER_ENABLED: "false"
+      # Ускоряем ретраи: тест не должен ждать 15/30 секунд.
+      SMS_FIRST_BACKOFF: ${SMS_FIRST_BACKOFF:-PT1S}
+      SMS_SECOND_BACKOFF: ${SMS_SECOND_BACKOFF:-PT2S}

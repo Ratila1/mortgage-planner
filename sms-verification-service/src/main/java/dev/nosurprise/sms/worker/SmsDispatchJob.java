@@ -136,6 +136,10 @@ public class SmsDispatchJob {
                 result = provider.send(request.getPhone(),
                     messageFormatter.format(request.getLanguage(), code.get()));
             } catch (Exception e) {
+                // Без этой строки любая неожиданная ошибка провайдера сжигала попытки молча:
+                // в логе оставались только FAIL в sms_attempt и итоговый NOT_DELIVERED.
+                log.warn("sms {}: provider call failed: {}", id, e.toString());
+                metrics.counter("sms_provider_error_total").increment();
                 result = SendResult.failure();
             }
         }

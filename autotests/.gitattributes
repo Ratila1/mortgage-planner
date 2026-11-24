@@ -1,0 +1,3 @@
+# Windows-репозиторий с core.autocrlf=true: shell-обёртке Gradle нужен LF, иначе ./gradlew
+# падает в Git Bash на CRLF в shebang. Всё остальное — как решает git.
+gradlew text eol=lf
