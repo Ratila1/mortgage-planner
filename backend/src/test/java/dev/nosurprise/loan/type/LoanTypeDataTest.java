@@ -12,7 +12,7 @@ class LoanTypeDataTest {
 
     private static LoanTypeData data(String min, String max, int minDays, int maxDays, String rate, String modifier) {
         return new LoanTypeData("T", "D", new BigDecimal(min), new BigDecimal(max), minDays, maxDays,
-                new BigDecimal(rate), new BigDecimal(modifier), true);
+                new BigDecimal(rate), new BigDecimal(modifier), true, new BigDecimal("0.60"));
     }
 
     @Test
@@ -30,5 +30,8 @@ class LoanTypeDataTest {
         assertThatThrownBy(() -> data("2000", "1000", 7, 30, "1", "0").validate()).isInstanceOf(InvalidLoanTypeException.class);
         assertThatThrownBy(() -> data("100", "1000", 7, 30, "-1", "0").validate()).isInstanceOf(InvalidLoanTypeException.class);
         assertThatThrownBy(() -> data("100", "1000", 7, 30, "1", "-5").validate()).isInstanceOf(InvalidLoanTypeException.class);
+        LoanTypeData badScore = new LoanTypeData("T", "D", new BigDecimal("100"), new BigDecimal("1000"), 7, 30,
+                BigDecimal.ONE, BigDecimal.ZERO, true, new BigDecimal("1.20"));
+        assertThatThrownBy(badScore::validate).isInstanceOf(InvalidLoanTypeException.class);
     }
 }

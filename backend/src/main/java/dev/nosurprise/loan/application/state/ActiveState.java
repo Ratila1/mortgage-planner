@@ -22,7 +22,7 @@ public final class ActiveState implements LoanState {
 
     @Override
     public Set<LoanStatus> allowedTransitions() {
-        return Set.of(LoanStatus.REPAID);
+        return Set.of(LoanStatus.REPAID, LoanStatus.OVERDUE);
     }
 
     @Override

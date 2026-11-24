@@ -59,6 +59,10 @@ const LOAN_NOTIFICATIONS: Record<string, { title: string; text: string }> = {
   LOAN_SIGNED: { title: 'Договор подписан', text: 'Деньги уже в пути. График погашения — в разделе «Мои заявки».' },
   LOAN_EXPIRED: { title: 'Срок подписания истёк', text: 'Заявку пришлось закрыть: договор не был подписан за 5 рабочих дней.' },
   LOAN_REPAID: { title: 'Заём закрыт', text: 'Долг погашен полностью. Спасибо — приходите ещё!' },
+  LOAN_OVERDUE: {
+    title: 'Заём просрочен',
+    text: 'Срок возврата прошёл. Погасите заём как можно скорее, чтобы не попасть в чёрный список и не испортить историю.',
+  },
 };
 
 function LoanNotification({ n }: { n: AppNotification }) {

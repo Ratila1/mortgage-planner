@@ -8,6 +8,9 @@ spring:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/nosurprise}
     username: ${POSTGRES_USER:nosurprise}
     password: ${POSTGRES_PASSWORD:nosurprise}
+  flyway:
+    # Сид из профиля seed (db/seed, repeatable): без профиля он «пропал» локально — это не ошибка валидации.
+    ignore-migration-patterns: "*:future,repeatable:missing"
   jpa:
     open-in-view: false
     hibernate:

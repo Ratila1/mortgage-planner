@@ -12,6 +12,9 @@ import java.util.UUID;
  * Копия займа в Mongo со всеми состояниями и проколами (MICROLOANS.md §3.14, §4.9).
  * Один документ на заявку, _id = applicationId. Документ всегда собирается целиком из Postgres;
  * lastEventId — версия: заменяем документ только более свежим. Персональных данных нет, только userId.
+ * dueDate и paidAt — даты ISO-строкой (yyyy-MM-dd): без часового пояса, одинаково читаются бюро.
+ * overdueDays — для погашенного по фактической дате оплаты; для OVERDUE — на момент синхронизации
+ * (актуальное значение читатель считает от dueDate). Схема 2 — поля просрочки (CREDIT_POLICY.md §5.3).
  */
 @Document("credit_history")
 public record CreditHistoryDocument(
@@ -28,11 +31,14 @@ public record CreditHistoryDocument(
         UUID decidedBy,
         String decisionComment,
         Instant closedAt,
+        String dueDate,
+        String paidAt,
+        Integer overdueDays,
         List<TimelineEntry> timeline,
         List<Incident> incidents,
         Instant syncedAt) {
 
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     public record Loan(UUID typeId, String typeName, BigDecimal amount, int termDays, BigDecimal dailyRate,
                        BigDecimal modifier, BigDecimal interest, BigDecimal total) {

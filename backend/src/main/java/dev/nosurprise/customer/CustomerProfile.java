@@ -2,12 +2,15 @@ package dev.nosurprise.customer;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -42,6 +45,18 @@ public class CustomerProfile {
     @Column(name = "monthly_income", nullable = false, precision = 12, scale = 2)
     private BigDecimal monthlyIncome;
 
+    /** Данные для скоринга (CREDIT_POLICY.md §4). У профилей, созданных до V17, пустые. */
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
+    @Enumerated(EnumType.STRING)
+    private Sex sex;
+
+    /** ISO-код страны: BY, PL… */
+    private String country;
+
+    private String city;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -73,6 +88,10 @@ public class CustomerProfile {
         middleName = data.middleName();
         phone = data.phone();
         monthlyIncome = data.monthlyIncome();
+        birthDate = data.birthDate();
+        sex = data.sex();
+        country = data.country();
+        city = data.city();
         updatedAt = now;
     }
 
@@ -107,6 +126,22 @@ public class CustomerProfile {
 
     public BigDecimal getMonthlyIncome() {
         return monthlyIncome;
+    }
+
+    public LocalDate getBirthDate() {
+        return birthDate;
+    }
+
+    public Sex getSex() {
+        return sex;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public String getCity() {
+        return city;
     }
 
     public Instant getUpdatedAt() {

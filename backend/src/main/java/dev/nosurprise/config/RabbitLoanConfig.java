@@ -24,6 +24,15 @@ public class RabbitLoanConfig {
     public static final String CONTRACT_Q = "loan.contract.q";
     public static final String CREDIT_HISTORY_Q = "loan.credit-history.q";
     public static final String NOTIFICATION_Q = "notification.loan.q";
+    /** Результаты скоринга из credit-policy (CREDIT_POLICY.md §6.2). */
+    public static final String SCORING_RESULT_Q = "loan.scoring-result.q";
+    /**
+     * Очередь запросов скоринга принадлежит credit-policy, но объявляем её и здесь (с теми же параметрами):
+     * брокер без volume теряет очереди при перезапуске, и запрос, отправленный до старта credit-policy,
+     * иначе ушёл бы в никуда. Объявление идемпотентно.
+     */
+    public static final String SCORING_REQUEST_Q = "credit-policy.scoring-request.q";
+    private static final String SCORING_REQUEST_DLQ_RK = "credit-policy.scoring-request";
 
     private static final String NOTIFICATION_DLQ_RK = "notification.loan";
 
@@ -38,7 +47,11 @@ public class RabbitLoanConfig {
                 List.of(LoanRoutingKeys.HISTORY_CHANGED));
         addQueue(declarables, events, dlx, NOTIFICATION_Q, NOTIFICATION_DLQ_RK, List.of(
                 LoanRoutingKeys.CONTRACT_READY, LoanRoutingKeys.REJECTED,
-                LoanRoutingKeys.SIGNED, LoanRoutingKeys.EXPIRED, LoanRoutingKeys.REPAID));
+                LoanRoutingKeys.SIGNED, LoanRoutingKeys.EXPIRED, LoanRoutingKeys.REPAID, LoanRoutingKeys.OVERDUE));
+        addQueue(declarables, events, dlx, SCORING_RESULT_Q, LoanRoutingKeys.SCORING_COMPLETED,
+                List.of(LoanRoutingKeys.SCORING_COMPLETED));
+        addQueue(declarables, events, dlx, SCORING_REQUEST_Q, SCORING_REQUEST_DLQ_RK,
+                List.of(LoanRoutingKeys.SCORING_REQUESTED));
         return new Declarables(declarables);
     }
 

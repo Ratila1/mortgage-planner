@@ -1,11 +1,13 @@
 package dev.nosurprise.loan.application;
 
 import dev.nosurprise.customer.ProfileView;
+import dev.nosurprise.customer.Sex;
 import dev.nosurprise.loan.calc.LoanQuote;
 import dev.nosurprise.loan.calc.LoanQuoteCalculator;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /** Тестовые заявки и события журнала: доступ к package-private фабрикам из того же пакета. */
@@ -18,7 +20,7 @@ public final class LoanFixtures {
         LoanQuote quote = LoanQuoteCalculator.quote(new BigDecimal(amount), termDays, new BigDecimal("1.000"),
                 new BigDecimal("20.00"));
         ProfileView profile = new ProfileView(userId, "Иванов", "Иван", null, "+375291234567", true,
-                new BigDecimal(income), now, 0L);
+                new BigDecimal(income), LocalDate.of(1985, 3, 1), Sex.MALE, "BY", "Минск", now, 0L);
         return LoanApplication.submit(userId, UUID.randomUUID(), quote, profile, UUID.randomUUID(), now);
     }
 

@@ -1,0 +1,1012 @@
+{
+  "info": {
+    "name": "Кредитное бюро (credit-bureau)",
+    "description": "Запросы к сервису кредитного бюро через nginx (CREDIT_BUREAU.md).\n\nПеред запуском заполните переменные коллекции adminKey (BUREAU_ADMIN_KEY) и sandboxKey (BUREAU_SANDBOX_KEY). apiKey и providerId заполняются сами запросами 01–02.\n\nЗапускать по порядку (Run collection). Неверные ключи (запрос 18 и подобные) увеличивают счётчик неудач по IP: после 10 за 10 минут бюро отвечает 429.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Админ: провайдеры и ключи",
+      "item": [
+        {
+          "name": "01 Создать провайдера",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers"
+              ]
+            },
+            "description": "Лимиты не указаны — берутся по умолчанию: 60/мин, 5000/сутки. Сохраняет providerId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Банк Пример {{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"providerId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Выпустить API-ключ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers/{{providerId}}/keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers",
+                "{{providerId}}",
+                "keys"
+              ]
+            },
+            "description": "Полный ключ показывается один раз. Сохраняет apiKey и keyId."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "const k = pm.response.json();",
+                  "pm.collectionVariables.set(\"apiKey\", k.apiKey);",
+                  "pm.collectionVariables.set(\"keyId\", k.keyId);",
+                  "pm.test(\"ключ в формате nsb_<prefix>_<secret>\", () => pm.expect(k.apiKey).to.match(/^nsb_[a-z0-9]{8}_[A-Za-z0-9_-]{43}$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Список провайдеров",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"секрета ключа в ответе нет\", () => pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get(\"apiKey\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Провайдер по id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers/{{providerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers",
+                "{{providerId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"providerVersion\", pm.response.json().version);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Банк: запросы истории",
+      "item": [
+        {
+          "name": "06 Банк: по телефону",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "found=true, если у заёмщика с этим телефоном есть займ ACTIVE/REPAID.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{testPhone}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"есть found и лимиты\", () => { pm.expect(pm.response.json()).to.have.property(\"found\"); pm.expect(pm.response.headers.get(\"X-RateLimit-Limit\")).to.exist; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Банк: по ФИО",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastName\": \"{{testLastName}}\",\n  \"firstName\": \"{{testFirstName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 или 409 (однофамильцы)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 Банк: телефон + ФИО",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{testPhone}}\",\n  \"lastName\": \"{{testLastName}}\",\n  \"firstName\": \"{{testFirstName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ФИО и телефон не возвращаются\", () => pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get(\"testPhone\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Банк: телефон с пробелами и скобками",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "Нормализация: пробелы, скобки и дефисы убираются.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375 (29) 123-45-67\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 Банк: ФИО в другом регистре",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastName\": \"ПУПКИН\",\n  \"firstName\": \"василий\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 или 409\", () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 Банк: не найден",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290009999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"found=false\", () => pm.expect(pm.response.json().found).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 Идемпотентность: первый запрос",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pm-{{providerId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290009999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"firstReportId\", pm.response.json().reportId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 Идемпотентность: повтор — тот же reportId",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pm-{{providerId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "Повтор не пишется в журнал и не тратит лимит.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290009999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"тот же reportId\", () => pm.expect(pm.response.json().reportId).to.eql(pm.collectionVariables.get(\"firstReportId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 Идемпотентность: тот же ключ, другие параметры → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pm-{{providerId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290008888\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"IDEMPOTENCY_KEY_REUSED\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REUSED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Песочница",
+      "item": [
+        {
+          "name": "15 Песочница: платёжеспособный по телефону",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{sandboxKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"3 займа\", () => pm.expect(pm.response.json().totalLoans).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 Песочница: телефон + ФИО",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{sandboxKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290000002\",\n  \"lastName\": \"Петров\",\n  \"firstName\": \"Пётр\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"найден\", () => pm.expect(pm.response.json().found).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 Песочница: однофамильцы → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{sandboxKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastName\": \"Тестов\",\n  \"firstName\": \"Тест\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"AMBIGUOUS_SUBJECT\", () => pm.expect(pm.response.json().code).to.eql(\"AMBIGUOUS_SUBJECT\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ошибки",
+      "item": [
+        {
+          "name": "18 Без ключа → 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+375290000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_API_KEY\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_API_KEY\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 Только фамилия → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credit-reports"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastName\": \"Пупкин\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 Админский API без ключа → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Админ: журнал (в конце)",
+      "item": [
+        {
+          "name": "05 Журнал запросов за период",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/providers/{{providerId}}/requests?from=2026-01-01T00:00:00Z&to=2030-01-01T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "providers",
+                "{{providerId}}",
+                "requests"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-01-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2030-01-01T00:00:00Z"
+                }
+              ]
+            },
+            "description": "Запустить в конце: покажет все запросы банка, из них оплачиваемые (409 не оплачивается)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"есть total и billable\", () => { const j = pm.response.json(); pm.expect(j).to.have.property(\"total\"); pm.expect(j).to.have.property(\"billable\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/bureau"
+    },
+    {
+      "key": "adminKey",
+      "value": ""
+    },
+    {
+      "key": "sandboxKey",
+      "value": ""
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    },
+    {
+      "key": "providerId",
+      "value": ""
+    },
+    {
+      "key": "keyId",
+      "value": ""
+    },
+    {
+      "key": "providerVersion",
+      "value": ""
+    },
+    {
+      "key": "firstReportId",
+      "value": ""
+    },
+    {
+      "key": "testPhone",
+      "value": "+375291234567"
+    },
+    {
+      "key": "testLastName",
+      "value": "Пупкин"
+    },
+    {
+      "key": "testFirstName",
+      "value": "Василий"
+    }
+  ]
+}

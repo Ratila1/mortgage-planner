@@ -64,6 +64,7 @@ public interface LoanState {
             case SUBMITTED -> SubmittedState.INSTANCE;
             case APPROVED -> ApprovedState.INSTANCE;
             case ACTIVE -> ActiveState.INSTANCE;
+            case OVERDUE -> OverdueState.INSTANCE;
             case REJECTED -> RejectedState.INSTANCE;
             case CANCELLED -> CancelledState.INSTANCE;
             case EXPIRED -> ExpiredState.INSTANCE;

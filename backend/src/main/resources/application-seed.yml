@@ -1,0 +1,5 @@
+# Профиль seed: тестовые данные из db/seed (50 клиентов, ~750 заявок). Включать только локально:
+# SPRING_PROFILES_ACTIVE=seed (вместе с другими — через запятую, например oauth,seed).
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed

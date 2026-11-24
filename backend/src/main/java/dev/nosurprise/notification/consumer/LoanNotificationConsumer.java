@@ -103,6 +103,16 @@ public class LoanNotificationConsumer {
                 subject = "Заём закрыт";
                 notificationType = "LOAN_REPAID";
             }
+            case "OVERDUE" -> {
+                // День 1 просрочки (CREDIT_POLICY.md §5.1).
+                subject = "Просрочка по займу";
+                notificationType = "LOAN_OVERDUE";
+            }
+            case "OVERDUE_REMINDER" -> {
+                // Напоминания на 3 и 7 день просрочки.
+                subject = "Напоминание: заём просрочен";
+                notificationType = "LOAN_OVERDUE";
+            }
             default -> {
                 log.warn("unknown loan event status {} in event {}", event.status(), event.eventId());
                 return;

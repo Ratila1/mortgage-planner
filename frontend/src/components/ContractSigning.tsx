@@ -20,6 +20,7 @@ function saveBlob(blob: Blob, fileName: string) {
 const AFTER_SIGNING: Partial<Record<MicroloanApplication['status'], string>> = {
   ACTIVE: 'Договор подписан, заём выдан.',
   REPAID: 'Заём погашен.',
+  OVERDUE: 'Договор подписан, срок возврата прошёл — заём просрочен.',
   EXPIRED: 'Срок подписания истёк — договор больше нельзя подписать.',
   CANCELLED: 'Заявка отменена.',
 };
