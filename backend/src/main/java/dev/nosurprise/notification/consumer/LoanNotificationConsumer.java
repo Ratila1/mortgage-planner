@@ -68,6 +68,10 @@ public class LoanNotificationConsumer {
             log.warn("loan application {} not found for event {}", event.applicationId(), event.eventId());
             return;
         }
+        // Заявки, подписанные при подаче, получают одно уведомление после ACTIVE — «одобрена» не нужно.
+        if (LoanApplicationEvent.CONTRACT_READY.equals(event.status()) && view.signedAtSubmit()) {
+            return;
+        }
         String cardUrl = "/loans/" + view.applicationId();
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("applicationId", view.applicationId().toString());
@@ -92,8 +96,17 @@ public class LoanNotificationConsumer {
                 payload.put("reason", view.decisionComment());
             }
             case "ACTIVE" -> {
-                subject = "Договор подписан";
-                notificationType = "LOAN_SIGNED";
+                if (view.signedAtSubmit()) {
+                    subject = "Заём выдан";
+                    notificationType = "LOAN_ISSUED";
+                    if (view.contractDocumentId() != null) {
+                        payload.put("contractUrl", "/api/loans/applications/" + view.applicationId()
+                                + "/documents/" + view.contractDocumentId());
+                    }
+                } else {
+                    subject = "Договор подписан";
+                    notificationType = "LOAN_SIGNED";
+                }
             }
             case "EXPIRED" -> {
                 subject = "Срок подписания договора истёк";
@@ -102,6 +115,16 @@ public class LoanNotificationConsumer {
             case "REPAID" -> {
                 subject = "Заём закрыт";
                 notificationType = "LOAN_REPAID";
+            }
+            case "OVERDUE" -> {
+                // День 1 просрочки (CREDIT_POLICY.md §5.1).
+                subject = "Просрочка по займу";
+                notificationType = "LOAN_OVERDUE";
+            }
+            case "OVERDUE_REMINDER" -> {
+                // Напоминания на 3 и 7 день просрочки.
+                subject = "Напоминание: заём просрочен";
+                notificationType = "LOAN_OVERDUE";
             }
             default -> {
                 log.warn("unknown loan event status {} in event {}", event.status(), event.eventId());

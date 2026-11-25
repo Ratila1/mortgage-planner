@@ -2,12 +2,14 @@ package dev.nosurprise.loan.application;
 
 import dev.nosurprise.common.outbox.OutboxPublisher;
 import dev.nosurprise.customer.CustomerService;
+import dev.nosurprise.customer.PhoneNotVerifiedException;
 import dev.nosurprise.customer.ProfileView;
 import dev.nosurprise.customer.kyc.KycMetadata;
 import dev.nosurprise.customer.kyc.KycService;
 import dev.nosurprise.loan.calc.LoanQuote;
 import dev.nosurprise.loan.contract.LoanDocument;
 import dev.nosurprise.loan.contract.LoanDocumentRepository;
+import dev.nosurprise.loan.scoring.ScoringRequester;
 import dev.nosurprise.loan.type.LoanType;
 import dev.nosurprise.loan.type.LoanTypeInactiveException;
 import dev.nosurprise.loan.type.LoanTypeService;
@@ -32,7 +34,7 @@ import java.util.UUID;
 public class LoanApplicationService {
 
     private static final List<LoanStatus> ACTIVE_STATUSES =
-            List.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE);
+            List.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE, LoanStatus.OVERDUE);
 
     private final LoanApplicationRepository repository;
     private final LoanDocumentRepository documents;
@@ -42,11 +44,13 @@ public class LoanApplicationService {
     private final UserService users;
     private final LoanEventRecorder recorder;
     private final OutboxPublisher outbox;
+    private final ScoringRequester scoring;
     private final Clock clock;
 
     public LoanApplicationService(LoanApplicationRepository repository, LoanDocumentRepository documents,
                                   LoanTypeService loanTypes, CustomerService customers, KycService kyc,
-                                  UserService users, LoanEventRecorder recorder, OutboxPublisher outbox, Clock clock) {
+                                  UserService users, LoanEventRecorder recorder, OutboxPublisher outbox,
+                                  ScoringRequester scoring, Clock clock) {
         this.repository = repository;
         this.documents = documents;
         this.loanTypes = loanTypes;
@@ -55,6 +59,7 @@ public class LoanApplicationService {
         this.users = users;
         this.recorder = recorder;
         this.outbox = outbox;
+        this.scoring = scoring;
         this.clock = clock;
     }
 
@@ -76,10 +81,18 @@ public class LoanApplicationService {
             throw new ActiveApplicationExistsException();
         }
         ProfileView profile = customers.saveProfile(userId, command.profile());
+        // SMS подтверждается в форме до подачи: без него заявка не создаётся. Исключение откатывает
+        // и сохранённый профиль, потому что submit — одна транзакция.
+        if (!profile.phoneVerified()) {
+            throw new PhoneNotVerifiedException();
+        }
         KycMetadata passport = kyc.requireUsablePassport(userId);
 
         Instant now = clock.instant();
-        LoanApplication application = LoanApplication.submit(userId, type.getId(), quote, profile, passport.id(), now);
+        LoanApplication application = LoanApplication.submit(userId, type.getId(), quote, profile, passport.id(),
+                profile.phoneVerified(), now);
+        // Скоринг запрашивается в той же транзакции: заявки без запроса скоринга не бывает (CREDIT_POLICY.md §6.1).
+        scoring.request(application, type, profile);
         try {
             repository.saveAndFlush(application);
         } catch (DataIntegrityViolationException ex) {
@@ -122,7 +135,7 @@ public class LoanApplicationService {
     @Transactional(readOnly = true)
     public Optional<LoanNotificationView> notificationView(UUID applicationId) {
         return repository.findById(applicationId).map(application -> new LoanNotificationView(
-                application.getId(), application.getUserId(), application.getStatus(),
+                application.getId(), application.getUserId(), application.getStatus(), application.isSignedAtSubmit(),
                 application.getDecisionComment(),
                 documents.findByApplicationIdAndType(applicationId, LoanDocument.TYPE_CONTRACT)
                         .map(LoanDocument::getId).orElse(null)));

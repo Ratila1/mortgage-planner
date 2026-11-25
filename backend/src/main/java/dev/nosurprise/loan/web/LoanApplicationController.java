@@ -2,6 +2,7 @@ package dev.nosurprise.loan.web;
 
 import dev.nosurprise.common.Paging;
 import dev.nosurprise.customer.web.dto.CodeRequest;
+import dev.nosurprise.loan.LoanProperties;
 import dev.nosurprise.loan.application.LoanApplication;
 import dev.nosurprise.loan.application.LoanApplicationService;
 import dev.nosurprise.loan.contract.ContractService;
@@ -33,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,13 +50,18 @@ public class LoanApplicationController {
     private final LoanTypeService loanTypes;
     private final SigningService signing;
     private final ContractService contracts;
+    private final LoanProperties properties;
+    private final Clock clock;
 
     public LoanApplicationController(LoanApplicationService applications, LoanTypeService loanTypes,
-                                     SigningService signing, ContractService contracts) {
+                                     SigningService signing, ContractService contracts, LoanProperties properties,
+                                     Clock clock) {
         this.applications = applications;
         this.loanTypes = loanTypes;
         this.signing = signing;
         this.contracts = contracts;
+        this.properties = properties;
+        this.clock = clock;
     }
 
     @PostMapping
@@ -70,7 +78,7 @@ public class LoanApplicationController {
                                            @RequestParam(defaultValue = "20") int size) {
         Page<LoanApplication> result = applications.listOwned(userId(jwt), Paging.page(page), Paging.size(size));
         Map<UUID, LoanType> types = loanTypes.getAll(result.map(LoanApplication::getLoanTypeId).toSet());
-        return PageResponse.of(result, a -> ApplicationResponse.from(a, typeName(types, a), List.of()));
+        return PageResponse.of(result, a -> ApplicationResponse.from(a, typeName(types, a), List.of(), today()));
     }
 
     @GetMapping("/{id}")
@@ -115,7 +123,11 @@ public class LoanApplicationController {
         String typeName = loanTypes.get(application.getLoanTypeId()).getName();
         List<DocumentResponse> documents = applications.documentsOf(application.getId()).stream()
                 .map(DocumentResponse::from).toList();
-        return ApplicationResponse.from(application, typeName, documents);
+        return ApplicationResponse.from(application, typeName, documents, today());
+    }
+
+    private LocalDate today() {
+        return LocalDate.ofInstant(clock.instant(), properties.businessZone());
     }
 
     private static String typeName(Map<UUID, LoanType> types, LoanApplication application) {

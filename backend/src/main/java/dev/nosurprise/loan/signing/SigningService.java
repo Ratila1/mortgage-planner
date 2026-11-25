@@ -3,6 +3,7 @@ package dev.nosurprise.loan.signing;
 import dev.nosurprise.common.otp.CodeInvalidException;
 import dev.nosurprise.common.otp.OtpCooldown;
 import dev.nosurprise.common.outbox.OutboxPublisher;
+import dev.nosurprise.common.outbox.ProcessedEvents;
 import dev.nosurprise.customer.CustomerService;
 import dev.nosurprise.customer.PhoneNotVerifiedException;
 import dev.nosurprise.customer.ProfileView;
@@ -45,6 +46,7 @@ import java.util.UUID;
 @Service
 public class SigningService {
 
+    static final String AUTO_SIGN_CONSUMER = "loan.sign-auto";
     static final String SMS_ID_PREFIX = "sign-sms-id:";
     static final String SMS_SHA_PREFIX = "sign-sms-sha:";
     static final String COOLDOWN_KEY_PREFIX = "sign-otp:cooldown:";
@@ -63,6 +65,7 @@ public class SigningService {
     private final LoanEventRecorder recorder;
     private final LoanIncidentRecorder incidents;
     private final OutboxPublisher outbox;
+    private final ProcessedEvents processed;
     private final TelegramVerificationRepository verifications;
     private final TransactionTemplate tx;
     private final Clock clock;
@@ -72,7 +75,7 @@ public class SigningService {
                           LoanDocumentRepository documents, LoanSignatureRepository signatures,
                           CustomerService customers, UserService users, SmsClient smsClient, OtpCooldown cooldown,
                           LoanEventRecorder recorder, LoanIncidentRecorder incidents, OutboxPublisher outbox,
-                          TelegramVerificationRepository verifications,
+                          ProcessedEvents processed, TelegramVerificationRepository verifications,
                           PlatformTransactionManager transactionManager, Clock clock,
                           StringRedisTemplate redisTemplate) {
         this.applications = applications;
@@ -86,6 +89,7 @@ public class SigningService {
         this.recorder = recorder;
         this.incidents = incidents;
         this.outbox = outbox;
+        this.processed = processed;
         this.verifications = verifications;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
@@ -191,7 +195,7 @@ public class SigningService {
             throw new PhoneNotVerifiedException();
         }
 
-        LoanApplication signed = signApplication(userId, applicationId, contract, profile, ip, userAgent);
+        LoanApplication signed = signApplication(userId, applicationId, contract, profile.phone(), ip, userAgent);
         clearBinding(applicationId);
         return signed;
     }
@@ -228,17 +232,37 @@ public class SigningService {
         // row and sees zero affected rows after the winner commits. It shares the transaction
         // with signApplication(), so a failed signing rolls the claim back.
         if (verifications.claimCompletion(verificationId, clock.instant()) == 0) return;
-        signApplication(userId, applicationId, contract, profile, "telegram", "telegram");
+        signApplication(userId, applicationId, contract, profile.phone(), "telegram", "telegram");
+    }
+
+    /**
+     * Авто-активация заявок, подписанных в форме подачи: договор уже сохранён, SMS повторно не нужна.
+     * Идемпотентна по eventId и статусу; истёкшую оферту догоняет OfferExpiryJob.
+     */
+    @Transactional
+    public void autoSignOnContractReady(LoanApplicationEvent event) {
+        if (!processed.markProcessed(AUTO_SIGN_CONSUMER, event.eventId())) {
+            return;
+        }
+        LoanApplication application = repository.findById(event.applicationId()).orElse(null);
+        if (application == null || !application.isSignedAtSubmit()
+                || application.getStatus() != LoanStatus.APPROVED
+                || application.isOfferExpired(clock.instant())) {
+            return;
+        }
+        LoanDocument contract = contractOf(event.applicationId());
+        signApplication(application.getUserId(), event.applicationId(), contract, application.getApplicant().getPhone(),
+                "auto", "auto");
     }
 
     private LoanApplication signApplication(UUID userId, UUID applicationId, LoanDocument contract,
-                                            ProfileView profile, String ip, String userAgent) {
+                                            String phone, String ip, String userAgent) {
         return tx.execute(status -> {
             Instant now = clock.instant();
             LoanApplication application = repository.findById(applicationId).orElseThrow();
             application.activate(now);
             repository.save(application);
-            signatures.save(new LoanSignature(applicationId, contract.getId(), contract.getSha256(), profile.phone(), ip,
+            signatures.save(new LoanSignature(applicationId, contract.getId(), contract.getSha256(), phone, ip,
                     userAgent, now));
             recorder.statusChanged(applicationId, LoanStatus.APPROVED, LoanStatus.ACTIVE, userId);
             outbox.publish(LoanRoutingKeys.SIGNED, LoanRoutingKeys.AGGREGATE, applicationId,
@@ -254,6 +278,10 @@ public class SigningService {
 
     private LoanApplication signable(UUID userId, UUID applicationId) {
         LoanApplication application = applications.getOwned(userId, applicationId);
+        // Такие заявки подписаны ещё при подаче: ручной код не нужен и не должен менять номер в подписи.
+        if (application.isSignedAtSubmit()) {
+            throw new InvalidStatusTransitionException(application.getStatus(), LoanStatus.ACTIVE);
+        }
         if (application.getStatus() != LoanStatus.APPROVED) {
             throw new InvalidStatusTransitionException(application.getStatus(), LoanStatus.ACTIVE);
         }

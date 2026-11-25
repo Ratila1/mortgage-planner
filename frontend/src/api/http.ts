@@ -4,7 +4,7 @@ import type {
   ScenarioSummary, StressRow,
   MicroloanType, MicroloanTypeInput, MicroloanApplication, AdminMicroloanApplication,
   AdminMicroloanApplicationCard, AdminLoanDocument, AdminCreditHistory, AdminCreditHistoryLoan,
-  MicroloanApplicationStatus, MicroloanCalculationResult, AdminUser, Id, Money,
+  MicroloanApplicationStatus, MicroloanCalculationResult, MicroloanScoring, ScoringDetail, AdminUser, Id, Money,
   CustomerProfile, CustomerProfileInput, PassportStatus, LoginProvider, Role,
 } from './types';
 
@@ -186,6 +186,7 @@ function mapLoanType(raw: Raw): MicroloanType {
     maxTermDays: Number(raw.maxTermDays),
     dailyRatePct: str(raw.dailyRate),
     modifier: str(raw.modifier),
+    purposeScore: raw.purposeScore == null ? undefined : String(raw.purposeScore),
     active: Boolean(raw.active),
     version: Number(raw.version ?? 0),
   };
@@ -201,6 +202,8 @@ function loanTypeBody(input: MicroloanTypeInput, version?: number) {
     maxTermDays: input.maxTermDays,
     dailyRate: input.dailyRatePct,
     modifier: input.modifier,
+    // не передан — бэк при создании ставит 0.50, при изменении оставляет как было
+    purposeScore: input.purposeScore || undefined,
     active: input.active,
     version,
   };
@@ -219,10 +222,26 @@ function mapApplication(raw: Raw): MicroloanApplication {
     monthlyIncome: str(raw.monthlyIncome),
     debtLoadPercent: str(raw.debtLoadPercent),
     status: raw.status as MicroloanApplicationStatus,
+    signedAtSubmit: Boolean(raw.signedAtSubmit),
     rejectionReason: raw.rejectionReason ? String(raw.rejectionReason) : null,
     offerExpiresAt: raw.offerExpiresAt ? String(raw.offerExpiresAt) : null,
     createdAt: String(raw.createdAt),
+    dueDate: raw.dueDate ? String(raw.dueDate) : null,
+    overdueDays: raw.overdueDays == null ? null : Number(raw.overdueDays),
     documents: Array.isArray(raw.documents) ? (raw.documents as Raw[]).map(mapLoanDocument) : [],
+  };
+}
+
+function mapScoring(raw: unknown): MicroloanScoring | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Raw;
+  return {
+    status: s.status as MicroloanScoring['status'],
+    score: s.score == null ? null : String(s.score),
+    points: s.points == null ? null : Number(s.points),
+    ratingClass: s.ratingClass ? String(s.ratingClass) : null,
+    pdPercent: s.pdPercent == null ? null : String(s.pdPercent),
+    decision: (s.decision as MicroloanScoring['decision']) ?? null,
   };
 }
 
@@ -237,7 +256,10 @@ function mapAdminApplication(raw: Raw): AdminMicroloanApplication {
     debtLoadPercent: str(raw.debtLoadPercent),
     debtLoadWarning: Boolean(raw.debtLoadWarning),
     status: raw.status as MicroloanApplicationStatus,
+    signedAtSubmit: Boolean(raw.signedAtSubmit),
     createdAt: String(raw.createdAt),
+    scoring: mapScoring(raw.scoring),
+    overdueDays: raw.overdueDays == null ? null : Number(raw.overdueDays),
   };
 }
 
@@ -296,6 +318,7 @@ function mapAdminApplicationCard(raw: Raw): AdminMicroloanApplicationCard {
     id: String(raw.id),
     userId: String(raw.userId),
     status: raw.status as MicroloanApplicationStatus,
+    signedAtSubmit: Boolean(raw.signedAtSubmit),
     version: Number(raw.version ?? 0),
     createdAt: String(raw.createdAt),
     loanTypeId: String(raw.loanTypeId),
@@ -318,6 +341,10 @@ function mapAdminApplicationCard(raw: Raw): AdminMicroloanApplicationCard {
     decisionComment: raw.decisionComment ? String(raw.decisionComment) : null,
     offerExpiresAt: raw.offerExpiresAt ? String(raw.offerExpiresAt) : null,
     closedAt: raw.closedAt ? String(raw.closedAt) : null,
+    dueDate: raw.dueDate ? String(raw.dueDate) : null,
+    paidAt: raw.paidAt ? String(raw.paidAt) : null,
+    overdueDays: raw.overdueDays == null ? null : Number(raw.overdueDays),
+    scoring: mapScoring(raw.scoring),
     passportUrl: String(raw.passportUrl ?? ''),
     documents: Array.isArray(raw.documents) ? (raw.documents as Raw[]).map(mapLoanDocument) : [],
     creditHistory: mapCreditHistory((raw.creditHistory ?? {}) as Raw),
@@ -331,6 +358,10 @@ function mapProfile(raw: Raw): CustomerProfile {
     middleName: str(raw.middleName, ''),
     phone: str(raw.phone, ''),
     monthlyIncome: str(raw.monthlyIncome),
+    birthDate: str(raw.birthDate, ''),
+    sex: raw.sex === 'MALE' || raw.sex === 'FEMALE' ? raw.sex : '',
+    country: str(raw.country, ''),
+    city: str(raw.city, ''),
     phoneVerified: Boolean(raw.phoneVerified),
   };
 }
@@ -343,6 +374,10 @@ function profileBody(p: CustomerProfileInput) {
     middleName: p.middleName.trim() || null,
     phone: p.phone.trim(),
     monthlyIncome: p.monthlyIncome,
+    birthDate: p.birthDate || null,
+    sex: p.sex || null,
+    country: p.country.trim().toUpperCase() || null,
+    city: p.city.trim() || null,
   };
 }
 
@@ -478,14 +513,19 @@ export const httpApi: Api = {
   confirmPhoneVerification: (code) =>
     request<void>('POST', '/api/me/phone/verification/confirm', { code }),
 
-  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string) {
+  async adminListMicroloanApplications(status?: MicroloanApplicationStatus | 'ALL' | null, query?: string, pageParam = 0, sizeParam = 20) {
     const params = new URLSearchParams();
     if (status && status !== 'ALL') params.set('status', status);
     if (query && query.trim()) params.set('query', query.trim());
-    params.set('page', '0');
-    params.set('size', '100');
+    params.set('page', String(pageParam));
+    params.set('size', String(sizeParam));
     const page = await request<Raw>('GET', `/api/admin/loan-applications?${params.toString()}`);
-    return ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication);
+    return {
+      items: ((page.items as Raw[] | undefined) ?? []).map(mapAdminApplication),
+      total: Number(page.total ?? 0),
+      page: Number(page.page ?? pageParam),
+      size: Number(page.size ?? sizeParam),
+    };
   },
   adminGetMicroloanApplication: async (id) =>
     mapAdminApplicationCard(await request<Raw>('GET', `/api/admin/loan-applications/${id}`)),
@@ -494,27 +534,44 @@ export const httpApi: Api = {
   adminApproveMicroloanApplication: (id) => adminDecision(id, 'approve'),
   adminRejectMicroloanApplication: (id, reason) => adminDecision(id, 'reject', { reason }),
   adminMarkMicroloanRepaid: (id) => adminDecision(id, 'repaid'),
+  async adminRequestScoring(id) {
+    await request<Raw>('POST', `/api/admin/loan-applications/${id}/scoring`);
+  },
+  // credit-policy за тем же nginx и принимает тот же access-токен (CREDIT_POLICY.md §7).
+  async adminGetScoringDetail(applicationId) {
+    try {
+      return await request<ScoringDetail>('GET', `/credit-policy/api/admin/scorings/${applicationId}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
 
-  async adminListUsers(query?: string) {
+  async adminListUsers(query?: string, pageParam = 0, sizeParam = 20) {
     const params = new URLSearchParams();
     if (query && query.trim()) params.set('query', query.trim());
-    params.set('page', '0');
-    params.set('size', '100');
+    params.set('page', String(pageParam));
+    params.set('size', String(sizeParam));
     const page = await request<Raw>('GET', `/api/admin/users?${params.toString()}`);
-    return ((page.items as Raw[] | undefined) ?? []).map(
-      (u): AdminUser => ({
-        id: String(u.id),
-        email: String(u.email),
-        fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || null,
-        salary: u.monthlyIncome ? String(u.monthlyIncome) : null,
-        provider: String(u.provider) as LoginProvider,
-        createdAt: String(u.createdAt),
-        phone: u.phone ? String(u.phone) : null,
-        roles: (Array.isArray(u.roles) ? u.roles : []) as Role[],
-        emailVerified: Boolean(u.emailVerified),
-        blocked: Boolean(u.blocked),
-      }),
-    );
+    return {
+      items: ((page.items as Raw[] | undefined) ?? []).map(
+        (u): AdminUser => ({
+          id: String(u.id),
+          email: String(u.email),
+          fullName: [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || null,
+          salary: u.monthlyIncome ? String(u.monthlyIncome) : null,
+          provider: String(u.provider) as LoginProvider,
+          createdAt: String(u.createdAt),
+          phone: u.phone ? String(u.phone) : null,
+          roles: (Array.isArray(u.roles) ? u.roles : []) as Role[],
+          emailVerified: Boolean(u.emailVerified),
+          blocked: Boolean(u.blocked),
+        }),
+      ),
+      total: Number(page.total ?? 0),
+      page: Number(page.page ?? pageParam),
+      size: Number(page.size ?? sizeParam),
+    };
   },
 
   adminBlockUser: (id) => request<void>('POST', `/api/admin/users/${id}/block`),

@@ -6,12 +6,58 @@ import {
   type AdminMicroloanApplication,
   type AdminMicroloanApplicationCard,
   type MicroloanApplicationStatus,
+  type MicroloanScoring,
+  type ScoringDetail,
 } from '../api';
-import { Alert, Badge, Button, Card, EmptyState, PageTitle, Select, Skeleton, Spinner, TextInput } from '../components/ui';
-import { formatDateTime, formatMoney } from '../lib/format';
+import { Alert, Badge, Button, Card, EmptyState, Field, FilterPanel, PageTitle, Pagination, Select, Skeleton, Spinner, TextInput } from '../components/ui';
+import { formatDate, formatDateTime, formatMoney } from '../lib/format';
 import { MICROLOAN_STATUS_LABELS, MICROLOAN_STATUS_TONES } from './MicroloanApplicationsPage';
 
-const STATUSES: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REPAID'];
+const STATUSES: MicroloanApplicationStatus[] = [
+  'SUBMITTED', 'APPROVED', 'ACTIVE', 'OVERDUE', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REPAID',
+];
+
+/** С этого дня просрочки админ видит подсказку «кандидат в ЧС» (CREDIT_POLICY.md §5.3). */
+const BLACKLIST_HINT_DAYS = 30;
+
+const DECISION_LABELS: Record<NonNullable<MicroloanScoring['decision']>, string> = {
+  RECOMMEND: 'рекомендовано',
+  REVIEW: 'высокий риск',
+  AUTO_REJECT: 'автоотказ',
+};
+
+const FACTOR_LABELS: Record<string, string> = {
+  HISTORY: 'История',
+  PURPOSE: 'Цель (тип займа)',
+  AGE: 'Возраст',
+  CITY: 'Город',
+  SEX: 'Пол',
+};
+
+const REASON_LABELS: Record<string, string> = {
+  AGE_OUT_OF_RANGE: 'возраст вне 18–90',
+  BLACKLISTED: 'чёрный список',
+  CURRENT_OVERDUE: 'текущая просрочка',
+  MISSING_PROFILE_DATA: 'в профиле не хватает данных',
+  PURPOSE_SCORE_MISSING: 'у типа займа нет балла цели',
+};
+
+/** Одобрять можно только посчитанную заявку: иначе бэк ответит 409 SCORING_REQUIRED. */
+const isScored = (scoring?: MicroloanScoring | null) =>
+  scoring?.status === 'COMPLETED' || scoring?.status === 'NOT_CALCULATED';
+
+function ScoringBadge({ scoring }: { scoring?: MicroloanScoring | null }) {
+  if (!scoring) return <span className="text-xs text-ink-3">нет</span>;
+  if (scoring.status === 'PENDING') return <Badge tone="neutral">считается…</Badge>;
+  if (scoring.status === 'NOT_CALCULATED') return <Badge tone="gold">не рассчитан</Badge>;
+  const tone = scoring.decision === 'RECOMMEND' ? 'money' : scoring.decision === 'REVIEW' ? 'gold' : 'stamp';
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Badge tone={tone}>{scoring.ratingClass}</Badge>
+      {scoring.pdPercent && <span className="text-xs text-ink-3">PD {scoring.pdPercent}%</span>}
+    </div>
+  );
+}
 
 /** Названия документов (LoanDocument.type). */
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -21,21 +67,26 @@ const DOCUMENT_LABELS: Record<string, string> = {
 
 /**
  * Заявки на микрозаймы (MICROLOANS.md §4.6). Бэк отдаёт список по одному статусу, поэтому здесь фильтр,
- * а не общий список. Действия — только разрешённые переходы: SUBMITTED → одобрить/отклонить с причиной,
- * ACTIVE → «Погашен». Остальные переходы (подпись, истечение) делает клиент или планировщик.
+ * а не общий список. Действия — только разрешённые переходы: SUBMITTED → одобрить (после скоринга)/отклонить
+ * с причиной, ACTIVE и OVERDUE → «Погашен». Остальные переходы (подпись, истечение, просрочка) делает клиент
+ * или планировщик. Скоринг — CREDIT_POLICY.md: класс, PD и решение credit-policy.
  * Клик «Подробнее» раскрывает карточку: ФИО/телефон, фото паспорта, документы и кредитная история (§3.4).
  */
 export function AdminMicroloanApplicationsPage() {
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
   const [status, setStatus] = useState<'ALL' | MicroloanApplicationStatus>('SUBMITTED');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'name'>('date_desc');
-  const [applications, setApplications] = useState<AdminMicroloanApplication[] | null>(null);
+  const [result, setResult] = useState<{ items: AdminMicroloanApplication[]; total: number; page: number; size: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rejecting, setRejecting] = useState<{ id: string; reason: string } | null>(null);
+  // Черновики отказа хранятся по id заявки: набранная причина не зависит от того,
+  // какую строку раскрыли сейчас, и не теряется при переключении между строками.
+  const [rejectDrafts, setRejectDrafts] = useState<Record<string, string>>({});
   const [openId, setOpenId] = useState<string | null>(null);
 
   // «Обновить» перечитывает только список заявок — страница и вкладка админки остаются на месте.
@@ -47,20 +98,32 @@ export function AdminMicroloanApplicationsPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setApplications(await api.adminListMicroloanApplications(status === 'ALL' ? null : status, debouncedSearch));
+      const res = await api.adminListMicroloanApplications(status === 'ALL' ? null : status, debouncedSearch, page, PAGE_SIZE);
+      setResult(res);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [status, debouncedSearch]);
+  }, [status, debouncedSearch, page]);
+
+  // Смена поиска — начинаем с первой страницы.
+  useEffect(() => { setPage(0); }, [debouncedSearch]);
 
   useEffect(() => {
-    setApplications(null);
+    setResult(null);
+    // Смена фильтра/страницы обновляет список: старые раскрытия и черновики уже не нужны.
     setOpenId(null);
+    setRejectDrafts({});
     reload();
   }, [reload]);
+
+  const clearDraft = (id: string) => setRejectDrafts((prev) => {
+    const next = { ...prev };
+    delete next[id];
+    return next;
+  });
 
   const act = async (app: AdminMicroloanApplication, action: () => Promise<void>, message: string) => {
     setBusyId(app.id);
@@ -68,7 +131,7 @@ export function AdminMicroloanApplicationsPage() {
     try {
       await action();
       setNotice(`${app.fullName}: ${message}.`);
-      setRejecting(null);
+      clearDraft(app.id);
       await reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -78,8 +141,8 @@ export function AdminMicroloanApplicationsPage() {
   };
 
   const sortedApplications = useMemo(() => {
-    if (!applications) return null;
-    const list = [...applications];
+    if (!result) return null;
+    const list = [...result.items];
     switch (sort) {
       case 'date_asc': list.sort((a, b) => a.createdAt.localeCompare(b.createdAt)); break;
       case 'amount_desc': list.sort((a, b) => Number(b.amount) - Number(a.amount)); break;
@@ -88,46 +151,52 @@ export function AdminMicroloanApplicationsPage() {
       default: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); break;
     }
     return list;
-  }, [applications, sort]);
+  }, [result, sort]);
 
   return (
     <div>
-      <PageTitle eyebrow="Админка" title="Заявки на микрозаймы">
-        <div className="flex flex-wrap items-end gap-2">
-          <Select
-            value={status}
-            options={[{ value: 'ALL', label: 'Все статусы' }, ...STATUSES.map((s) => ({ value: s, label: MICROLOAN_STATUS_LABELS[s] }))]}
-            onChange={(v) => setStatus(v as 'ALL' | MicroloanApplicationStatus)}
-            className="w-44"
-          />
+      <PageTitle eyebrow="Админка" title="Заявки на микрозаймы" />
+      <FilterPanel columns={4}>
+        <Field label="Поиск" htmlFor="admin-ml-search">
           <TextInput
+            id="admin-ml-search"
             placeholder="Поиск по ФИО, телефону, типу..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64"
           />
-          <Select
-            value={sort}
-            options={[
-              { value: 'date_desc', label: 'Дата (новые)' },
-              { value: 'date_asc', label: 'Дата (старые)' },
-              { value: 'amount_desc', label: 'Сумма (убыв.)' },
-              { value: 'amount_asc', label: 'Сумма (возр.)' },
-              { value: 'name', label: 'Имя' },
-            ]}
-            onChange={(v) => setSort(v as typeof sort)}
-            className="w-40"
-          />
-          <Button variant="secondary" size="sm" onClick={reload} loading={loading} disabled={loading}>
+        </Field>
+        <Select
+          label="Статус"
+          value={status}
+          options={[{ value: 'ALL', label: 'Все статусы' }, ...STATUSES.map((s) => ({ value: s, label: MICROLOAN_STATUS_LABELS[s] }))]}
+          onChange={(v) => {
+            setStatus(v as 'ALL' | MicroloanApplicationStatus);
+            setPage(0);
+          }}
+        />
+        <Select
+          label="Сортировка"
+          value={sort}
+          options={[
+            { value: 'date_desc', label: 'Дата (новые)' },
+            { value: 'date_asc', label: 'Дата (старые)' },
+            { value: 'amount_desc', label: 'Сумма (убыв.)' },
+            { value: 'amount_asc', label: 'Сумма (возр.)' },
+            { value: 'name', label: 'Имя' },
+          ]}
+          onChange={(v) => setSort(v as typeof sort)}
+        />
+        <div className="flex items-end">
+          <Button variant="secondary" className="h-11 w-full" onClick={reload} loading={loading} disabled={loading}>
             Обновить
           </Button>
         </div>
-      </PageTitle>
+      </FilterPanel>
 
       {notice && <div className="mb-4"><Alert tone="money">{notice}</Alert></div>}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
-      {applications === null ? (
+      {result === null ? (
         <div className="space-y-3" aria-hidden="true">
           <Skeleton className="h-12" />
           <Skeleton className="h-64" />
@@ -138,39 +207,45 @@ export function AdminMicroloanApplicationsPage() {
         </Card>
       ) : (
         <Card>
+          {/* Страховка от вылезания колонок: широкий экран — влезаем, узкий — горизонтальный скролл. */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-                <tr>
-                  <th className="p-4 font-semibold">Клиент</th>
-                  <th className="p-4 font-semibold">Тип займа</th>
-                  <th className="p-4 text-right font-semibold">Сумма</th>
-                  <th className="p-4 text-right font-semibold">Срок</th>
-                  <th className="p-4 text-right font-semibold">Зарплата</th>
-                  <th className="p-4 text-right font-semibold">ПДН</th>
-                  <th className="p-4 font-semibold">Статус</th>
-                  <th className="p-4 font-semibold">Создана</th>
-                  <th className="p-4" />
-                </tr>
-              </thead>
-              <tbody>
-                {sortedApplications?.map((app) => (
-                  <FragmentRow
-                    key={app.id}
-                    app={app}
-                    open={openId === app.id}
-                    busyId={busyId}
-                    rejecting={rejecting}
-                    setRejecting={setRejecting}
-                    onToggle={() => setOpenId(openId === app.id ? null : app.id)}
-                    onAction={(action, message) => act(app, action, message)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <table className="w-full text-sm">
+            <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
+              <tr>
+                <th className="p-3 font-semibold">Клиент</th>
+                <th className="p-3 font-semibold">Займ</th>
+                <th className="p-3 text-right font-semibold">Доход / ПДН</th>
+                <th className="p-3 font-semibold">Скоринг</th>
+                <th className="p-3 font-semibold">Статус</th>
+                <th className="p-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedApplications?.map((app) => (
+                <FragmentRow
+                  key={app.id}
+                  app={app}
+                  open={openId === app.id}
+                  busyId={busyId}
+                  draft={rejectDrafts[app.id] ?? null}
+                  onToggle={() => setOpenId(openId === app.id ? null : app.id)}
+                  onStartReject={() => {
+                    setRejectDrafts((prev) => ({ ...prev, [app.id]: '' }));
+                    setOpenId(app.id);
+                  }}
+                  onDraftChange={(reason) => setRejectDrafts((prev) => ({ ...prev, [app.id]: reason }))}
+                  onCancelReject={() => clearDraft(app.id)}
+                  onReject={(reason) => act(app, () => api.adminRejectMicroloanApplication(app.id, reason.trim()), 'заявка отклонена')}
+                  onAction={(action, message) => act(app, action, message)}
+                />
+              ))}
+            </tbody>
+          </table>
           </div>
         </Card>
       )}
+
+      <Pagination page={page} total={result?.total ?? 0} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
@@ -180,54 +255,92 @@ function FragmentRow({
   app,
   open,
   busyId,
-  rejecting,
-  setRejecting,
+  draft,
   onToggle,
+  onStartReject,
+  onDraftChange,
+  onCancelReject,
+  onReject,
   onAction,
 }: {
   app: AdminMicroloanApplication;
   open: boolean;
   busyId: string | null;
-  rejecting: { id: string; reason: string } | null;
-  setRejecting: (value: { id: string; reason: string } | null) => void;
+  draft: string | null;
   onToggle: () => void;
+  onStartReject: () => void;
+  onDraftChange: (reason: string) => void;
+  onCancelReject: () => void;
+  onReject: (reason: string) => void;
   onAction: (action: () => Promise<void>, message: string) => void;
 }) {
   return (
     <>
       <tr className="border-t border-line/60 align-top last:border-0">
-        <td className="p-4 font-semibold">{app.fullName}</td>
-        <td className="p-4">{app.typeName}</td>
-        <td className="num p-4 text-right">{formatMoney(app.amount)}</td>
-        <td className="p-4 text-right">{app.termDays} дн.</td>
-        <td className="num p-4 text-right">{formatMoney(app.monthlyIncome)}</td>
-        <td className={`num p-4 text-right ${app.debtLoadWarning ? 'font-bold text-stamp' : ''}`}>
-          {app.debtLoadPercent}%
+        {/* Узкие отступы и truncate: минимальная ширина таблицы меньше карточки,
+            поэтому десктопный скролл не появляется. */}
+        <td className="p-3">
+          <span className="block max-w-36 truncate font-semibold" title={app.fullName}>{app.fullName}</span>
+          <span className="mt-1 block text-xs text-ink-3">{formatDateTime(app.createdAt)}</span>
         </td>
-        <td className="p-4">
+        <td className="p-3">
+          <span className="block max-w-32 truncate" title={app.typeName}>{app.typeName}</span>
+          <span className="num mt-1 block text-xs text-ink-3">
+            {formatMoney(app.amount)} · {app.termDays} дн.
+          </span>
+        </td>
+        <td className="p-3 text-right">
+          <span className="num block whitespace-nowrap">{formatMoney(app.monthlyIncome)}</span>
+          <span className={`num mt-1 block whitespace-nowrap text-xs ${app.debtLoadWarning ? 'font-bold text-stamp' : 'text-ink-3'}`}>
+            ПДН {app.debtLoadPercent}%
+          </span>
+        </td>
+        <td className="p-3">
+          <ScoringBadge scoring={app.scoring} />
+        </td>
+        <td className="p-3">
           <Badge tone={MICROLOAN_STATUS_TONES[app.status]}>{MICROLOAN_STATUS_LABELS[app.status]}</Badge>
+          {app.status === 'OVERDUE' && (
+            <p className="mt-1 text-xs font-semibold text-stamp">
+              {app.overdueDays ?? 0} дн.
+              {(app.overdueDays ?? 0) >= BLACKLIST_HINT_DAYS && ' · кандидат в ЧС'}
+            </p>
+          )}
         </td>
-        <td className="whitespace-nowrap p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
-        <td className="p-4 text-right">
-          <div className="flex justify-end gap-2">
+        <td className="p-3 text-right">
+          {/* Кнопки переносятся, а не расширяют ячейку; форма отказа живёт в раскрытии ниже — cell не раздувается.
+              Блок кнопок прятан, пока набирается причина отказа: одобрение и отказ взаимоисключающие. */}
+          <div className="flex flex-wrap justify-end gap-2">
             <Button size="sm" variant={open ? 'secondary' : 'ghost'} onClick={onToggle}>
               {open ? 'Скрыть' : 'Подробнее'}
             </Button>
-            {app.status === 'SUBMITTED' && rejecting?.id !== app.id && (
+            {app.status === 'SUBMITTED' && draft === null && (
               <>
                 <Button
                   size="sm"
                   loading={busyId === app.id}
+                  disabled={!isScored(app.scoring)}
+                  title={isScored(app.scoring) ? undefined : 'Одобрить можно после результата скоринга'}
                   onClick={() => onAction(() => api.adminApproveMicroloanApplication(app.id), 'заявка одобрена')}
                 >
                   Одобрить
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setRejecting({ id: app.id, reason: '' })}>
+                {!isScored(app.scoring) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={busyId === app.id}
+                    onClick={() => onAction(() => api.adminRequestScoring(app.id), 'скоринг запрошен')}
+                  >
+                    Запросить скоринг
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={onStartReject}>
                   Отклонить
                 </Button>
               </>
             )}
-            {app.status === 'ACTIVE' && (
+            {(app.status === 'ACTIVE' || app.status === 'OVERDUE') && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -238,36 +351,42 @@ function FragmentRow({
               </Button>
             )}
           </div>
-          {app.status === 'SUBMITTED' && rejecting?.id === app.id && (
-            <div className="mt-2 flex min-w-72 flex-col gap-2">
-              <TextInput
-                autoFocus
-                placeholder="Причина отказа (увидит клиент)"
-                value={rejecting.reason}
-                maxLength={1000}
-                onChange={(e) => setRejecting({ id: app.id, reason: e.target.value })}
-              />
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setRejecting(null)}>Отмена</Button>
-                <Button
-                  size="sm"
-                  loading={busyId === app.id}
-                  disabled={!rejecting.reason.trim()}
-                  onClick={() =>
-                    onAction(() => api.adminRejectMicroloanApplication(app.id, rejecting.reason.trim()), 'заявка отклонена')
-                  }
-                >
-                  Отклонить
-                </Button>
-              </div>
-            </div>
-          )}
         </td>
       </tr>
-      {open && (
+      {/* Форма отказа видна, пока есть черновик, даже если карточка заявки закрыта:
+          иначе набранная причина пропадала, а кнопки строки оставались скрытыми. */}
+      {(open || draft !== null) && (
         <tr className="border-t border-line/40 bg-paper-2/40">
-          <td colSpan={9} className="p-4">
-            <ApplicationDetail id={app.id} />
+          {/* Ширина раскрытия = числу колонок основной таблицы (6), иначе браузер
+              резервирует стихийные колонки и таблица вылезает вправо. */}
+          <td colSpan={6} className="p-4">
+            {draft !== null && (
+              <div className="mb-4 max-w-xl space-y-2 rounded-xl border border-line bg-field p-4">
+                <label className="block text-sm font-medium text-ink-2" htmlFor={`reject-reason-${app.id}`}>
+                  Причина отказа <span className="font-normal text-ink-3">(увидит клиент)</span>
+                </label>
+                <TextInput
+                  id={`reject-reason-${app.id}`}
+                  autoFocus
+                  placeholder="Например: неполный пакет документов"
+                  value={draft}
+                  maxLength={1000}
+                  onChange={(e) => onDraftChange(e.target.value)}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={onCancelReject}>Отмена</Button>
+                  <Button
+                    size="sm"
+                    loading={busyId === app.id}
+                    disabled={!draft.trim()}
+                    onClick={() => onReject(draft)}
+                  >
+                    Отклонить
+                  </Button>
+                </div>
+              </div>
+            )}
+            {open && <ApplicationDetail id={app.id} />}
           </td>
         </tr>
       )}
@@ -374,6 +493,9 @@ function ApplicationDetail({ id }: { id: string }) {
           <DetailRow label="Проценты" value={formatMoney(card.interest)} />
           <DetailRow label="Модификатор" value={formatMoney(card.modifier)} />
           <DetailRow label="К возврату" value={formatMoney(card.total)} />
+          <DetailRow label="Вернуть до" value={card.dueDate ? formatDate(card.dueDate) : '—'} />
+          {card.paidAt && <DetailRow label="Оплачен" value={formatDate(card.paidAt)} />}
+          {(card.overdueDays ?? 0) > 0 && <DetailRow label="Просрочка" value={`${card.overdueDays} дн.`} />}
         </DetailSection>
 
         <DetailSection title="Решение">
@@ -384,12 +506,16 @@ function ApplicationDetail({ id }: { id: string }) {
           <DetailRow label="Решение принято" value={card.decidedAt ? formatDateTime(card.decidedAt) : '—'} />
           <DetailRow label="Кто решил" value={card.decidedBy ?? '—'} />
           <DetailRow label="Комментарий" value={card.decisionComment || '—'} />
-          <DetailRow
-            label="Подписать до"
-            value={card.offerExpiresAt ? formatDateTime(card.offerExpiresAt) : '—'}
-          />
+          {!card.signedAtSubmit && (
+            <DetailRow
+              label="Подписать до"
+              value={card.offerExpiresAt ? formatDateTime(card.offerExpiresAt) : '—'}
+            />
+          )}
         </DetailSection>
       </div>
+
+      <ScoringSection applicationId={card.id} scoring={card.scoring} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailSection title="Фото паспорта (KYC)">
@@ -405,7 +531,7 @@ function ApplicationDetail({ id }: { id: string }) {
           )}
           {photo && (
             <div className="space-y-2">
-              <img src={photo} alt="Фото паспорта клиента" className="max-h-96 w-auto rounded-lg border border-line" />
+              <img src={photo} alt="Фото паспорта клиента" className="max-h-96 w-auto max-w-full rounded-lg border border-line" />
               <Button size="sm" variant="ghost" onClick={() => { URL.revokeObjectURL(photo); setPhoto(null); }}>
                 Скрыть фото
               </Button>
@@ -484,37 +610,117 @@ function CreditHistoryBlock({ history }: { history: AdminCreditHistory }) {
         </DetailSection>
       </div>
 
+      {/* Внутри раскрытия таблица тоже скроллится, а не вылезает за карточку. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
-            <tr>
-              <th className="p-3 font-semibold">Тип займа</th>
-              <th className="p-3 text-right font-semibold">Сумма</th>
-              <th className="p-3 text-right font-semibold">Срок</th>
-              <th className="p-3 font-semibold">Статус</th>
-              <th className="p-3 text-right font-semibold">ПДН</th>
-              <th className="p-3 font-semibold">Подана</th>
-              <th className="p-3 font-semibold">Решение</th>
+      <table className="w-full text-sm">
+        <thead className="bg-paper-2/70 text-left text-xs uppercase tracking-wider text-ink-3">
+          <tr>
+            <th className="p-3 font-semibold">Тип займа</th>
+            <th className="p-3 text-right font-semibold">Сумма · Срок</th>
+            <th className="p-3 font-semibold">Статус</th>
+            <th className="p-3 text-right font-semibold">ПДН</th>
+            <th className="p-3 font-semibold">Подана · Решена</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loans.map((loan) => (
+            <tr key={loan.applicationId} className="border-t border-line/60 align-top last:border-0">
+              <td className="p-3 font-semibold">{loan.loanTypeName}</td>
+              <td className="num p-3 text-right">{formatMoney(loan.amount)} · {loan.termDays} дн.</td>
+              <td className="p-3">
+                <Badge tone={MICROLOAN_STATUS_TONES[loan.status]}>{MICROLOAN_STATUS_LABELS[loan.status]}</Badge>
+                {loan.decisionComment && <p className="mt-1 max-w-xs text-xs text-ink-3">{loan.decisionComment}</p>}
+              </td>
+              <td className="num p-3 text-right">{loan.debtLoadPercent ? `${loan.debtLoadPercent}%` : '—'}</td>
+              <td className="p-3 text-ink-3">
+                <span className="block">{loan.submittedAt ? formatDateTime(loan.submittedAt) : '—'}</span>
+                <span className="block text-xs">{loan.decidedAt ? formatDateTime(loan.decidedAt) : '—'}</span>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {loans.map((loan) => (
-              <tr key={loan.applicationId} className="border-t border-line/60 align-top last:border-0">
-                <td className="p-3 font-semibold">{loan.loanTypeName}</td>
-                <td className="num p-3 text-right">{formatMoney(loan.amount)}</td>
-                <td className="p-3 text-right">{loan.termDays} дн.</td>
-                <td className="p-3">
-                  <Badge tone={MICROLOAN_STATUS_TONES[loan.status]}>{MICROLOAN_STATUS_LABELS[loan.status]}</Badge>
-                  {loan.decisionComment && <p className="mt-1 max-w-xs text-xs text-ink-3">{loan.decisionComment}</p>}
-                </td>
-                <td className="num p-3 text-right">{loan.debtLoadPercent ? `${loan.debtLoadPercent}%` : '—'}</td>
-                <td className="whitespace-nowrap p-3 text-ink-3">{loan.submittedAt ? formatDateTime(loan.submittedAt) : '—'}</td>
-                <td className="whitespace-nowrap p-3 text-ink-3">{loan.decidedAt ? formatDateTime(loan.decidedAt) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          ))}
+        </tbody>
+      </table>
       </div>
     </div>
+  );
+}
+
+/** Скоринг заявки: итог из монолита + расшифровка по факторам из credit-policy (CREDIT_POLICY.md §6.4). */
+function ScoringSection({ applicationId, scoring }: { applicationId: string; scoring?: MicroloanScoring | null }) {
+  const [detail, setDetail] = useState<ScoringDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setDetail(null);
+    setError(null);
+    if (!isScored(scoring)) return;
+    api
+      .adminGetScoringDetail(applicationId)
+      .then((d) => alive && setDetail(d))
+      .catch((err) => alive && setError(errorMessage(err)));
+    return () => {
+      alive = false;
+    };
+  }, [applicationId, scoring?.status]);
+
+  if (!scoring) {
+    return (
+      <DetailSection title="Скоринг">
+        <p className="text-sm text-ink-2">Заявка подана до появления скоринга — нажмите «Запросить скоринг».</p>
+      </DetailSection>
+    );
+  }
+  if (scoring.status === 'PENDING') {
+    return (
+      <DetailSection title="Скоринг">
+        <p className="text-sm text-ink-2">Считается… Если результат не пришёл за минуту — «Запросить скоринг».</p>
+      </DetailSection>
+    );
+  }
+  return (
+    <DetailSection title="Скоринг">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div>
+          <DetailRow label="Класс" value={<ScoringBadge scoring={scoring} />} />
+          <DetailRow label="Скорбалл" value={scoring.points == null ? '—' : `${scoring.points} из 400`} />
+          <DetailRow label="PD (вероятность невозврата)" value={scoring.pdPercent ? `${scoring.pdPercent}%` : '—'} />
+          <DetailRow label="Решение" value={scoring.decision ? DECISION_LABELS[scoring.decision] : '—'} />
+          {detail && detail.reasons.length > 0 && (
+            <DetailRow label="Причины" value={detail.reasons.map((r) => REASON_LABELS[r] ?? r).join(', ')} />
+          )}
+        </div>
+        <div className="min-w-0 lg:col-span-2">
+          {error && <Alert>{error}</Alert>}
+          {detail && detail.breakdown.length > 0 && (
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-ink-3">
+                <tr>
+                  <th className="py-1 font-semibold">Фактор</th>
+                  <th className="py-1 font-semibold">Значение</th>
+                  <th className="py-1 text-right font-semibold">Балл</th>
+                  <th className="py-1 text-right font-semibold">Вес</th>
+                  <th className="py-1 text-right font-semibold">Вклад</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.breakdown.map((f) => (
+                  <tr key={f.factor} className="border-t border-line/40">
+                    <td className="py-1">{FACTOR_LABELS[f.factor] ?? f.factor}</td>
+                    <td className="py-1 text-ink-2">{f.value ?? '—'}</td>
+                    <td className="num py-1 text-right">{Number(f.score).toFixed(2)}</td>
+                    <td className="num py-1 text-right">{Math.round(Number(f.weight) * 100)}%</td>
+                    <td className="num py-1 text-right">{Number(f.contribution).toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          )}
+          {detail && <p className="mt-2 text-xs text-ink-3">Правила версии {detail.rulesVersion}</p>}
+        </div>
+      </div>
+    </DetailSection>
   );
 }

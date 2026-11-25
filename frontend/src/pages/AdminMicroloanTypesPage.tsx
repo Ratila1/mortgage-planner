@@ -12,6 +12,7 @@ const EMPTY: MicroloanTypeInput = {
   maxTermDays: 30,
   dailyRatePct: '0.8',
   modifier: '0',
+  purposeScore: '0.50',
   active: true,
 };
 
@@ -50,6 +51,8 @@ function MicroloanTypeForm({
     if (!form.description.trim()) return setError('Укажите описание');
     if (form.minTermDays > form.maxTermDays) return setError('Мин. срок не может превышать максимальный');
     if (!(Number(form.modifier) >= 0)) return setError('Модификатор — число не меньше 0');
+    const purposeScore = Number(form.purposeScore ?? '0.50');
+    if (!(purposeScore >= 0 && purposeScore <= 1)) return setError('Балл цели — число от 0 до 1');
     const dailyRate = Number(form.dailyRatePct);
     if (!(Number.isFinite(dailyRate) && dailyRate >= 0)) return setError('Дневная ставка — число не меньше 0');
     setBusy(true);
@@ -138,6 +141,14 @@ function MicroloanTypeForm({
             onChange={(e) => set('modifier', parseMoneyInput(e.target.value))}
           />
         </Field>
+        <Field label="Балл цели для скоринга" htmlFor="mlt-purpose" hint="0–1: чем надёжнее цель, тем выше">
+          <TextInput
+            id="mlt-purpose"
+            inputMode="decimal"
+            value={form.purposeScore ?? '0.50'}
+            onChange={(e) => set('purposeScore', parseMoneyInput(e.target.value))}
+          />
+        </Field>
       </div>
 
       <label className="flex items-center gap-2 text-sm">
@@ -201,7 +212,9 @@ export function AdminMicroloanTypesPage() {
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
       <div className="grid gap-6 lg:grid-cols-12">
-        <div className={cx(editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
+        {/* min-w-0: иначе grid-ячейка наследует минимальную ширину таблицы
+            и вылезает за карточку при узком окне. Скролл остаётся внутри. */}
+        <div className={cx('min-w-0', editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
           {types === null && !error ? (
             <div className="space-y-3" aria-hidden="true">
               <Skeleton className="h-12" />
@@ -209,31 +222,33 @@ export function AdminMicroloanTypesPage() {
             </div>
           ) : (
             <div className="card overflow-x-auto p-0">
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full text-sm">
                 <thead className="border-b border-line text-left text-xs uppercase tracking-wider text-ink-3">
                   <tr>
-                    <th className="p-4 font-semibold">Название</th>
-                    <th className="p-4 text-right font-semibold">Сумма, BYN</th>
-                    <th className="p-4 text-right font-semibold">Срок, дн.</th>
-                    <th className="p-4 text-right font-semibold">Ставка, %/день</th>
-                    <th className="p-4 text-right font-semibold">Модификатор</th>
-                    <th className="p-4 font-semibold">Статус</th>
-                    <th className="p-4" />
+                    <th className="p-3 font-semibold">Название</th>
+                    <th className="p-3 text-right font-semibold">Сумма, BYN</th>
+                    <th className="p-3 text-right font-semibold">Срок, дн.</th>
+                    <th className="p-3 text-right font-semibold">Ставка, %/день</th>
+                    <th className="p-3 text-right font-semibold">Модификатор</th>
+                    <th className="p-3 text-right font-semibold">Балл цели</th>
+                    <th className="p-3 font-semibold">Статус</th>
+                    <th className="p-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {types?.map((t) => (
                     <tr key={t.id} className={cx('border-b border-line/60 last:border-0', !t.active && 'text-ink-3')}>
-                      <td className="p-4">
+                      <td className="p-3">
                         <span className="font-semibold">{t.name}</span>
                         <span className="block max-w-xs text-xs text-ink-3">{t.description}</span>
                       </td>
-                      <td className="num p-4 text-right">{formatMoneyShort(t.minAmount)} – {formatMoneyShort(t.maxAmount)}</td>
-                      <td className="num p-4 text-right">{t.minTermDays} – {t.maxTermDays}</td>
-                      <td className="num p-4 text-right">{formatRate(t.dailyRatePct)}</td>
-                      <td className="num p-4 text-right">+{formatMoneyShort(t.modifier)}</td>
-                      <td className="p-4">{t.active ? <Badge tone="money">активен</Badge> : <Badge>скрыт</Badge>}</td>
-                      <td className="p-4 text-right whitespace-nowrap">
+                      <td className="num p-3 text-right">{formatMoneyShort(t.minAmount)} – {formatMoneyShort(t.maxAmount)}</td>
+                      <td className="num p-3 text-right">{t.minTermDays} – {t.maxTermDays}</td>
+                      <td className="num p-3 text-right">{formatRate(t.dailyRatePct)}</td>
+                      <td className="num p-3 text-right">+{formatMoneyShort(t.modifier)}</td>
+                      <td className="num p-3 text-right">{t.purposeScore ?? '—'}</td>
+                      <td className="p-3">{t.active ? <Badge tone="money">активен</Badge> : <Badge>скрыт</Badge>}</td>
+                      <td className="p-3 text-right whitespace-nowrap">
                         <Button size="sm" variant="ghost" onClick={() => setEditing(t)}>Изменить</Button>
                         <Button size="sm" variant="ghost" onClick={() => toggle(t)}>{t.active ? 'Деактивировать' : 'Активировать'}</Button>
                       </td>

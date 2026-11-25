@@ -54,11 +54,47 @@ function PdfReady({ p, scenarioName }: { p: PdfReadyPayload; scenarioName?: stri
   );
 }
 
+function IssuedLoan({ p }: { p: LoanNotificationPayload }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const download = async () => {
+    if (!p.contractUrl) return;
+    setBusy(true);
+    setError(null);
+    try {
+      saveBlob(await api.downloadContract(p.contractUrl), `contract-${p.applicationId}.pdf`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div>
+      <p className="font-semibold">Заём выдан</p>
+      <p className="mt-0.5 text-sm text-ink-2">Договор подписан при подаче заявки. Деньги уже в пути.</p>
+      {p.contractUrl && (
+        <Button size="sm" variant="secondary" className="mt-3" loading={busy} onClick={download}>
+          Скачать договор (PDF)
+        </Button>
+      )}
+      {error && <p className="mt-2 text-sm text-stamp">{error}</p>}
+      <Link to="/cabinet/applications" className="mt-2 block text-sm font-semibold text-money">
+        К моим заявкам →
+      </Link>
+    </div>
+  );
+}
+
 /** Заголовки и тексты loan-уведомлений (LoanNotificationConsumer). */
 const LOAN_NOTIFICATIONS: Record<string, { title: string; text: string }> = {
   LOAN_SIGNED: { title: 'Договор подписан', text: 'Деньги уже в пути. График погашения — в разделе «Мои заявки».' },
   LOAN_EXPIRED: { title: 'Срок подписания истёк', text: 'Заявку пришлось закрыть: договор не был подписан за 5 рабочих дней.' },
   LOAN_REPAID: { title: 'Заём закрыт', text: 'Долг погашен полностью. Спасибо — приходите ещё!' },
+  LOAN_OVERDUE: {
+    title: 'Заём просрочен',
+    text: 'Срок возврата прошёл. Погасите заём как можно скорее, чтобы не попасть в чёрный список и не испортить историю.',
+  },
 };
 
 function LoanNotification({ n }: { n: AppNotification }) {
@@ -75,6 +111,9 @@ function LoanNotification({ n }: { n: AppNotification }) {
         </div>
       </div>
     );
+  }
+  if (n.type === 'LOAN_ISSUED') {
+    return <IssuedLoan p={p} />;
   }
   if (n.type === 'LOAN_REJECTED') {
     return (

@@ -46,13 +46,14 @@ class LoanFlowIntegrationTest extends LoanItSupport {
         assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(pdf.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
         assertThat(new String(pdf.getBody(), 0, 5)).isEqualTo("%PDF-");
-        await().atMost(ASYNC).until(() -> notifications(client.id(), "LOAN_APPROVED") == 1);
 
         JsonNode active = sign(client, applicationId);
         assertThat(active.get("status").asString()).isEqualTo("ACTIVE");
         assertThat(jdbc.queryForObject("select count(*) from loan_signatures where application_id = ?::uuid",
                 Integer.class, applicationId)).isEqualTo(1);
-        await().atMost(ASYNC).until(() -> notifications(client.id(), "LOAN_SIGNED") == 1);
+        await().atMost(ASYNC).until(() -> notifications(client.id(), "LOAN_ISSUED") == 1);
+        assertThat(notifications(client.id(), "LOAN_APPROVED")).isZero();
+        assertThat(notifications(client.id(), "LOAN_SIGNED")).isZero();
 
         // Активный заём блокирует новую заявку (§3.8).
         ResponseEntity<String> second = submit(client);

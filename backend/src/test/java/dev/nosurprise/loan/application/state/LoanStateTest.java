@@ -41,9 +41,17 @@ class LoanStateTest {
     }
 
     @Test
-    void activeAllowsOnlyRepaid() {
-        assertThat(ActiveState.INSTANCE.allowedTransitions()).containsExactly(LoanStatus.REPAID);
+    void activeAllowsRepaidAndOverdue() {
+        assertThat(ActiveState.INSTANCE.allowedTransitions())
+                .containsExactlyInAnyOrder(LoanStatus.REPAID, LoanStatus.OVERDUE);
         assertThat(ActiveState.INSTANCE.isActive()).isTrue();
+    }
+
+    @Test
+    void overdueAllowsOnlyRepaid() {
+        assertThat(OverdueState.INSTANCE.allowedTransitions()).containsExactly(LoanStatus.REPAID);
+        assertThat(OverdueState.INSTANCE.isActive()).isTrue();
+        assertThat(OverdueState.INSTANCE.isFinal()).isFalse();
     }
 
     @Test
@@ -94,6 +102,7 @@ class LoanStateTest {
         assertThat(LoanState.of(LoanStatus.SUBMITTED)).isSameAs(SubmittedState.INSTANCE);
         assertThat(LoanState.of(LoanStatus.APPROVED)).isSameAs(ApprovedState.INSTANCE);
         assertThat(LoanState.of(LoanStatus.ACTIVE)).isSameAs(ActiveState.INSTANCE);
+        assertThat(LoanState.of(LoanStatus.OVERDUE)).isSameAs(OverdueState.INSTANCE);
         assertThat(LoanState.of(LoanStatus.REJECTED)).isSameAs(RejectedState.INSTANCE);
         assertThat(LoanState.of(LoanStatus.CANCELLED)).isSameAs(CancelledState.INSTANCE);
         assertThat(LoanState.of(LoanStatus.EXPIRED)).isSameAs(ExpiredState.INSTANCE);

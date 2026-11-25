@@ -75,8 +75,8 @@ export function ComparePage() {
     <div className="space-y-6">
       <PageTitle eyebrow="Сравнение" title="Кто переплатит меньше" />
 
-      <div className="card reveal-scroll overflow-x-auto p-0">
-        <table className="w-full min-w-[640px] text-sm">
+      <div className="card reveal-scroll p-0">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line">
               <th className="w-48 p-4" />

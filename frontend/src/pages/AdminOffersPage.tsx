@@ -133,7 +133,8 @@ export function AdminOffersPage() {
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
       <div className="grid gap-6 lg:grid-cols-12">
-        <div className={cx(editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
+        {/* min-w-0: таблица не распирает grid-ячейку за пределы карточки. */}
+        <div className={cx('min-w-0', editing ? 'lg:col-span-8' : 'lg:col-span-12')}>
           {offers === null && !error ? (
             <div className="space-y-3" aria-hidden="true">
               <Skeleton className="h-12" />
@@ -141,29 +142,29 @@ export function AdminOffersPage() {
             </div>
           ) : (
             <div className="card overflow-x-auto p-0">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full text-sm">
                 <thead className="border-b border-line text-left text-xs uppercase tracking-wider text-ink-3">
                   <tr>
-                    <th className="p-4 font-semibold">Банк</th>
-                    <th className="p-4 text-right font-semibold">Ставка</th>
-                    <th className="p-4 text-right font-semibold">Взнос от</th>
-                    <th className="p-4 text-right font-semibold">Срок до</th>
-                    <th className="p-4 font-semibold">Статус</th>
-                    <th className="p-4" />
+                    <th className="p-3 font-semibold">Банк</th>
+                    <th className="p-3 text-right font-semibold">Ставка</th>
+                    <th className="p-3 text-right font-semibold">Взнос от</th>
+                    <th className="p-3 text-right font-semibold">Срок до</th>
+                    <th className="p-3 font-semibold">Статус</th>
+                    <th className="p-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {offers?.map((o) => (
                     <tr key={o.id} className={cx('border-b border-line/60 last:border-0', !o.active && 'text-ink-3')}>
-                      <td className="p-4">
+                      <td className="p-3">
                         <span className="font-semibold">{o.bankName}</span>
                         <span className="block text-xs text-ink-3">обновлено {formatDateTime(o.updatedAt)}</span>
                       </td>
-                      <td className="num p-4 text-right font-bold">{formatRate(o.rate)}</td>
-                      <td className="num p-4 text-right">{formatRate(o.minDownPaymentPercent)}</td>
-                      <td className="p-4 text-right">{formatTerm(o.maxTermMonths)}</td>
-                      <td className="p-4">{o.active ? <Badge tone="money">активно</Badge> : <Badge>скрыто</Badge>}</td>
-                      <td className="p-4 text-right whitespace-nowrap">
+                      <td className="num p-3 text-right font-bold">{formatRate(o.rate)}</td>
+                      <td className="num p-3 text-right">{formatRate(o.minDownPaymentPercent)}</td>
+                      <td className="p-3 text-right">{formatTerm(o.maxTermMonths)}</td>
+                      <td className="p-3">{o.active ? <Badge tone="money">активно</Badge> : <Badge>скрыто</Badge>}</td>
+                      <td className="p-3 text-right whitespace-nowrap">
                         <Button size="sm" variant="ghost" onClick={() => setEditing(o)}>Изменить</Button>
                         <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(o)}>Удалить</Button>
                       </td>

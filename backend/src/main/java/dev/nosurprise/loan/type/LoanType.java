@@ -49,6 +49,13 @@ public class LoanType {
     @Column(nullable = false)
     private boolean active;
 
+    /**
+     * Балл цели займа для скоринга, от 0 до 1 (CREDIT_POLICY.md §3.2): тип займа и есть цель («На iPhone» —
+     * техника, «Последний шанс» — до зарплаты). Задаёт админ в CRM; уходит в credit-policy в событии.
+     */
+    @Column(name = "purpose_score", nullable = false, precision = 3, scale = 2)
+    private BigDecimal purposeScore;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -58,12 +65,16 @@ public class LoanType {
     @Version
     private Long version;
 
+    /** Нейтральный балл цели для нового типа, если админ его не указал (= DEFAULT в V18). */
+    public static final BigDecimal DEFAULT_PURPOSE_SCORE = new BigDecimal("0.50");
+
     protected LoanType() {
     }
 
     LoanType(LoanTypeData data, Instant now) {
         this.id = UUID.randomUUID();
         this.createdAt = now;
+        this.purposeScore = DEFAULT_PURPOSE_SCORE;
         apply(data, now);
     }
 
@@ -77,6 +88,10 @@ public class LoanType {
         this.dailyRate = data.dailyRate();
         this.modifier = data.modifier();
         this.active = data.active();
+        // Форма, не знающая о балле цели, его не стирает: null — «не менять» (при создании — 0.50).
+        if (data.purposeScore() != null) {
+            this.purposeScore = data.purposeScore();
+        }
         this.updatedAt = now;
     }
 
@@ -119,6 +134,10 @@ public class LoanType {
 
     public BigDecimal getModifier() {
         return modifier;
+    }
+
+    public BigDecimal getPurposeScore() {
+        return purposeScore;
     }
 
     public boolean isActive() {

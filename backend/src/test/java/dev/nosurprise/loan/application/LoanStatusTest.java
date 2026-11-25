@@ -20,7 +20,7 @@ class LoanStatusTest {
     private static final Set<String> ALLOWED = Set.of(
             "SUBMITTED->CANCELLED", "SUBMITTED->APPROVED", "SUBMITTED->REJECTED",
             "APPROVED->ACTIVE", "APPROVED->EXPIRED",
-            "ACTIVE->REPAID");
+            "ACTIVE->REPAID", "ACTIVE->OVERDUE", "OVERDUE->REPAID");
 
     static Stream<Arguments> allPairs() {
         return Arrays.stream(LoanStatus.values())
@@ -37,10 +37,11 @@ class LoanStatusTest {
 
     @ParameterizedTest
     @MethodSource("allStatuses")
-    @DisplayName("активные статусы — SUBMITTED, APPROVED, ACTIVE; конечные — без исходящих переходов")
+    @DisplayName("активные статусы — SUBMITTED, APPROVED, ACTIVE, OVERDUE; конечные — без исходящих переходов")
     void activeAndFinal(LoanStatus status) {
         assertThat(LoanState.of(status).isActive()).isEqualTo(
-                Set.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE).contains(status));
+                Set.of(LoanStatus.SUBMITTED, LoanStatus.APPROVED, LoanStatus.ACTIVE, LoanStatus.OVERDUE)
+                        .contains(status));
         assertThat(LoanState.of(status).isFinal()).isEqualTo(
                 Set.of(LoanStatus.REJECTED, LoanStatus.CANCELLED, LoanStatus.EXPIRED, LoanStatus.REPAID)
                         .contains(status));

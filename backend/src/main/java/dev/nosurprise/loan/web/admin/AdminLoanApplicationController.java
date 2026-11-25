@@ -17,6 +17,7 @@ import dev.nosurprise.loan.web.dto.DecisionRequest;
 import dev.nosurprise.loan.web.dto.DocumentResponse;
 import dev.nosurprise.loan.web.dto.PageResponse;
 import dev.nosurprise.loan.web.dto.RejectRequest;
+import dev.nosurprise.loan.web.dto.RepaidRequest;
 import io.micrometer.core.annotation.Timed;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -34,6 +35,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,15 +52,17 @@ public class AdminLoanApplicationController {
     private final LoanTypeService loanTypes;
     private final CreditHistoryQueryService creditHistory;
     private final LoanProperties properties;
+    private final Clock clock;
 
     public AdminLoanApplicationController(LoanAdminService admin, LoanApplicationService applications,
                                           LoanTypeService loanTypes, CreditHistoryQueryService creditHistory,
-                                          LoanProperties properties) {
+                                          LoanProperties properties, Clock clock) {
         this.admin = admin;
         this.applications = applications;
         this.loanTypes = loanTypes;
         this.creditHistory = creditHistory;
         this.properties = properties;
+        this.clock = clock;
     }
 
     /** Один запрос к loan_applications плюс один за названиями типов — без N+1 (§4.7). */
@@ -74,7 +79,7 @@ public class AdminLoanApplicationController {
         Map<UUID, LoanType> types = loanTypes.getAll(result.map(LoanApplication::getLoanTypeId).toSet());
         return PageResponse.of(result, a -> AdminApplicationRow.from(a,
                 types.containsKey(a.getLoanTypeId()) ? types.get(a.getLoanTypeId()).getName() : null,
-                properties.debtLoadWarningPercent()));
+                properties.debtLoadWarningPercent(), today()));
     }
 
     @GetMapping("/{id}")
@@ -106,8 +111,14 @@ public class AdminLoanApplicationController {
 
     @PostMapping("/{id}/repaid")
     AdminApplicationCard repaid(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
-                                @Valid @RequestBody DecisionRequest request) {
-        return card(admin.markRepaid(id, adminId(jwt), request.version()));
+                                @Valid @RequestBody RepaidRequest request) {
+        return card(admin.markRepaid(id, adminId(jwt), request.version(), request.paidAt()));
+    }
+
+    /** Запросить скоринг заново (CREDIT_POLICY.md §6.3): результат не пришёл или заявка подана до скоринга. */
+    @PostMapping("/{id}/scoring")
+    AdminApplicationCard requestScoring(@PathVariable UUID id) {
+        return card(admin.requestScoring(id));
     }
 
     private AdminApplicationCard card(LoanApplication application) {
@@ -116,7 +127,11 @@ public class AdminLoanApplicationController {
                 .map(DocumentResponse::from).toList();
         CreditHistoryResponse history = CreditHistoryResponse.from(creditHistory.forUser(application.getUserId()));
         return AdminApplicationCard.from(application, typeName, properties.debtLoadWarningPercent(), documents,
-                history);
+                history, today());
+    }
+
+    private LocalDate today() {
+        return LocalDate.ofInstant(clock.instant(), properties.businessZone());
     }
 
     private static UUID adminId(Jwt jwt) {

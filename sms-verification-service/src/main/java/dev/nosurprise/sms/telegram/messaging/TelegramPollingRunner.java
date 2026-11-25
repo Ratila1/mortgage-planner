@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,7 +17,6 @@ import java.util.Map;
  * would silently switch a production bot off the webhook it is configured with.
  */
 @Component
-@ConditionalOnProperty(name = "app.telegram.polling-enabled", havingValue = "true", matchIfMissing = false)
 public class TelegramPollingRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramPollingRunner.class);
@@ -35,14 +33,20 @@ public class TelegramPollingRunner implements ApplicationRunner {
         this.bot = bot;
         this.handler = handler;
         this.props = props;
+        log.info("TelegramPollingRunner bean created, pollingEnabled={}", props.pollingEnabled());
     }
 
     @Override
     public void run(ApplicationArguments args) {
+        if (!props.pollingEnabled()) {
+            log.info("Telegram long polling disabled (app.telegram.polling-enabled=false)");
+            return;
+        }
         if (props.botToken() == null || props.botToken().isBlank()) {
             log.warn("Telegram bot token is empty; long polling disabled");
             return;
         }
+        log.info("Starting Telegram long polling");
         bot.deleteWebhook();
         Thread.ofVirtual().name("telegram-polling").start(this::pollLoop);
     }

@@ -1,0 +1,22 @@
+package dev.nosurprise.bureau.common;
+
+/** Стабильные коды ошибок API бюро: поле code в ProblemDetail (CREDIT_BUREAU.md §7.4). */
+public enum ErrorCode {
+    VALIDATION_FAILED,
+    INVALID_REQUEST_BODY,
+    INVALID_API_KEY,
+    INVALID_ADMIN_KEY,
+    PROVIDER_SUSPENDED,
+    FORBIDDEN,
+    RATE_LIMITED,
+    TOO_MANY_AUTH_FAILURES,
+    IDEMPOTENCY_KEY_REUSED,
+    AMBIGUOUS_SUBJECT,
+    PROVIDER_NOT_FOUND,
+    PROVIDER_NAME_TAKEN,
+    KEY_NOT_FOUND,
+    CONCURRENT_MODIFICATION,
+    NOT_FOUND,
+    SERVICE_UNAVAILABLE,
+    INTERNAL_ERROR
+}

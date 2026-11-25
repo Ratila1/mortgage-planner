@@ -199,6 +199,10 @@
   .ui-select {
     appearance: none;
     appearance: base-select;
+    /* Высота закрытого селекта = его собственный padding + строка текста.
+       2 × 9px + 24px строки + 2px рамки = 44px, как у TextInput. Раньше сюда ещё
+       добавлялся py-2.5 из className и высота «скакала» 45–70px. */
+    padding-block: 0.5625rem;
   }
 
   /* Список опций: карточка в токенах темы, в top-layer — без z-index-войны. */
@@ -217,7 +221,8 @@
   }
 
   .ui-select option {
-    padding: 0.55rem 0.75rem;
+    /* Удобная зона клика в выпадающем списке. */
+    padding: 0.625rem 0.75rem;
     border-radius: 0.625rem;
     color: var(--p-ink);
     cursor: pointer;

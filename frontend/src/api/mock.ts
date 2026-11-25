@@ -4,8 +4,18 @@ import type {
   Api, AppNotification, BankOffer, CalcParams, CalcResult, Me, OfferInput, Scenario,
   MicroloanType, MicroloanTypeInput, MicroloanApplication, MicroloanApplicationStatus,
   MicroloanCalculationResult, AdminUser, CustomerProfile, CustomerProfileInput, PassportStatus,
-  AdminMicroloanApplicationCard,
+  AdminMicroloanApplicationCard, MicroloanScoring,
 } from './types';
+
+/** В мок-режиме credit-policy нет: все заявки «посчитаны» с одним и тем же результатом. */
+const MOCK_SCORING: MicroloanScoring = {
+  status: 'COMPLETED',
+  score: '0.7000',
+  points: 280,
+  ratingClass: 'B2',
+  pdPercent: '1.94',
+  decision: 'RECOMMEND',
+};
 
 /**
  * Моки API для работы без бэкенда (VITE_USE_MOCKS != 'false').
@@ -151,6 +161,40 @@ const state: MockState = {
   microloanTypes: microloanData.types,
   microloanApplications: microloanData.applications,
 };
+
+/** Test helper: return the mock to its seeded state between frontend tests. */
+export function resetMockState() {
+  try {
+    localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(MICROLOAN_STORE_KEY);
+  } catch {
+    // localStorage may be unavailable — in-memory state is still reset below.
+  }
+  const fresh = load();
+  const freshMicroloan = loadMicroloan();
+  Object.assign(state, fresh, {
+    microloanTypes: freshMicroloan.types,
+    microloanApplications: freshMicroloan.applications,
+  });
+  pendingVerificationEmail = null;
+  lastLoginLinkEmail = null;
+}
+
+/** Test helper: emulate an application submitted before the SMS-at-submit flow (manual signing). */
+export function markLegacyApplication(id: string) {
+  const app = state.microloanApplications.find((a) => a.id === id);
+  if (!app) throw new Error(`Application ${id} not found`);
+  app.signedAtSubmit = false;
+  saveMicroloan();
+}
+
+/** Test helper: simulate a signed application whose auto-activation has not happened yet. */
+export function setApplicationStatus(id: string, status: MicroloanApplicationStatus) {
+  const app = state.microloanApplications.find((a) => a.id === id);
+  if (!app) throw new Error(`Application ${id} not found`);
+  app.status = status;
+  saveMicroloan();
+}
 
 // Адрес, на который была «отправлена» демо-ссылка (подтверждение / вход по ссылке).
 let pendingVerificationEmail: string | null = null;
@@ -564,7 +608,10 @@ export const mockApi: Api = {
     const type = state.microloanTypes.find((t) => t.id === input.typeId && t.active);
     if (!type) throw fail(404, 'LOAN_TYPE_NOT_FOUND', 'Тип займа не найден или выключен');
     const q = quote(type, Number(input.amount), input.termDays);
-    await mockApi.saveProfile(input.profile);
+    const saved = await mockApi.saveProfile(input.profile);
+    if (!saved.phoneVerified || saved.phone !== input.profile.phone) {
+      throw fail(409, 'PHONE_NOT_VERIFIED', 'Подтвердите телефон кодом из SMS');
+    }
     const p = input.profile;
     const app: MockApplication = {
       id: newId(),
@@ -580,6 +627,7 @@ export const mockApi: Api = {
       monthlyIncome: p.monthlyIncome,
       debtLoadPercent: ((Number(q.totalAmount) / Number(p.monthlyIncome)) * 100).toFixed(2),
       status: 'SUBMITTED',
+      signedAtSubmit: true,
       rejectionReason: null,
       offerExpiresAt: null,
       createdAt: now(),
@@ -608,8 +656,7 @@ export const mockApi: Api = {
   async getMicroloanApplication(id) {
     await delay();
     requireUser();
-    const app = findApplication(id);
-    return { ...strip(app), documents: [] };
+    return strip(findApplication(id));
   },
   // В моках договора нет — отдаём минимальный PDF, чтобы кнопка работала.
   async downloadContract() {
@@ -650,11 +697,11 @@ export const mockApi: Api = {
     }
   },
 
-  async adminListMicroloanApplications(status) {
+  async adminListMicroloanApplications(status, _query, page = 0, size = 20) {
     await delay();
     requireAdmin();
-    return state.microloanApplications
-      .filter((a) => a.status === status)
+    const all = state.microloanApplications
+      .filter((a) => status === 'ALL' || !status || a.status === status)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((a) => ({
         id: a.id,
@@ -666,8 +713,12 @@ export const mockApi: Api = {
         debtLoadPercent: a.debtLoadPercent,
         debtLoadWarning: Number(a.debtLoadPercent) > 50,
         status: a.status,
+        signedAtSubmit: Boolean(a.signedAtSubmit),
         createdAt: a.createdAt,
+        scoring: MOCK_SCORING,
       }));
+    const start = page * size;
+    return { items: all.slice(start, start + size), total: all.length, page, size };
   },
   async adminGetMicroloanApplication(id) {
     await delay();
@@ -677,6 +728,7 @@ export const mockApi: Api = {
       id: a.id,
       userId: a.userId,
       status: a.status,
+      signedAtSubmit: Boolean(a.signedAtSubmit),
       version: 0,
       createdAt: a.createdAt,
       loanTypeId: a.typeId,
@@ -699,6 +751,7 @@ export const mockApi: Api = {
       decisionComment: a.rejectionReason,
       offerExpiresAt: a.offerExpiresAt,
       closedAt: null,
+      scoring: MOCK_SCORING,
       passportUrl: `/api/admin/loan-applications/${a.id}/passport`,
       documents: [],
       // В моках кредитной истории нет: показываем честный «прочерк».
@@ -731,6 +784,30 @@ export const mockApi: Api = {
     if (app.status !== 'SUBMITTED') throw fail(409, 'INVALID_STATUS_TRANSITION');
     app.status = 'APPROVED';
     app.offerExpiresAt = new Date(Date.now() + 5 * 864e5).toISOString();
+    // The real contract is generated asynchronously after approval.
+    app.documents = [
+      {
+        id: newId(),
+        type: 'CONTRACT',
+        downloadUrl: `/api/loans/applications/${id}/documents/contract`,
+        createdAt: now(),
+      },
+    ];
+    // В моках CONTRACT_READY обрабатывается сразу: подписанная при подаче заявка становится ACTIVE.
+    if (app.signedAtSubmit) {
+      app.status = 'ACTIVE';
+      state.notifications.push({
+        id: newId(),
+        type: 'LOAN_ISSUED',
+        payload: {
+          applicationId: app.id,
+          cardUrl: `/loans/${app.id}`,
+          contractUrl: app.documents[0].downloadUrl,
+        },
+        read: false,
+        createdAt: now(),
+      });
+    }
     persistMicroloan();
   },
   async adminRejectMicroloanApplication(id, reason) {
@@ -746,14 +823,27 @@ export const mockApi: Api = {
     await delay();
     requireAdmin();
     const app = findApplication(id);
-    if (app.status !== 'ACTIVE') throw fail(409, 'INVALID_STATUS_TRANSITION');
+    if (app.status !== 'ACTIVE' && app.status !== 'OVERDUE') throw fail(409, 'INVALID_STATUS_TRANSITION');
     app.status = 'REPAID';
     persistMicroloan();
   },
-  async adminListUsers() {
+  async adminRequestScoring(id) {
     await delay();
     requireAdmin();
-    return state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // В моках скоринга нет: заявка сразу считается посчитанной (см. MOCK_SCORING).
+    if (findApplication(id).status !== 'SUBMITTED') throw fail(409, 'INVALID_STATUS_TRANSITION');
+  },
+  async adminGetScoringDetail() {
+    await delay();
+    requireAdmin();
+    return null;
+  },
+  async adminListUsers(_query, page = 0, size = 20) {
+    await delay();
+    requireAdmin();
+    const all = state.users.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const start = page * size;
+    return { items: all.slice(start, start + size), total: all.length, page, size };
   },
   async adminBlockUser(id) {
     await delay();
