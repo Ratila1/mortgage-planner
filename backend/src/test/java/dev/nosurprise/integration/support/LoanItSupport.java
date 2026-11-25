@@ -1,5 +1,9 @@
 package dev.nosurprise.integration.support;
 
+import dev.nosurprise.loan.application.LoanApplication;
+import dev.nosurprise.loan.application.LoanApplicationRepository;
+import dev.nosurprise.loan.scoring.ScoringCompleted;
+import dev.nosurprise.loan.scoring.ScoringResultService;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -16,9 +20,11 @@ import dev.nosurprise.smsclient.dto.VerifyResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,6 +53,12 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
 
     @Autowired
     protected MongoTemplate mongo;
+
+    @Autowired
+    protected LoanApplicationRepository loanApplications;
+
+    @Autowired
+    protected ScoringResultService scoringResults;
 
     @MockitoBean
     protected SmsClient smsClient;
@@ -153,9 +165,28 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
         return json(response);
     }
 
+    /** Одобрение: credit-policy в этих тестах имитируется результатом с RECOMMEND. */
     protected JsonNode approve(String adminToken, JsonNode application) {
+        completeScoring(id(application), "RECOMMEND");
+        long version = adminCard(adminToken, id(application)).get("version").asLong();
         ResponseEntity<String> response = api.postJson("/api/admin/loan-applications/" + id(application) + "/approve",
-                "{\"version\":" + application.get("version").asLong() + "}", adminToken);
+                "{\"version\":" + version + "}", adminToken);
+        assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
+        return json(response);
+    }
+
+    /** Ответ credit-policy на текущий запрос скоринга заявки (CREDIT_POLICY.md §8.2). */
+    protected void completeScoring(String applicationId, String decision) {
+        LoanApplication application = loanApplications.findById(UUID.fromString(applicationId)).orElseThrow();
+        boolean reject = "AUTO_REJECT".equals(decision);
+        scoringResults.apply(new ScoringCompleted(UUID.randomUUID(), Instant.now(),
+                application.getScoringRequestId(), application.getId(), "COMPLETED",
+                new BigDecimal(reject ? "0.2000" : "0.7000"), reject ? 80 : 280, reject ? "E1" : "B2",
+                new BigDecimal(reject ? "0.468750" : "0.019412"), decision, List.of(), 1));
+    }
+
+    protected JsonNode adminCard(String adminToken, String applicationId) {
+        ResponseEntity<String> response = api.get("/api/admin/loan-applications/" + applicationId, adminToken);
         assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
         return json(response);
     }
@@ -179,15 +210,11 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
         return getApplication(client, applicationId).get("documents").get(0);
     }
 
+    /** Заявки, подписанные при подаче, активируются сами после договора; ручной endpoint для них закрыт. */
     protected JsonNode sign(Client client, String applicationId) {
-        clearSmsCooldown(client);
-        ResponseEntity<String> requested = api.postEmpty("/api/loans/applications/" + applicationId + "/signature",
-                client.token());
-        assertThat(requested.getStatusCode()).as(requested.getBody()).isEqualTo(HttpStatus.ACCEPTED);
-        ResponseEntity<String> confirmed = api.postJson("/api/loans/applications/" + applicationId
-                + "/signature/confirm", "{\"code\":\"" + lastCode(client.phone()) + "\"}", client.token());
-        assertThat(confirmed.getStatusCode()).as(confirmed.getBody()).isEqualTo(HttpStatus.OK);
-        return json(confirmed);
+        await().atMost(ASYNC).until(() -> "ACTIVE".equals(getApplication(client, applicationId)
+                .get("status").asString()));
+        return getApplication(client, applicationId);
     }
 
     protected ResponseEntity<String> uploadPassport(String token, byte[] content) {

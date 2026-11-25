@@ -38,7 +38,7 @@ class ScoringAndOverdueIntegrationTest extends LoanItSupport {
         String payload = jdbc.queryForObject("select payload::text from outbox_events "
                 + "where event_type = 'loan.scoring.requested' and aggregate_id = ?", String.class, applicationId);
         JsonNode request = objectMapper.readTree(payload);
-        assertThat(request.get("applicant").get("birthDate").asString()).isEqualTo("1981-05-02");
+        assertThat(request.get("applicant").get("birthDate").asString()).isEqualTo("1990-05-10");
         assertThat(request.get("applicant").get("city").asString()).isEqualTo("Минск");
         assertThat(request.get("loan").get("loanTypeName").asString()).isNotBlank();
         assertThat(request.get("loan").get("purposeScore").decimalValue()).isBetween(BigDecimal.ZERO, BigDecimal.ONE);
@@ -116,9 +116,10 @@ class ScoringAndOverdueIntegrationTest extends LoanItSupport {
         assertThat(signed.get("dueDate").asString())
                 .isEqualTo(LocalDate.now(MINSK).plusDays(10).toString());
 
-        // Срок вышел три дня назад.
+        // Срок вышел три дня назад; дату подачи тоже сдвигаем, чтобы оплату после срока можно было отметить.
         LocalDate due = LocalDate.now(MINSK).minusDays(3);
-        jdbc.update("update loan_applications set due_date = ? where id = ?", due, UUID.fromString(applicationId));
+        jdbc.update("update loan_applications set due_date = ?, created_at = ?::timestamptz where id = ?::uuid",
+                due, due.minusDays(10) + "T00:00:00Z", UUID.fromString(applicationId));
         assertThat(overdueJob.markOverdue()).isEqualTo(1);
         assertThat(overdueJob.markOverdue()).isZero();
         assertThat(overdueJob.sendReminders()).isEqualTo(1);
@@ -141,6 +142,8 @@ class ScoringAndOverdueIntegrationTest extends LoanItSupport {
         assertThat(repaid.getStatusCode()).as(repaid.getBody()).isEqualTo(HttpStatus.OK);
         assertThat(json(repaid).get("overdueDays").asInt()).isEqualTo(1);
 
+        // Даты подставлены вручную — пересобираем историю синхронно, чтобы проверить итог, а не очередность outbox.
+        assertThat(api.postEmpty("/api/admin/credit-history/rebuild", admin).getStatusCode().is2xxSuccessful()).isTrue();
         await().atMost(ASYNC).until(() -> {
             Document history = creditHistory(applicationId);
             return history != null && "REPAID".equals(history.getString("status"));

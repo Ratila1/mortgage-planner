@@ -14,6 +14,7 @@ import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -120,6 +121,8 @@ class LoanRulesIntegrationTest extends LoanItSupport {
     void signWithoutVerifiedPhone() {
         Client client = readyClient("loan-nophone");
         JsonNode application = submitOk(client);
+        // Legacy-подпись вручную: новые заявки подписаны при подаче и блокируют ручной endpoint.
+        jdbc.update("update loan_applications set signed_at_submit = false where id = ?::uuid", id(application));
         approve(adminToken(), application);
         awaitContract(client, id(application));
         // Смена номера сбрасывает подтверждение (§3.3).
@@ -139,6 +142,8 @@ class LoanRulesIntegrationTest extends LoanItSupport {
         Client client = readyClient("loan-wrongcode");
         JsonNode application = submitOk(client);
         String applicationId = id(application);
+        // Legacy-подпись вручную: новые заявки подписаны при подаче и блокируют ручной endpoint.
+        jdbc.update("update loan_applications set signed_at_submit = false where id = ?::uuid", applicationId);
         approve(adminToken(), application);
         awaitContract(client, applicationId);
         clearSmsCooldown(client);
@@ -161,6 +166,38 @@ class LoanRulesIntegrationTest extends LoanItSupport {
             Document history = creditHistory(applicationId);
             return history != null && history.getList("incidents", Document.class).size() == 4;
         });
+    }
+
+    @Test
+    @DisplayName("legacy-заявка: верный код подписи активирует заём, сохраняет подпись и шлёт LOAN_SIGNED")
+    void legacyCodeSigns() {
+        Client client = readyClient("loan-legacy-sign");
+        JsonNode application = submitOk(client);
+        String applicationId = id(application);
+        // Legacy-подпись вручную: новые заявки подписаны при подаче и блокируют ручной endpoint.
+        jdbc.update("update loan_applications set signed_at_submit = false where id = ?::uuid", applicationId);
+        approve(adminToken(), application);
+        awaitContract(client, applicationId);
+        clearSmsCooldown(client);
+        assertThat(api.postEmpty("/api/loans/applications/" + applicationId + "/signature", client.token())
+                .getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        ResponseEntity<String> confirmed = api.postJson("/api/loans/applications/" + applicationId
+                + "/signature/confirm", "{\"code\":\"" + lastCode(client.phone()) + "\"}", client.token());
+        assertThat(confirmed.getStatusCode()).as(confirmed.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(json(confirmed).get("status").asString()).isEqualTo("ACTIVE");
+
+        Map<String, Object> signature = jdbc.queryForMap(
+                "select phone, document_id, document_sha256 from loan_signatures where application_id = ?::uuid",
+                applicationId);
+        Map<String, Object> contract = jdbc.queryForMap(
+                "select id, sha256 from loan_documents where application_id = ?::uuid and type = 'CONTRACT'",
+                applicationId);
+        assertThat(signature.get("phone")).isEqualTo(client.phone());
+        assertThat(signature.get("document_id")).isEqualTo(contract.get("id"));
+        assertThat(signature.get("document_sha256")).isEqualTo(contract.get("sha256"));
+        await().atMost(ASYNC).until(() -> notifications(client.id(), "LOAN_SIGNED") == 1);
+        assertThat(notifications(client.id(), "LOAN_ISSUED")).isZero();
     }
 
     @Test
