@@ -7,10 +7,6 @@ import org.openqa.selenium.Capabilities
 import org.openqa.selenium.WebDriver
 import java.net.URL
 
-/**
- * Appium driver: connects to a running Appium server and starts Chrome
- * inside the Android emulator. Override with APPIUM_URL / ANDROID_DEVICE env vars.
- */
 class ChromeDriverProvider : WebDriverProvider {
 
     override fun createDriver(capabilities: Capabilities): WebDriver {

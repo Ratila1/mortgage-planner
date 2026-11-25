@@ -11,12 +11,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-/**
- * The same base scenario as android/BaseScenarioTest, but driven externally:
- * Appium starts Chrome on the emulator, Selenide does the clicks and assertions.
- *
- * Requires: docker compose up, running emulator, `appium --port 4723`.
- */
 class AppiumBaseScenarioTest {
 
     @BeforeEach
@@ -36,14 +30,12 @@ class AppiumBaseScenarioTest {
     fun baseScenarioWorksAndMakesScreenshots() {
         Selenide.open(SITE_URL)
 
-        // Step 1: the page and the first calculation are rendered
         Selenide.`$`("h1").shouldBe(visible).shouldHave(text("Ипотека без"))
         Selenide.`$`("body").shouldHave(text("Переплата банку"))
         val initialPayment = Selenide.`$`("main p.text-4xl span").text()
         check(initialPayment.isNotBlank()) { "Payment is not rendered" }
         Selenide.screenshot("01-home")
 
-        // Step 2: change the parameters (React-controlled inputs need a native setter + events)
         Selenide.executeJavaScript<Any>(
             """
             const set = (id, v) => {
@@ -60,7 +52,7 @@ class AppiumBaseScenarioTest {
         Selenide.`$`("#rate").shouldHave(value("10"))
 
         Selenide.`$`("main p.text-4xl span").shouldNotHave(exactText(initialPayment))
-        Thread.sleep(700) // AnimatedNumber finishes in ~0.5s
+        Thread.sleep(700)
 
         val payment = Selenide.`$`("main p.text-4xl span").text()
         check(payment.isNotBlank() && payment != initialPayment) { "Payment was not recalculated: $payment" }
@@ -71,7 +63,6 @@ class AppiumBaseScenarioTest {
         scrollTo("main p.text-4xl", "02-result")
         scrollTo(".recharts-wrapper", "03-chart")
 
-        // Step 3: press "Развернуть всё" and scroll to the payment schedule
         val rowsBefore = Selenide.`$$`("table tbody tr").size()
         Selenide.`$$`("button").findBy(text("Развернуть всё")).click()
         check(Selenide.`$$`("table tbody tr").size() > rowsBefore) { "Schedule did not expand" }
