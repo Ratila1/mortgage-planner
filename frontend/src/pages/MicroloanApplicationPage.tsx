@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import {
   api,
@@ -9,7 +9,8 @@ import {
   type PassportStatus,
   type Sex,
 } from '../api';
-import { Alert, Button, Card, Field, FileInput, PageTitle, Select, Skeleton, TextInput } from '../components/ui';
+import { PhoneVerifyPanel } from '../components/PhoneVerifyPanel';
+import { Alert, Card, Field, FileInput, PageTitle, Select, Skeleton, TextInput } from '../components/ui';
 import { formatDateTime, formatMoney, formatMoneyShort, parseMoneyInput, toNumber } from '../lib/format';
 
 /** Параметры займа приходят из калькулятора через state навигации. */
@@ -58,6 +59,12 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
+  const [verificationKey, setVerificationKey] = useState(0);
+  const phoneRef = useRef(profile.phone);
+  phoneRef.current = profile.phone;
+  const savedPhoneRef = useRef<string | null>(null);
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +101,16 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
     };
   }, [prefill.typeId, prefill.amount, prefill.termDays]);
 
+  // The SMS code belongs to the number that was saved before the request.
+  useEffect(() => {
+    if (savedPhoneRef.current || verifiedPhone) {
+      setSubmitError('Телефон изменился. Запросите новый код.');
+    }
+    setVerifiedPhone(null);
+    savedPhoneRef.current = null;
+    setVerificationKey((key) => key + 1);
+  }, [profile.phone]);
+
   // Фото, удалённое после подписи или по сроку хранения, нужно загрузить заново.
   const hasPassport = !!passport && !passport.deleted;
 
@@ -113,28 +130,86 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
     return null;
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  // Validate and persist the form before the SMS is sent to the saved number.
+  const beforePhoneRequest = async (): Promise<boolean> => {
     setSubmitError(null);
     const err = validate();
-    if (err) return setSubmitError(err);
-    setSubmitting(true);
+    if (err) {
+      setSubmitError(err);
+      return false;
+    }
     try {
       if (file) {
         setPassport(await api.uploadPassport(file));
         setFile(null);
       }
-      await api.createMicroloanApplication({
-        typeId: prefill.typeId,
-        amount: prefill.amount,
-        termDays: prefill.termDays,
-        profile,
-      });
-      navigate('/cabinet/applications', { replace: true });
+      const saved = await api.saveProfile(profile);
+      if (saved.phone !== phoneRef.current) {
+        setSubmitError('Телефон изменился во время сохранения. Повторите подтверждение.');
+        return false;
+      }
+      savedPhoneRef.current = saved.phone;
+      return true;
     } catch (error) {
       setSubmitError(errorMessage(error));
-    } finally {
-      setSubmitting(false);
+      return false;
+    }
+  };
+
+  // A successful code submits the application immediately; no second button is needed.
+  const afterPhoneVerified = async () => {
+    const currentPhone = phoneRef.current;
+    if (!savedPhoneRef.current || savedPhoneRef.current !== currentPhone) {
+      setSubmitError('Телефон изменился. Запросите новый код.');
+      setVerifiedPhone(null);
+      setVerificationKey((key) => key + 1);
+      return;
+    }
+    try {
+      const saved = await api.getProfile();
+      if (!saved || !saved.phoneVerified || saved.phone !== currentPhone || phoneRef.current !== currentPhone) {
+        setSubmitError('Телефон изменился. Запросите новый код.');
+        setVerifiedPhone(null);
+        setVerificationKey((key) => key + 1);
+        return;
+      }
+      // A passport chosen after the code was requested must still be uploaded before submit.
+      const err = validate();
+      if (err) {
+        setSubmitError(err);
+        setVerifiedPhone(null);
+        setVerificationKey((key) => key + 1);
+        return;
+      }
+      setVerifiedPhone(saved.phone);
+      if (submittedRef.current) return;
+      submittedRef.current = true;
+      setSubmitting(true);
+      setSubmitError(null);
+      try {
+        if (file) {
+          setPassport(await api.uploadPassport(file));
+          setFile(null);
+        }
+        await api.createMicroloanApplication({
+          typeId: prefill.typeId,
+          amount: prefill.amount,
+          termDays: prefill.termDays,
+          profile,
+        });
+        navigate('/cabinet/applications', { replace: true });
+      } catch (error) {
+        setSubmitError(errorMessage(error));
+        submittedRef.current = false;
+        setVerifiedPhone(null);
+        setVerificationKey((key) => key + 1);
+      } finally {
+        setSubmitting(false);
+      }
+    } catch (error) {
+      setSubmitError(errorMessage(error));
+      setVerifiedPhone(null);
+      setVerificationKey((key) => key + 1);
     }
   };
 
@@ -185,7 +260,7 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
 
       <Card>
         <PageTitle title="Ваши данные" />
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Фамилия" htmlFor="ml-last">
               <TextInput
@@ -301,10 +376,25 @@ function ApplicationForm({ prefill }: { prefill: PrefillState }) {
 
           {submitError && <Alert>{submitError}</Alert>}
 
-          <div className="flex gap-2 pt-2">
-            <Button type="submit" size="lg" loading={submitting} disabled={submitting}>
-              Отправить заявку
-            </Button>
+          <div className="pt-2">
+            <PhoneVerifyPanel
+              key={verificationKey}
+              phone={profile.phone}
+              onBeforeRequest={beforePhoneRequest}
+              onVerified={afterPhoneVerified}
+              description={
+                <>
+                  Сохраним указанные данные и отправим код на номер{' '}
+                  <span className="num font-semibold">{profile.phone || '—'}</span>. После верного кода заявка уйдёт
+                  автоматически.
+                </>
+              }
+              requestLabel="Подтвердить телефон"
+              confirmLabel="Подтвердить и отправить"
+            />
+            {verifiedPhone && submitting && (
+              <p className="mt-2 text-sm text-money-2">Телефон подтверждён. Отправляем заявку…</p>
+            )}
           </div>
         </form>
       </Card>

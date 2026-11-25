@@ -24,6 +24,8 @@ public class RabbitLoanConfig {
     public static final String CONTRACT_Q = "loan.contract.q";
     public static final String CREDIT_HISTORY_Q = "loan.credit-history.q";
     public static final String NOTIFICATION_Q = "notification.loan.q";
+    /** Отдельная очередь авто-подписи: заявки, подписанные при подаче (V20). */
+    public static final String SIGN_AUTO_Q = "loan.sign-auto.q";
     /** Результаты скоринга из credit-policy (CREDIT_POLICY.md §6.2). */
     public static final String SCORING_RESULT_Q = "loan.scoring-result.q";
     /**
@@ -35,6 +37,7 @@ public class RabbitLoanConfig {
     private static final String SCORING_REQUEST_DLQ_RK = "credit-policy.scoring-request";
 
     private static final String NOTIFICATION_DLQ_RK = "notification.loan";
+    private static final String SIGN_AUTO_DLQ_RK = "loan.sign-auto";
 
     @Bean
     Declarables rabbitLoanDeclarables() {
@@ -45,6 +48,7 @@ public class RabbitLoanConfig {
         addQueue(declarables, events, dlx, CONTRACT_Q, LoanRoutingKeys.APPROVED, List.of(LoanRoutingKeys.APPROVED));
         addQueue(declarables, events, dlx, CREDIT_HISTORY_Q, LoanRoutingKeys.HISTORY_CHANGED,
                 List.of(LoanRoutingKeys.HISTORY_CHANGED));
+        addQueue(declarables, events, dlx, SIGN_AUTO_Q, SIGN_AUTO_DLQ_RK, List.of(LoanRoutingKeys.CONTRACT_READY));
         addQueue(declarables, events, dlx, NOTIFICATION_Q, NOTIFICATION_DLQ_RK, List.of(
                 LoanRoutingKeys.CONTRACT_READY, LoanRoutingKeys.REJECTED,
                 LoanRoutingKeys.SIGNED, LoanRoutingKeys.EXPIRED, LoanRoutingKeys.REPAID, LoanRoutingKeys.OVERDUE));

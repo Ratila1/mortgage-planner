@@ -13,7 +13,7 @@ import java.util.UUID;
  * Карточка заявки для админа (§3.4, §4.7): одним ответом — заявка из Postgres и кредитная история клиента из Mongo.
  * Фото паспорта сюда не входит: оно грузится отдельным запросом по кнопке.
  */
-public record AdminApplicationCard(UUID id, UUID userId, String status, Long version, Instant createdAt,
+public record AdminApplicationCard(UUID id, UUID userId, String status, boolean signedAtSubmit, Long version, Instant createdAt,
                                    UUID loanTypeId, String loanTypeName, String amount, int termDays,
                                    String dailyRate, String interest, String modifier, String total,
                                    String lastName, String firstName, String middleName, String phone,
@@ -29,7 +29,8 @@ public record AdminApplicationCard(UUID id, UUID userId, String status, Long ver
         var terms = a.getTerms();
         var applicant = a.getApplicant();
         BigDecimal debtLoad = DebtLoad.percent(terms.getTotal(), applicant.getMonthlyIncome());
-        return new AdminApplicationCard(a.getId(), a.getUserId(), a.getStatus().name(), a.getVersion(),
+        return new AdminApplicationCard(a.getId(), a.getUserId(), a.getStatus().name(), a.isSignedAtSubmit(),
+                a.getVersion(),
                 a.getCreatedAt(), a.getLoanTypeId(), loanTypeName, a.getAmount().toPlainString(), a.getTermDays(),
                 terms.getDailyRate().toPlainString(), terms.getInterest().toPlainString(),
                 terms.getModifier().toPlainString(), terms.getTotal().toPlainString(),

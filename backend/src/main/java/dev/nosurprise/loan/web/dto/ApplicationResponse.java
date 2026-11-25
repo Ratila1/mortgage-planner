@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 public record ApplicationResponse(UUID id, UUID loanTypeId, String loanTypeName, String amount, int termDays,
                                   String dailyRate, String interest, String modifier, String total,
-                                  String monthlyIncome, String debtLoadPercent, String status,
+                                  String monthlyIncome, String debtLoadPercent, String status, boolean signedAtSubmit,
                                   String rejectionReason, Instant offerExpiresAt, Instant createdAt,
                                   LocalDate dueDate, LocalDate paidAt, Integer overdueDays,
                                   Long version, List<DocumentResponse> documents) {
@@ -30,7 +30,7 @@ public record ApplicationResponse(UUID id, UUID loanTypeId, String loanTypeName,
                 terms.getModifier().toPlainString(), terms.getTotal().toPlainString(),
                 applicant.getMonthlyIncome().toPlainString(),
                 DebtLoad.percent(terms.getTotal(), applicant.getMonthlyIncome()).toPlainString(),
-                application.getStatus().name(),
+                application.getStatus().name(), application.isSignedAtSubmit(),
                 // Причину видит клиент только при отказе; комментарий к одобрению — внутренний.
                 application.getStatus() == LoanStatus.REJECTED ? application.getDecisionComment() : null,
                 application.getOfferExpiresAt(), application.getCreatedAt(), application.getDueDate(),

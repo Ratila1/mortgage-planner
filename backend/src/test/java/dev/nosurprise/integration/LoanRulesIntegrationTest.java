@@ -33,15 +33,20 @@ class LoanRulesIntegrationTest extends LoanItSupport {
     private KycRetentionJob retentionJob;
 
     @Test
-    @DisplayName("без фото паспорта → 409 KYC_REQUIRED, и профиль из формы не сохранён (одна транзакция)")
+    @DisplayName("без фото паспорта → 409 KYC_REQUIRED; профиль сохранён до подачи и остаётся, заявки нет")
     void submitWithoutPassport() {
         var account = auth.registerAndVerify("loan-nokyc", PASSWORD);
-        ResponseEntity<String> response = api.postJson("/api/loans/applications",
-                submitJson("+375291111111", "500.00", 10), account.accessToken());
+        Client client = new Client(account, "+375291111111");
+        assertThat(api.putJson("/api/me/profile", profileJson(client.phone(), "2000.00"), client.token())
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
+        verifyPhone(client);
+        ResponseEntity<String> response = submit(client);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(code(response, objectMapper)).isEqualTo("KYC_REQUIRED");
         assertThat(jdbc.queryForObject("select count(*) from customer_profile where user_id = ?", Integer.class,
+                account.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from loan_applications where user_id = ?::uuid", Integer.class,
                 account.id())).isZero();
     }
 

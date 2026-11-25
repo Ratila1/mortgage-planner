@@ -506,10 +506,12 @@ function ApplicationDetail({ id }: { id: string }) {
           <DetailRow label="Решение принято" value={card.decidedAt ? formatDateTime(card.decidedAt) : '—'} />
           <DetailRow label="Кто решил" value={card.decidedBy ?? '—'} />
           <DetailRow label="Комментарий" value={card.decisionComment || '—'} />
-          <DetailRow
-            label="Подписать до"
-            value={card.offerExpiresAt ? formatDateTime(card.offerExpiresAt) : '—'}
-          />
+          {!card.signedAtSubmit && (
+            <DetailRow
+              label="Подписать до"
+              value={card.offerExpiresAt ? formatDateTime(card.offerExpiresAt) : '—'}
+            />
+          )}
         </DetailSection>
       </div>
 

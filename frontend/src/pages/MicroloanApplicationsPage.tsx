@@ -37,6 +37,15 @@ const BLOCKING: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED', 'ACTIVE
 /** Клиент может отменить заявку до подписи. */
 const CANCELLABLE: MicroloanApplicationStatus[] = ['SUBMITTED', 'APPROVED'];
 
+function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function MicroloanApplicationsPage() {
   const navigate = useNavigate();
   const [applications, setApplications] = useState<MicroloanApplication[] | null>(null);
@@ -152,6 +161,23 @@ function ApplicationRow({
   onToggle: () => void;
   onSigned: (message: string) => void;
 }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const contract = app.documents.find((document) => document.type === 'CONTRACT' && document.downloadUrl);
+
+  const download = async () => {
+    if (!contract) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      saveBlob(await api.downloadContract(contract.downloadUrl), `contract-${app.id}.pdf`);
+    } catch (err) {
+      setDownloadError(errorMessage(err));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <>
       <tr className="border-t border-line/60 align-top last:border-0">
@@ -164,9 +190,13 @@ function ApplicationRow({
           {app.status === 'REJECTED' && app.rejectionReason && (
             <p className="mt-1 max-w-xs text-xs text-ink-3">Причина: {app.rejectionReason}</p>
           )}
-          {app.status === 'APPROVED' && app.offerExpiresAt && (
+          {app.status === 'APPROVED' && app.offerExpiresAt && !app.signedAtSubmit && (
             <p className="mt-1 text-xs text-ink-3">Подписать до {formatDateTime(app.offerExpiresAt)}</p>
           )}
+          {app.status === 'APPROVED' && app.signedAtSubmit && (
+            <p className="mt-1 text-xs text-ink-3">Ожидаем активацию займа</p>
+          )}
+          {downloadError && <p className="mt-1 text-xs text-stamp">{downloadError}</p>}
           {app.status === 'ACTIVE' && app.dueDate && (
             <p className="mt-1 text-xs text-ink-3">Вернуть до {formatDate(app.dueDate)}</p>
           )}
@@ -179,9 +209,14 @@ function ApplicationRow({
         <td className="p-4 text-ink-3">{formatDateTime(app.createdAt)}</td>
         <td className="p-4 text-right">
           <div className="flex justify-end gap-2">
-            {app.status === 'APPROVED' && (
+            {app.status === 'APPROVED' && !app.signedAtSubmit && (
               <Button size="sm" variant={open ? 'secondary' : 'primary'} onClick={onToggle}>
                 {open ? 'Скрыть' : 'Подписать'}
+              </Button>
+            )}
+            {app.status === 'ACTIVE' && app.signedAtSubmit && contract && (
+              <Button size="sm" variant="secondary" loading={downloading} onClick={download}>
+                Скачать договор
               </Button>
             )}
             {CANCELLABLE.includes(app.status) && (
@@ -192,7 +227,7 @@ function ApplicationRow({
           </div>
         </td>
       </tr>
-      {open && app.status === 'APPROVED' && (
+      {open && app.status === 'APPROVED' && !app.signedAtSubmit && (
         <tr className="border-t border-line/40 bg-paper-2/40">
           <td colSpan={7} className="p-4">
             <ContractSigning id={app.id} onSigned={() => onSigned('Договор подписан — заём выдан')} />

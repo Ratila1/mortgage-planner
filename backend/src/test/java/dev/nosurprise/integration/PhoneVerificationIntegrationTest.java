@@ -26,6 +26,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -146,6 +148,52 @@ class PhoneVerificationIntegrationTest extends AbstractIntegrationTest {
         assertThat(profile.get("phoneVerified").asBoolean()).isTrue();
     }
 
+    @Test
+    @DisplayName("смена номера инвалидирует ожидающий код и снимает серверную паузу SMS")
+    void phoneChangeInvalidatesPendingCodeAndCooldown() {
+        assertThat(requestCode()).isEqualTo(HttpStatus.ACCEPTED);
+        String oldCode = codeBySmsId.get(singleSmsId());
+        assertThat(oldCode).isNotNull();
+
+        String changedPhone = changedPhone(phone);
+        assertThat(api.putJson("/api/me/profile", profileJson(changedPhone), account.accessToken())
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        assertThat(redis.opsForValue().get("phone-otp-cooldown:" + account.id())).isNull();
+        assertThat(redis.opsForValue().get("phone-sms-id:" + account.id())).isNull();
+        assertThat(redis.opsForValue().get("phone-code-phone:" + account.id())).isNull();
+
+        ResponseEntity<String> response = confirm(oldCode);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(json(response.getBody()).get("code").asString()).isEqualTo("OTP_INVALID");
+
+        JsonNode profile = json(api.get("/api/me/profile", account.accessToken()).getBody());
+        assertThat(profile.get("phone").asString()).isEqualTo(changedPhone);
+        assertThat(profile.get("phoneVerified").asBoolean()).isFalse();
+    }
+
+    @Test
+    @DisplayName("код для старого номера отклоняется confirm даже без события смены профиля")
+    void codeForOldPhoneIsRejectedWithoutProfileEvent() {
+        assertThat(requestCode()).isEqualTo(HttpStatus.ACCEPTED);
+        UUID smsId = singleSmsId();
+        String oldCode = codeBySmsId.get(smsId);
+        assertThat(oldCode).isNotNull();
+
+        String changedPhone = changedPhone(phone);
+        jdbc.update("update customer_profile set phone = ?, phone_verified_at = null where user_id = ?::uuid",
+                changedPhone, account.id());
+
+        ResponseEntity<String> response = confirm(oldCode);
+        assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.BAD_REQUEST);
+        JsonNode error = json(response.getBody());
+        assertThat(error.get("code").asString()).isEqualTo("OTP_INVALID");
+        assertThat(error.get("detail").asString()).contains("phone has changed");
+        verify(smsClient, never()).verify(eq(smsId), eq(oldCode));
+        assertThat(redis.opsForValue().get("phone-sms-id:" + account.id())).isNull();
+        assertThat(redis.opsForValue().get("phone-code-phone:" + account.id())).isNull();
+    }
+
     private ResponseEntity<String> requestCodeRaw() {
         return api.postEmpty(PHONE_VERIFICATION, account.accessToken());
     }
@@ -174,8 +222,13 @@ class PhoneVerificationIntegrationTest extends AbstractIntegrationTest {
         return objectMapper.readTree(body);
     }
 
+    private static String changedPhone(String phone) {
+        return phone.substring(0, phone.length() - 1) + (phone.endsWith("9") ? "8" : "9");
+    }
+
     private static String profileJson(String phone) {
         return "{\"lastName\":\"Test\",\"firstName\":\"Postman\",\"middleName\":\"User\",\"phone\":\"" + phone
-                + "\",\"monthlyIncome\":\"1500.00\"}";
+                + "\",\"monthlyIncome\":\"1500.00\",\"birthDate\":\"1990-05-10\",\"sex\":\"MALE\","
+                + "\"country\":\"BY\",\"city\":\"Минск\"}";
     }
 }

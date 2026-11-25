@@ -161,7 +161,7 @@ export interface LoanNotificationPayload {
   applicationId: Id;
   /** Ссылка на карточку заявки (/loans/{id}) — ведёт в личный кабинет. */
   cardUrl: string;
-  /** Договор: GET по этому адресу отдаёт PDF (нужен Bearer). Есть только у LOAN_APPROVED. */
+  /** Договор: GET по этому адресу отдаёт PDF (нужен Bearer). Есть у LOAN_APPROVED и LOAN_ISSUED. */
   contractUrl?: string;
   /** Ссылка на подпись — пока совпадает с cardUrl. */
   signUrl?: string;
@@ -265,6 +265,8 @@ export interface MicroloanApplication {
   monthlyIncome: Money;
   debtLoadPercent: string;
   status: MicroloanApplicationStatus;
+  /** Подпись дана в форме подачи: шаг подписи после одобрения не нужен. */
+  signedAtSubmit?: boolean;
   rejectionReason: string | null;
   offerExpiresAt: string | null;
   createdAt: string;
@@ -325,6 +327,7 @@ export interface AdminMicroloanApplication {
   debtLoadPercent: string;
   debtLoadWarning: boolean;
   status: MicroloanApplicationStatus;
+  signedAtSubmit?: boolean;
   createdAt: string;
   /** null — заявка подана до появления скоринга. */
   scoring?: MicroloanScoring | null;
@@ -383,6 +386,7 @@ export interface AdminMicroloanApplicationCard {
   id: Id;
   userId: Id;
   status: MicroloanApplicationStatus;
+  signedAtSubmit?: boolean;
   version: number;
   createdAt: string;
   loanTypeId: Id;

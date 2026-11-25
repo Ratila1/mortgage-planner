@@ -2,6 +2,7 @@ package dev.nosurprise.loan.application;
 
 import dev.nosurprise.common.outbox.OutboxPublisher;
 import dev.nosurprise.customer.CustomerService;
+import dev.nosurprise.customer.PhoneNotVerifiedException;
 import dev.nosurprise.customer.ProfileView;
 import dev.nosurprise.customer.kyc.KycMetadata;
 import dev.nosurprise.customer.kyc.KycService;
@@ -80,10 +81,16 @@ public class LoanApplicationService {
             throw new ActiveApplicationExistsException();
         }
         ProfileView profile = customers.saveProfile(userId, command.profile());
+        // SMS подтверждается в форме до подачи: без него заявка не создаётся. Исключение откатывает
+        // и сохранённый профиль, потому что submit — одна транзакция.
+        if (!profile.phoneVerified()) {
+            throw new PhoneNotVerifiedException();
+        }
         KycMetadata passport = kyc.requireUsablePassport(userId);
 
         Instant now = clock.instant();
-        LoanApplication application = LoanApplication.submit(userId, type.getId(), quote, profile, passport.id(), now);
+        LoanApplication application = LoanApplication.submit(userId, type.getId(), quote, profile, passport.id(),
+                profile.phoneVerified(), now);
         // Скоринг запрашивается в той же транзакции: заявки без запроса скоринга не бывает (CREDIT_POLICY.md §6.1).
         scoring.request(application, type, profile);
         try {
@@ -128,7 +135,7 @@ public class LoanApplicationService {
     @Transactional(readOnly = true)
     public Optional<LoanNotificationView> notificationView(UUID applicationId) {
         return repository.findById(applicationId).map(application -> new LoanNotificationView(
-                application.getId(), application.getUserId(), application.getStatus(),
+                application.getId(), application.getUserId(), application.getStatus(), application.isSignedAtSubmit(),
                 application.getDecisionComment(),
                 documents.findByApplicationIdAndType(applicationId, LoanDocument.TYPE_CONTRACT)
                         .map(LoanDocument::getId).orElse(null)));

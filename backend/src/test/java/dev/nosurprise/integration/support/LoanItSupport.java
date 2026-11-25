@@ -134,7 +134,8 @@ public abstract class LoanItSupport extends AbstractIntegrationTest {
 
     protected static String profileJson(String phone, String income) {
         return "{\"lastName\":\"Иванов\",\"firstName\":\"Иван\",\"middleName\":\"Иванович\",\"phone\":\"" + phone
-                + "\",\"monthlyIncome\":\"" + income + "\"}";
+                + "\",\"monthlyIncome\":\"" + income + "\",\"birthDate\":\"1990-05-10\",\"sex\":\"MALE\","
+                + "\"country\":\"BY\",\"city\":\"Минск\"}";
     }
 
     protected static String submitJson(String phone, String amount, int termDays) {

@@ -11,7 +11,7 @@ import java.util.UUID;
 /** Строка списка заявок админа (§3.4): всё из снимка, без join на профиль. */
 public record AdminApplicationRow(UUID id, Instant createdAt, String lastName, String firstName, String middleName,
                                   String loanTypeName, String amount, int termDays, String monthlyIncome,
-                                  String debtLoadPercent, boolean debtLoadWarning, String status,
+                                  String debtLoadPercent, boolean debtLoadWarning, String status, boolean signedAtSubmit,
                                   LocalDate dueDate, Integer overdueDays, ScoringView scoring) {
 
     public static AdminApplicationRow from(LoanApplication application, String loanTypeName,
@@ -23,6 +23,6 @@ public record AdminApplicationRow(UUID id, Instant createdAt, String lastName, S
                 application.getAmount().toPlainString(), application.getTermDays(),
                 applicant.getMonthlyIncome().toPlainString(), debtLoad.toPlainString(),
                 DebtLoad.exceeds(debtLoad, warningPercent), application.getStatus().name(),
-                application.getDueDate(), application.overdueDays(today), ScoringView.from(application));
+                application.isSignedAtSubmit(), application.getDueDate(), application.overdueDays(today), ScoringView.from(application));
     }
 }

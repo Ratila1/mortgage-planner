@@ -41,6 +41,7 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneVerificationNeeded, setPhoneVerificationNeeded] = useState(false);
 
   const load = useCallback(
     () =>
@@ -48,6 +49,7 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
         .then(([c, p]) => {
           setCard(c);
           setProfile(p);
+          setPhoneVerificationNeeded(false);
           setLoadError(null);
         })
         .catch((err) => setLoadError(errorMessage(err))),
@@ -99,6 +101,7 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
       setError(errorMessage(err, 'otp'));
       // 429 с Retry-After: SMS недавно уже отправляли (общий кулдаун с подтверждением телефона).
       if (err instanceof ApiError && err.retryAfter) setCooldown(err.retryAfter);
+      if (err instanceof ApiError && err.code === 'PHONE_NOT_VERIFIED') setPhoneVerificationNeeded(true);
     } finally {
       setBusy(false);
     }
@@ -124,6 +127,21 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
     </Button>
   );
 
+  // Подписанные при подаче заявки не получают код подписи: договор скачивается сразу после ACTIVE.
+  if (card.signedAtSubmit) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-ink-2">
+          {card.status === 'APPROVED'
+            ? 'Ожидаем активацию займа. Повторно подтверждать телефон не нужно.'
+            : AFTER_SIGNING[card.status] ?? 'Заявка не ждёт подписи.'}
+        </p>
+        {downloadButton}
+        {error && <Alert>{error}</Alert>}
+      </div>
+    );
+  }
+
   if (card.status !== 'APPROVED') {
     return (
       <div className="space-y-3">
@@ -146,9 +164,21 @@ export function ContractSigning({ id, onSigned }: { id: string; onSigned?: (app:
         <p className="text-sm text-ink-3">Договор ещё готовится — обновите страницу через минуту.</p>
       )}
 
-      {contract && !profile?.phoneVerified && <PhoneVerifyPanel phone={profile?.phone ?? ''} onVerified={load} />}
+      {contract && (!profile?.phoneVerified || phoneVerificationNeeded) && (
+        <PhoneVerifyPanel
+          phone={profile?.phone ?? ''}
+          onVerified={load}
+          description={
+            <>
+              Договор подписывается кодом из SMS на номер{' '}
+              <span className="num font-semibold">{profile?.phone ?? '—'}</span>. Без подтверждённого номера подпись
+              недоступна.
+            </>
+          }
+        />
+      )}
 
-      {contract && profile?.phoneVerified && (
+      {contract && profile?.phoneVerified && !phoneVerificationNeeded && (
         <div className="rounded-xl border border-line bg-field p-4">
           <p className="text-sm text-ink-2">
             Чтобы подписать договор, нажмите кнопку ниже — на номер{' '}

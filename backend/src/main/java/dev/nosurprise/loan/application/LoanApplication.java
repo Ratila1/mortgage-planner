@@ -77,6 +77,10 @@ public class LoanApplication {
     @Column(name = "offer_expires_at")
     private Instant offerExpiresAt;
 
+    /** Подпись дана при подаче: телефон был подтверждён SMS до создания заявки (V20). */
+    @Column(name = "signed_at_submit", nullable = false)
+    private boolean signedAtSubmit;
+
     /** Когда заявка стала конечной: по нему считается срок хранения фото паспорта (§3.11). */
     @Column(name = "closed_at")
     private Instant closedAt;
@@ -146,7 +150,7 @@ public class LoanApplication {
     }
 
     static LoanApplication submit(UUID userId, UUID loanTypeId, LoanQuote quote, ProfileView profile,
-                                  UUID kycDocumentId, Instant now) {
+                                  UUID kycDocumentId, boolean signedAtSubmit, Instant now) {
         LoanApplication application = new LoanApplication();
         application.id = UUID.randomUUID();
         application.userId = userId;
@@ -155,6 +159,7 @@ public class LoanApplication {
         application.termDays = quote.termDays();
         application.terms = LoanTerms.from(quote);
         application.applicant = ApplicantSnapshot.from(profile, kycDocumentId);
+        application.signedAtSubmit = signedAtSubmit;
         application.status = LoanStatus.SUBMITTED;
         application.state = LoanState.of(LoanStatus.SUBMITTED);
         application.createdAt = now;
@@ -361,6 +366,10 @@ public class LoanApplication {
 
     public Instant getOfferExpiresAt() {
         return offerExpiresAt;
+    }
+
+    public boolean isSignedAtSubmit() {
+        return signedAtSubmit;
     }
 
     public Instant getClosedAt() {
