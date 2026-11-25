@@ -10,6 +10,9 @@ node_modules/
 .vscode/
 # env
 .env
+# android: машинно-зависимый путь к SDK и кэш Kotlin
+local.properties
+.kotlin/
 # generated at container start from prometheus.template.yml (contains METRICS_PASSWORD)
 monitoring/prometheus/prometheus.yml
 # local agent artifacts, not part of the repository
